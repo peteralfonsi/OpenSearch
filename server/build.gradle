@@ -134,6 +134,8 @@ dependencies {
   // jna
   api "net.java.dev.jna:jna:${versions.jna}"
 
+  implementation 'org.roaringbitmap:RoaringBitmap:0.9.49'
+
   testImplementation(project(":test:framework")) {
     // tests use the locally compiled version of server
     exclude group: 'org.opensearch', module: 'server'
