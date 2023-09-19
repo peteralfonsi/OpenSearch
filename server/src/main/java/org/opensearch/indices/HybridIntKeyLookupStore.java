@@ -35,7 +35,6 @@ package org.opensearch.indices;
 import org.roaringbitmap.RoaringBitmap;
 import java.util.HashSet;
 import java.util.Arrays;
-//import java.lang.Math;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
@@ -50,20 +49,20 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         RBM
     };
 
-    private StructureTypes currentStructure;
-    private final int modulo;
-    private int size;
-    private int numAddAttempts;
-    private int numCollisions;
-    private boolean guaranteesNoFalseNegatives;
+    protected StructureTypes currentStructure;
+    protected final int modulo;
+    protected int size;
+    protected int numAddAttempts;
+    protected int numCollisions;
+    protected boolean guaranteesNoFalseNegatives;
 
-    private HashSet<Integer> hashset;
-    private int[] intArr;
-    private RoaringBitmap rbm;
+    protected HashSet<Integer> hashset;
+    protected int[] intArr;
+    protected RoaringBitmap rbm;
     // set these to null once they're replaced - then GC will pick it up allegedly
-    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
-    private final Lock readLock = lock.readLock();
-    private final Lock writeLock = lock.writeLock();
+    protected final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    protected final Lock readLock = lock.readLock();
+    protected final Lock writeLock = lock.writeLock();
 
     public HybridIntKeyLookupStore(int modulo) {
         this.modulo = modulo; // A modulo of 0 means no modulo
@@ -75,7 +74,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         this.guaranteesNoFalseNegatives = true;
     }
 
-    private int customAbs(int value) { // this seems really extra of the forbidden-apis-config to enforce...
+    protected final int customAbs(int value) { // this seems really extra of the forbidden-apis-config to enforce...
         if (value < 0 && value > Integer.MIN_VALUE) {
             return -value;
         } else if (value >= 0) {
@@ -84,11 +83,11 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         return Integer.MAX_VALUE;
     }
 
-    private int transform(int value) {
+    protected final int transform(int value) {
         return modulo == 0 ? -customAbs(value) : -customAbs(value % modulo);
     }
 
-    private void intArrChecks(int value) throws Exception {
+    protected void intArrChecks(int value) throws Exception {
         if (currentStructure != StructureTypes.INTARR) {
             throw new Exception("Cannot run isInIntArr when currentStructure is not INTARR!!");
         }
@@ -97,7 +96,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         }
     }
 
-    private boolean isInIntArr(int value, int arrSize, boolean doAdd) throws Exception { // write lock?
+    protected final boolean isInIntArr(int value, int arrSize, boolean doAdd) throws Exception { // write lock?
         // Checks for presence of value in intArr. If doAdd is true and the value is not already there, adds it.
         // Returns true if the value was already contained (and therefore not added again), false otherwise
         intArrChecks(value);
@@ -113,7 +112,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         return true;
     }
 
-    private void switchHashsetToIntArr() throws Exception { // write lock?
+    protected final void switchHashsetToIntArr() throws Exception { // write lock?
         // during the transitions, especially intarr->RBM, the memory usage will spike. Not sure how to handle this, or if it's really a
         // problem?
         if (currentStructure == StructureTypes.HASHSET) {
@@ -131,7 +130,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         }
     }
 
-    private void switchIntArrToRBM() { // write lock?
+    protected final void switchIntArrToRBM() { // write lock?
         if (currentStructure == StructureTypes.INTARR) {
             currentStructure = StructureTypes.RBM;
             rbm = new RoaringBitmap();
@@ -146,7 +145,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
      * Checks if adding an additional value would require us to change data structures.
      * If so, start that change.
      */
-    private void handleStructureSwitch() throws Exception { // write lock?
+    protected final void handleStructureSwitch() throws Exception { // write lock?
         if (size == HASHSET_TO_INTARR_THRESHOLD - 1) {
             switchHashsetToIntArr();
         } else if (size == INTARR_TO_RBM_THRESHOLD - 1) {
@@ -154,7 +153,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         }
     }
 
-    private void removeFromIntArr(int value) throws Exception {
+    protected final void removeFromIntArr(int value) throws Exception {
         intArrChecks(value);
         int index = Arrays.binarySearch(intArr, 0, size, value);
         if (index >= 0) {
@@ -162,6 +161,10 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
             intArr[size - 1] = 0;
             size--;
         }
+    }
+
+    protected void handleCollisions(int transformedValue) {
+        numCollisions++;
     }
 
     @Override
@@ -190,7 +193,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
                     throw new Exception("currentStructure is none of possible values");
             }
             if (alreadyContained) {
-                numCollisions++;
+                handleCollisions(transformedValue);
                 return false;
             }
             size++;
@@ -200,7 +203,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         }
     }
 
-    private boolean containsTransformed(int transformedValue) throws Exception {
+    protected boolean containsTransformed(int transformedValue) throws Exception {
         // fill in with switch statement
         readLock.lock();
         try {
@@ -245,7 +248,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public boolean remove(int value) {
+    public boolean remove(int value) throws Exception {
         return false;
     }
 
@@ -254,31 +257,33 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         return false;
     }
 
+
+    protected void removeHelperFunction(int transformedValue) throws Exception {
+        // allows code to be reused in forceRemove() of this class and remove() of inheriting class
+        // shouldn't be called on its own, or on a value that's not already inside the structure
+        switch (currentStructure) {
+            case HASHSET:
+                hashset.remove(transformedValue);
+                size--;
+                return;
+            case INTARR:
+                removeFromIntArr(transformedValue); // size is decreased in this function already
+                return;
+            case RBM:
+                rbm.remove(transformedValue);
+                size--;
+        }
+    }
     @Override
     public void forceRemove(int value) throws Exception {
         writeLock.lock();
         guaranteesNoFalseNegatives = false;
-
         try {
             int transformedValue = transform(value);
             boolean alreadyContained = contains(transformedValue);
             if (alreadyContained) {
-                switch (currentStructure) {
-                    case HASHSET:
-                        hashset.remove(transformedValue);
-                        size--;
-                        break;
-                    case INTARR:
-                        removeFromIntArr(transformedValue); // size is decreased in this function already
-                        break;
-                    case RBM:
-                        rbm.remove(transformedValue);
-                        size--;
-                        break;
-                }
+                removeHelperFunction(transformedValue);
             }
-        } catch(Exception e) {
-            System.out.println("exception!! " + e);
         } finally {
             writeLock.unlock();
         }

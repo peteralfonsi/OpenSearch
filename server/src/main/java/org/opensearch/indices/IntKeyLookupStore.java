@@ -71,7 +71,7 @@ public interface IntKeyLookupStore {
      * @param value The value to attempt to remove.
      * @return true if the value was removed, false if it wasn't.
      */
-    boolean remove(int value);
+    boolean remove(int value) throws Exception;
 
     /**
      * Check if the implementing class supports safe removals. If it doesn't, remove() will always return false.
