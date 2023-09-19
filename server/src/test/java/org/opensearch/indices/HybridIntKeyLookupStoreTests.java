@@ -36,25 +36,22 @@ import java.util.Random;
 public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneTestCase {
     public void testInit() throws Exception {
         HybridIntKeyLookupStore kls = new HybridIntKeyLookupStore((int) Math.pow(2, 29));
-        assert kls.getCurrentStructure().equals("HashSet");
-        assert kls.getSize() == 0;
+        assertEquals("HashSet", kls.getCurrentStructure());
+        assertEquals(0, kls.getSize());
     }
 
     public void testStructureTransitions() throws Exception {
         HybridIntKeyLookupStore kls = new HybridIntKeyLookupStore((int) Math.pow(2, 29));
         for (int i = 0; i < HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD; i++) {
-        //for (int i = 0; i < 5001; i++) {
             kls.add(i);
         }
-        System.out.println("Size: " + kls.getSize());
-        assert (kls.getCurrentStructure().equals("intArr"));
-        assert kls.getSize() == HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD;
+        assertEquals("intArr", kls.getCurrentStructure());
+        assertEquals(HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD, kls.getSize());
         for (int i = HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD; i < HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD; i++) {
             kls.add(i);
         }
-        assert (kls.getCurrentStructure().equals("RBM"));
-        System.out.println(kls.getSize());
-        assert kls.getSize() == HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD;
+        assertEquals("RBM", kls.getCurrentStructure());
+        assertEquals(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD, kls.getSize());
     }
 
     public void testArrayLogic() throws Exception {
@@ -68,16 +65,16 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
             addedValues[i] = val;
         }
         System.out.println(kls.getSize());
-        assert kls.arrayCorrectlySorted(); // Not sure if this is really good as a public method - but idk how else to do it?
-        assert (numToAdd - kls.getSize() < 20); // size should not be too different from numToAdd - exact number varies due to collisions
+        assertTrue(kls.arrayCorrectlySorted()); // Not sure if this is really good as a public method - but idk how else to do it?
+        assertTrue(numToAdd - kls.getSize() < 20); // size should not be too different from numToAdd - exact number varies due to collisions
         int numToRemove = 20000;
         for (int j = 0; j < numToRemove; j++) {
             kls.forceRemove(addedValues[j]);
         }
         System.out.println(kls.getSize());
-        assert (numToAdd - numToRemove - kls.getSize() < 20);
-        assert kls.arrayCorrectlySorted();
-        assert kls.canHaveFalseNegatives();
+        assertTrue(numToAdd - numToRemove - kls.getSize() < 20);
+        assertTrue(kls.arrayCorrectlySorted());
+        assertTrue(kls.canHaveFalseNegatives());
     }
 
     public void testTransformationLogic() throws Exception {
@@ -90,14 +87,13 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
             int negValue = -(i * modulo + offset);
             kls.add(negValue);
         }
-        assert kls.getSize() == 1;
+        assertEquals(1, kls.getSize());
 
         // test output is always in expected range
         int[] testVals = new int[]{0, 1, -1, -23495, 23058, modulo, -modulo, Integer.MAX_VALUE, Integer.MIN_VALUE};
         for (int value: testVals) {
-            System.out.println(kls.getInternalRepresentation(value));
-            assert kls.getInternalRepresentation(value) <= 0;
-            assert kls.getInternalRepresentation(value) > -modulo;
+            assertTrue(kls.getInternalRepresentation(value) <= 0);
+            assertTrue(kls.getInternalRepresentation(value) > -modulo);
         }
     }
 
@@ -105,56 +101,55 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
         HybridIntKeyLookupStore kls = new HybridIntKeyLookupStore((int) Math.pow(2, 29));
         for (int i = 0; i < 2000; i++) {
             kls.add(i);
-            assert kls.contains(i);
+            assertTrue(kls.contains(i));
         }
-        assert !kls.canHaveFalseNegatives();
+        assertFalse(kls.canHaveFalseNegatives());
         for (int i = 1900; i < 2000; i++) {
             kls.forceRemove(i);
-            //System.out.println("in loop " + kls.contains(i));
-            assert !kls.contains(i);
+            assertFalse(kls.contains(i));
         }
         System.out.println(kls.contains(1901));
-        assert kls.getSize() == 1900;
+        assertEquals(1900, kls.getSize());
         int lastSize = kls.getSize();
         for (int i = kls.getSize(); i < HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD; i++) {
-            assert !kls.contains(i);
+            assertFalse(kls.contains(i));
             kls.add(i);
-            assert kls.contains(i); // intArr removal logic already tested in testArrayLogic()
-            assert kls.getSize() - lastSize == 1;
+            assertTrue(kls.contains(i)); // intArr removal logic already tested in testArrayLogic()
+            assertEquals(1, kls.getSize() - lastSize);
             lastSize = kls.getSize();
         }
         System.out.println(kls.getSize());
-        assert kls.getCurrentStructure().equals("intArr");
-        assert kls.getSize() == HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD;
+        assertEquals("intArr", kls.getCurrentStructure());
+        assertEquals(HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD, kls.getSize());
         for (int i = kls.getSize(); i < HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD + 1000; i++) {
             kls.add(i);
-            assert kls.contains(i);
+            assertTrue(kls.contains(i));
         }
-        assert kls.getCurrentStructure().equals("RBM");
-        assert kls.getSize() == HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD + 1000;
+        assertEquals("RBM", kls.getCurrentStructure());
+        assertEquals(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD + 1000, kls.getSize());
         for (int i = 5000; i < 10000; i++) {
             kls.forceRemove(i);
-            assert !kls.contains(i);
+            assertFalse(kls.contains(i));
         }
-        assert kls.canHaveFalseNegatives();
+        assertTrue(kls.canHaveFalseNegatives());
     }
 
     public void testAddingStatsGetters() throws Exception {
         int modulo = (int) Math.pow(2, 15);
         HybridIntKeyLookupStore kls = new HybridIntKeyLookupStore(modulo);
-        assert kls.getModulo() == modulo;
+        assertEquals(modulo, kls.getModulo());
 
         kls.add(15);
         kls.add(-15);
-        assert kls.getNumAddAttempts() == 2;
-        assert kls.getNumCollisions() == 1;
+        assertEquals(2, kls.getNumAddAttempts());
+        assertEquals(1, kls.getNumCollisions());
 
         int offset = 1;
         for (int i = 0; i < 10; i++) {
             kls.add(i * modulo + offset);
         }
-        assert kls.getNumAddAttempts() == 12;
-        assert kls.getNumCollisions() == 10;
+        assertEquals(12, kls.getNumAddAttempts());
+        assertEquals(10, kls.getNumCollisions());
     }
 
     public void testRegenerateStore() throws Exception {
@@ -171,8 +166,36 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
                 newVals[j] = rand.nextInt();
             }
             kls.regenerateStore(newVals);
-            assert kls.getSize() >= resetNum;
-            assert kls.getSize() <= newVals.length;
+            assertTrue(kls.getSize() >= resetNum);
+            assertTrue(kls.getSize() <= newVals.length);
         }
+    }
+
+    public void testAddingDuplicates() throws Exception {
+        HybridIntKeyLookupStore kls = new HybridIntKeyLookupStore((int) Math.pow(2, 29));
+        for (int i = 0; i < HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD - 1; i++) {
+            kls.add(i);
+            kls.add(i);
+        }
+        for (int j = 0; j < 1000; j++) {
+            kls.add(577);
+        }
+        assertEquals(HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD - 1, kls.getSize());
+        for (int i = HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD - 1; i < HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD - 1; i++) {
+            kls.add(i);
+            kls.add(i);
+        }
+        for (int j = 0; j < 1000; j++) {
+            kls.add(12342);
+        }
+        assertEquals(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD - 1, kls.getSize());
+        for (int i = HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD - 1; i < HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD + 5000; i++) {
+            kls.add(i);
+            kls.add(i);
+        }
+        for (int j = 0; j < 1000; j++) {
+            kls.add(-10004);
+        }
+        assertEquals(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD + 5000, kls.getSize());
     }
 }

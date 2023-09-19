@@ -116,30 +116,30 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     private void switchHashsetToIntArr() throws Exception { // write lock?
         // during the transitions, especially intarr->RBM, the memory usage will spike. Not sure how to handle this, or if it's really a
         // problem?
-        size = 0;
-        intArr = new int[INTARR_SIZE];
-        currentStructure = StructureTypes.INTARR;
-        //int i = 0;
-        for (int value : hashset) {
-            boolean alreadyContained = isInIntArr(value, size, true);
-            // should never be already contained, but just to be safe
-            if (!alreadyContained) {
-                size++;
+        if (currentStructure == StructureTypes.HASHSET) {
+            size = 0;
+            intArr = new int[INTARR_SIZE];
+            currentStructure = StructureTypes.INTARR;
+            for (int value : hashset) {
+                boolean alreadyContained = isInIntArr(value, size, true);
+                // should never be already contained, but just to be safe
+                if (!alreadyContained) {
+                    size++;
+                }
             }
-            //i++;
+            hashset = null;
         }
-        //System.out.println("i = " + Integer.toString(i)); // debug
-        hashset = null;
     }
 
     private void switchIntArrToRBM() { // write lock?
-        currentStructure = StructureTypes.RBM;
-        rbm = new RoaringBitmap();
-        for (int i = 0; i < size; i++) {
-            rbm.add(intArr[i]);
+        if (currentStructure == StructureTypes.INTARR) {
+            currentStructure = StructureTypes.RBM;
+            rbm = new RoaringBitmap();
+            for (int i = 0; i < size; i++) {
+                rbm.add(intArr[i]);
+            }
+            intArr = null;
         }
-        intArr = null;
-        // comment!
     }
 
     /**
@@ -266,15 +266,16 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
                 switch (currentStructure) {
                     case HASHSET:
                         hashset.remove(transformedValue);
+                        size--;
                         break;
                     case INTARR:
-                        removeFromIntArr(transformedValue);
+                        removeFromIntArr(transformedValue); // size is decreased in this function already
                         break;
                     case RBM:
                         rbm.remove(transformedValue);
+                        size--;
                         break;
                 }
-                size--;
             }
         } catch(Exception e) {
             System.out.println("exception!! " + e);
