@@ -35,20 +35,21 @@ package org.opensearch.indices;
 import org.roaringbitmap.RoaringBitmap;
 import java.util.HashSet;
 import java.util.Arrays;
-import java.lang.Math;
+//import java.lang.Math;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
-
 
 public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     public static final int HASHSET_TO_INTARR_THRESHOLD = 5000;
     public static final int INTARR_SIZE = 100000;
     public static final int INTARR_TO_RBM_THRESHOLD = INTARR_SIZE;
+
     public enum StructureTypes {
         HASHSET,
         INTARR,
         RBM
     };
+
     private StructureTypes currentStructure;
     private final int modulo;
     private int size;
@@ -74,8 +75,17 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         this.guaranteesNoFalseNegatives = true;
     }
 
+    private int customAbs(int value) { // this seems really extra of the forbidden-apis-config to enforce...
+        if (value < 0 && value > Integer.MIN_VALUE) {
+            return -value;
+        } else if (value >= 0) {
+            return value;
+        }
+        return Integer.MAX_VALUE;
+    }
+
     private int transform(int value) {
-        return modulo == 0 ? -Math.abs(value) : -Math.abs(value % modulo);
+        return modulo == 0 ? -customAbs(value) : -customAbs(value % modulo);
     }
 
     private void intArrChecks(int value) throws Exception {
@@ -83,36 +93,42 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
             throw new Exception("Cannot run isInIntArr when currentStructure is not INTARR!!");
         }
         if (value > 0) {
-            throw new Exception(String.format("Cannot use positive value %d in isInIntArr", value));
+            throw new Exception("Cannot use positive value " + Integer.toString(value) + " in isInIntArr");
         }
     }
 
-    private boolean isInIntArr(int value, boolean doAdd) throws Exception { // write lock?
+    private boolean isInIntArr(int value, int arrSize, boolean doAdd) throws Exception { // write lock?
         // Checks for presence of value in intArr. If doAdd is true and the value is not already there, adds it.
         // Returns true if the value was already contained (and therefore not added again), false otherwise
         intArrChecks(value);
-        int index = Arrays.binarySearch(intArr, 0, size, value); // only search in initialized part of array
+        int index = Arrays.binarySearch(intArr, 0, arrSize, value); // only search in initialized part of array
         if (index < 0) {
             if (doAdd) {
                 int insertionPoint = -index - 1;
-                System.arraycopy(intArr, insertionPoint, intArr, insertionPoint + 1, size - insertionPoint);
+                System.arraycopy(intArr, insertionPoint, intArr, insertionPoint + 1, arrSize - insertionPoint);
                 intArr[insertionPoint] = value;
-                size++;
             }
             return false;
         }
         return true;
     }
 
-
     private void switchHashsetToIntArr() throws Exception { // write lock?
-        // during the transitions, especially intarr->RBM, the memory usage will spike. Not sure how to handle this, or if it's really a problem?
+        // during the transitions, especially intarr->RBM, the memory usage will spike. Not sure how to handle this, or if it's really a
+        // problem?
         size = 0;
         intArr = new int[INTARR_SIZE];
         currentStructure = StructureTypes.INTARR;
+        //int i = 0;
         for (int value : hashset) {
-            isInIntArr(value, true);
+            boolean alreadyContained = isInIntArr(value, size, true);
+            // should never be already contained, but just to be safe
+            if (!alreadyContained) {
+                size++;
+            }
+            //i++;
         }
+        //System.out.println("i = " + Integer.toString(i)); // debug
         hashset = null;
     }
 
@@ -125,11 +141,12 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         intArr = null;
         // comment!
     }
+
     /**
      * Checks if adding an additional value would require us to change data structures.
      * If so, start that change.
      */
-    private void handleStructureSwitch() throws Exception{ // write lock?
+    private void handleStructureSwitch() throws Exception { // write lock?
         if (size == HASHSET_TO_INTARR_THRESHOLD - 1) {
             switchHashsetToIntArr();
         } else if (size == INTARR_TO_RBM_THRESHOLD - 1) {
@@ -140,10 +157,9 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     private void removeFromIntArr(int value) throws Exception {
         intArrChecks(value);
         int index = Arrays.binarySearch(intArr, 0, size, value);
-        if (index < 0) {
-            int insertionPoint = -index - 1;
-            System.arraycopy(intArr, insertionPoint + 1, intArr, insertionPoint, size - insertionPoint - 1);
-            intArr[size-1] = 0;
+        if (index >= 0) {
+            System.arraycopy(intArr, index + 1, intArr, index, size - index - 1);
+            intArr[size - 1] = 0;
             size--;
         }
     }
@@ -162,7 +178,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
                     alreadyContained = !(hashset.add(transformedValue));
                     break;
                 case INTARR:
-                    alreadyContained = isInIntArr(transformedValue, true);
+                    alreadyContained = isInIntArr(transformedValue, size, true);
                     break;
                 case RBM:
                     alreadyContained = containsTransformed(transformedValue);
@@ -184,16 +200,15 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         }
     }
 
-
     private boolean containsTransformed(int transformedValue) throws Exception {
         // fill in with switch statement
         readLock.lock();
         try {
             switch (currentStructure) {
                 case HASHSET:
-                    return !(hashset.add(transformedValue));
+                    return hashset.contains(transformedValue);
                 case INTARR:
-                    return isInIntArr(transformedValue, false);
+                    return isInIntArr(transformedValue, size, false);
                 case RBM:
                     return rbm.contains(transformedValue);
                 default:
@@ -202,6 +217,20 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         } finally {
             readLock.unlock();
         }
+    }
+
+    protected boolean arrayCorrectlySorted() {
+        // I think this is necessary as a protected method for unit testing, but shouldn't be used otherwise
+        // How should I improve this?
+        if (currentStructure == StructureTypes.INTARR) {
+            for (int j = 0; j < intArr.length - 1; j++) {
+                if (!((intArr[j] < intArr[j + 1]) || (intArr[j] == intArr[j + 1] && intArr[j + 1] == 0))) {
+                    // left clause: check that array is sorted, right clause: check that values are unique unless they're zero (uninitialized)
+                    return false;
+                }
+            }
+        }
+        return true;
     }
 
     @Override
@@ -229,16 +258,26 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     public void forceRemove(int value) throws Exception {
         writeLock.lock();
         guaranteesNoFalseNegatives = false;
+
         try {
             int transformedValue = transform(value);
-            switch (currentStructure) {
-                case HASHSET:
-                    hashset.remove(transformedValue);
-                case INTARR:
-                    removeFromIntArr(transformedValue);
-                case RBM:
-                    rbm.remove(transformedValue);
+            boolean alreadyContained = contains(transformedValue);
+            if (alreadyContained) {
+                switch (currentStructure) {
+                    case HASHSET:
+                        hashset.remove(transformedValue);
+                        break;
+                    case INTARR:
+                        removeFromIntArr(transformedValue);
+                        break;
+                    case RBM:
+                        rbm.remove(transformedValue);
+                        break;
+                }
+                size--;
             }
+        } catch(Exception e) {
+            System.out.println("exception!! " + e);
         } finally {
             writeLock.unlock();
         }
@@ -300,11 +339,22 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
 
     @Override
     public long getMemorySize() {
-        return 0;
+        return 0; // :(
     }
 
     @Override
-    public void regenerateStore() {
+    public void regenerateStore(int[] newValues) throws Exception {
+        intArr = null;
+        rbm = null;
+        size = 0;
+        numCollisions = 0;
+        numAddAttempts = 0;
+        guaranteesNoFalseNegatives = true;
+        currentStructure = StructureTypes.HASHSET;
+        hashset = new HashSet<>();
 
+        for (int value: newValues) {
+            add(value);
+        }
     }
 }

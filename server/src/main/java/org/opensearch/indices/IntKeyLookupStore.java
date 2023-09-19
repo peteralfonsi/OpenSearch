@@ -145,7 +145,9 @@ public interface IntKeyLookupStore {
     long getMemorySize();
 
     /**
-     * Deletes the internal data structure and regenerates it from the values in the disk cache.
+     * Deletes the internal data structure and regenerates it from the values passed in.
+     * Also resets all stats related to adding.
+     * @param newValues The keys that should be in the reset structure.
      */
-    void regenerateStore();
+    void regenerateStore(int[] newValues) throws Exception;
 }
