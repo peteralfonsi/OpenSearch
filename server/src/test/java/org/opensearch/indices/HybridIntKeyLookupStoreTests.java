@@ -225,4 +225,40 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
             assertEquals(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD + 5000, kls.getSize());
         }
     }
+
+    public void testMemoryCapValueInitialization() {
+        double[] logModulos = new double[]{0.0, 31.2, 30, 29, 28, 13}; // these will decrement by 1
+        double[] expectedMultipliers = new double[]{1.35, 1.35, 1.6, 1.6, 1.6, 1.6};
+        double[] expectedSlopes = new double[]{0.69, 0.69, 0.75, 0.75, 0.88, 0.88};
+        double[] expectedIntercepts = new double[]{-3, -3, -3.5, -3.5, -4.5, -4.5};
+        double memSizeCap = 100.0;
+        double delta = 0.01;
+        for (int i = 0; i < logModulos.length; i++) {
+            int modulo = 0;
+            if (logModulos[i] != 0) {
+                modulo = (int) Math.pow(2, logModulos[i]);
+            }
+            //System.out.println(i);
+            HybridIntKeyLookupStore rbm = new HybridIntKeyLookupStore(modulo, memSizeCap);
+            //System.out.println(Math.log(0.5 * rbm.getModulo()) / Math.log(2));
+            assertEquals(memSizeCap, rbm.getMemorySizeCap(), 1.0);
+            assertEquals(expectedMultipliers[i], rbm.getRBMMemBufferMultiplier(), delta);
+            assertEquals(expectedSlopes[i], rbm.getRBMMemSlope(), delta);
+            assertEquals(expectedIntercepts[i], rbm.getRBMMemIntercept(), delta);
+        }
+    }
+
+    public void testMemoryCapBlocksTransitions() {
+        double[] testModulos = new double[]{0, Math.pow(2, 31), Math.pow(2, 29), Math.pow(2, 28), Math.pow(2, 26)};
+        for (int i = 0; i < testModulos.length; i++) {
+            int modulo = (int) testModulos[i];
+            double intArrMemSize = HybridIntKeyLookupStore.getIntArrMemSize(); //
+            double maxHashsetMemSize = HybridIntKeyLookupStore.getHashsetMemSize(HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD-1);
+            double minRBMMemSize = HybridIntKeyLookupStore.getRBMMemSizeWithModulo(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD, modulo);
+            //System.out.println("hash max " + maxHashsetMemSize);
+            System.out.println("intarr size " + intArrMemSize); // Hash -> intArr is indeed monotonic, 0.03 -> 0.381 MB
+            System.out.println("smallest RBM size" + minRBMMemSize);
+            HybridIntKeyLookupStore rbm = new HybridIntKeyLookupStore(modulo, intArrMemSize);
+        }
+    }
 }

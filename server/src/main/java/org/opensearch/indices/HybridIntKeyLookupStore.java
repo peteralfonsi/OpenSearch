@@ -49,13 +49,6 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         RBM
     };
 
-    // These are used to estimate RBM memory usage. For info about where the numbers came from, see
-    // https://quip-amazon.com/9Vl3A3kBq2bR/IntKeyLookupStore-Size-Estimates
-    protected static double[] RBM_MEM_MODULOS = new double[]{32, 31, 29, 28, 26};
-    protected static double [] RBM_MEM_SLOPES = new double[]{4.13*Math.pow(10, -6), 3.78*Math.pow(10, -6), 3.27*Math.pow(10, -6), 2.15*Math.pow(10, -6), 4.41*Math.pow(10, -6)};
-    protected static double[] RBM_MEM_INTERCEPTS = new double[]{11.9, 16.9, 19.3, 19.7, 5.16};
-
-
     protected StructureTypes currentStructure;
     protected final int modulo;
     protected int size;
@@ -88,7 +81,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         this.numCollisions = 0;
         this.guaranteesNoFalseNegatives = true;
         this.memSizeCap = memSizeCap; // A cap of 0 means no cap
-        memSizeHelperFunction(); // Initialize values for RBM memory size estimates
+        memSizeInitFunction(); // Initialize values for RBM memory size estimates
     }
 
 
@@ -166,7 +159,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
      */
     protected final void handleStructureSwitch() throws Exception { // write lock?
         if (size == HASHSET_TO_INTARR_THRESHOLD - 1) {
-            if (getIntArrMemSize(INTARR_SIZE) >= memSizeCap && memSizeCap != 0) {
+            if (getIntArrMemSize() >= memSizeCap && memSizeCap != 0) {
                 isAtCapacity = true;
                 return;
             }
@@ -376,46 +369,64 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         return transform(value1) == transform(value2);
     }
 
-    protected void memSizeHelperFunction() {
-        // Run once in constructor to set up values to help estimate RBM size
+    protected static double[] memSizeHelperFunction(int modulo) {
+        // Run to set up values to help estimate RBM size given a modulo
+        // Returns an array of {bufferMultiplier, slope, intercept}
         double modifiedModulo;
         if (modulo == 0) {
             modifiedModulo = 31.0;
         } else {
-            modifiedModulo = 0.5 * Math.log(modulo) / Math.log(2);
+            modifiedModulo = Math.log(0.5 * modulo) / Math.log(2);
         }
         // Note the effective modulos are 0.5x compared to tests, since we also use only negative numbers due to the intArr
-        this.RBMMemBufferMultiplier = 1.35;
-        if (modifiedModulo <= 29.0) {
-            this.RBMMemBufferMultiplier = 1.6;
+        double highCutoff = 29.001; // Floating point makes 29 not work
+        double lowCutoff = 28.0;
+        double bufferMultiplier = 1.35;
+        if (modifiedModulo <= highCutoff) {
+            bufferMultiplier = 1.6;
         }
 
-        // Round the modulo up to the nearest tested value, which should tend to overestimate rather than underestimate
-        this.RBMMemSlope = RBM_MEM_SLOPES[RBM_MEM_SLOPES.length-1];
-        this.RBMMemIntercept = RBM_MEM_INTERCEPTS[RBM_MEM_INTERCEPTS.length-1];
-        for (int i = 0; i < RBM_MEM_MODULOS.length-1; i++) {
-            if (modifiedModulo <= RBM_MEM_MODULOS[i] && modifiedModulo > RBM_MEM_MODULOS[i+1]) {
-                this.RBMMemSlope = RBM_MEM_SLOPES[i];
-                this.RBMMemIntercept = RBM_MEM_INTERCEPTS[i];
-                break;
-            }
+        double slope;
+        double intercept;
+        if (modifiedModulo > highCutoff) {
+            slope = 0.69;
+            intercept = -3;
+        } else if (modifiedModulo >= lowCutoff) {
+            slope = 0.75;
+            intercept = -3.5;
+        } else {
+            slope = 0.88;
+            intercept = -4.5;
         }
+        return new double[]{bufferMultiplier, slope, intercept};
     }
 
-    protected double getHashsetMemSize(int numEntries) {
+    protected void memSizeInitFunction() {
+        double[] memSizeValues = memSizeHelperFunction(modulo);
+        this.RBMMemBufferMultiplier = memSizeValues[0];
+        this.RBMMemSlope = memSizeValues[1];
+        this.RBMMemIntercept = memSizeValues[2];
+    }
+
+    protected static double getHashsetMemSize(int numEntries) {
         // See https://quip-amazon.com/9Vl3A3kBq2bR/IntKeyLookupStore-Size-Estimates
         // for an explanation of where these numbers came from
         return 6.46 * Math.pow(10, -6) * numEntries;
     }
 
-    protected double getIntArrMemSize(int numEntries) {
-        return (4 * numEntries + 24) / (Math.pow(2, 20));
+    protected static double getIntArrMemSize() {
+        return (4 * INTARR_SIZE + 24) / (Math.pow(2, 20));
     }
 
     protected double getRBMMemSize(int numEntries) {
         // See https://quip-amazon.com/9Vl3A3kBq2bR/IntKeyLookupStore-Size-Estimates
         // for an explanation of where these numbers came from
-        return RBMMemBufferMultiplier * (numEntries * RBMMemSlope + RBMMemIntercept);
+        return Math.pow(numEntries, RBMMemSlope) * Math.pow(10, RBMMemIntercept) * RBMMemBufferMultiplier;
+    }
+
+    protected static double getRBMMemSizeWithModulo(int numEntries, int modulo) {
+        double[] memSizeValues = memSizeHelperFunction(modulo);
+        return Math.pow(numEntries, memSizeValues[1]) * Math.pow(10, memSizeValues[2]) * memSizeValues[0];
     }
 
     @Override
@@ -424,7 +435,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
             case HASHSET:
                 return getHashsetMemSize(size);
             case INTARR:
-                return getIntArrMemSize(INTARR_SIZE);
+                return getIntArrMemSize();
             case RBM:
                 return getRBMMemSize(size);
         }
@@ -434,6 +445,16 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     @Override
     public double getMemorySizeCap() {
         return memSizeCap;
+    }
+
+    public double getRBMMemSlope(){
+        return RBMMemSlope;
+    }
+    public double getRBMMemBufferMultiplier() {
+        return RBMMemBufferMultiplier;
+    }
+    public double getRBMMemIntercept() {
+        return RBMMemIntercept;
     }
 
     @Override
