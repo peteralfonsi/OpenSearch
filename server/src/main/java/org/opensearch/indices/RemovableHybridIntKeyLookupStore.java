@@ -33,15 +33,13 @@
 package org.opensearch.indices;
 
 import java.util.HashSet;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore implements IntKeyLookupStore {
     private HashSet<Integer> collidedInts;
     private int numRemovalAttempts;
     private int numSuccessfulRemovals;
-    RemovableHybridIntKeyLookupStore(int modulo) {
-        super(modulo);
+    RemovableHybridIntKeyLookupStore(int modulo, double memSizeCap) {
+        super(modulo, memSizeCap);
         collidedInts = new HashSet<>();
         numRemovalAttempts = 0;
         numSuccessfulRemovals = 0;
@@ -60,13 +58,18 @@ public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore im
 
     @Override
     public boolean remove(int value) throws Exception {
-        if (!contains(value)) {
-            return false;
-        }
         int transformedValue = transform(value);
-        numRemovalAttempts++;
-        if (collidedInts.contains(transformedValue)) {
-            return false;
+        readLock.lock();
+        try {
+            if (!contains(value)) {
+                return false;
+            }
+            numRemovalAttempts++;
+            if (collidedInts.contains(transformedValue)) {
+                return false;
+            }
+        } finally {
+            readLock.unlock();
         }
         writeLock.lock();
         try {
@@ -76,6 +79,11 @@ public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore im
         } finally {
             writeLock.unlock();
         }
+    }
+
+    @Override
+    public double getMemorySize() {
+        return super.getMemorySize() + getHashsetMemSize(collidedInts.size());
     }
 
     public int getNumRemovalAttempts() {

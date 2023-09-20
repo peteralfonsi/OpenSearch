@@ -140,9 +140,20 @@ public interface IntKeyLookupStore {
 
     /**
      * Returns an estimate of the store's memory usage.
-     * @return The memory usage
+     * @return The memory usage, in MB
      */
-    long getMemorySize();
+    double getMemorySize();
+
+    /**
+     * Returns the cap for the store's memory usage.
+     * @return The cap, in MB
+     */
+    double getMemorySizeCap();
+
+    /**
+     * Returns whether the store is at memory capacity
+     */
+    boolean getIsAtCapacity();
 
     /**
      * Deletes the internal data structure and regenerates it from the values passed in.
