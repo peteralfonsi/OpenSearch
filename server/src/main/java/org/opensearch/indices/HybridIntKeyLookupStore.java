@@ -42,6 +42,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     public static final int HASHSET_TO_INTARR_THRESHOLD = 5000;
     public static final int INTARR_SIZE = 100000;
     public static final int INTARR_TO_RBM_THRESHOLD = INTARR_SIZE;
+    public static final double HASHSET_MEM_SLOPE = 6.46 * Math.pow(10, -6); // used to calculate memory usage
 
     public enum StructureTypes {
         HASHSET,
@@ -69,6 +70,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     protected double RBMMemSlope;
     protected double RBMMemBufferMultiplier;
     protected double RBMMemIntercept;
+    protected int maxNumEntries;
     protected boolean isAtCapacity;
 
 
@@ -82,6 +84,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         this.guaranteesNoFalseNegatives = true;
         this.memSizeCap = memSizeCap; // A cap of 0 means no cap
         memSizeInitFunction(); // Initialize values for RBM memory size estimates
+        this.maxNumEntries = calculateMaxNumEntries();
     }
 
 
@@ -159,13 +162,15 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
      */
     protected final void handleStructureSwitch() throws Exception { // write lock?
         if (size == HASHSET_TO_INTARR_THRESHOLD - 1) {
-            if (getIntArrMemSize() >= memSizeCap && memSizeCap != 0) {
+            //if (getIntArrMemSize() >= memSizeCap && memSizeCap != 0) {
+            if (maxNumEntries <= HASHSET_TO_INTARR_THRESHOLD) {
                 isAtCapacity = true;
                 return;
             }
             switchHashsetToIntArr();
         } else if (size == INTARR_TO_RBM_THRESHOLD - 1) {
-            if (getRBMMemSize(INTARR_TO_RBM_THRESHOLD) >= memSizeCap && memSizeCap != 0) {
+            //if (getRBMMemSize(INTARR_TO_RBM_THRESHOLD) >= memSizeCap && memSizeCap != 0) {
+            if (maxNumEntries <= INTARR_TO_RBM_THRESHOLD) {
                 isAtCapacity = true;
                 return;
             }
@@ -191,7 +196,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     public boolean add(int value) throws Exception {
         writeLock.lock();
         try {
-            if (getMemorySize() >= memSizeCap && memSizeCap != 0) {
+            if (size == maxNumEntries) {
                 isAtCapacity = true;
             }
             handleStructureSwitch(); // also might set isAtCapacity
@@ -372,6 +377,9 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     protected static double[] memSizeHelperFunction(int modulo) {
         // Run to set up values to help estimate RBM size given a modulo
         // Returns an array of {bufferMultiplier, slope, intercept}
+        // See https://quip-amazon.com/9Vl3A3kBq2bR/IntKeyLookupStore-Size-Estimates
+        // for an explanation of where these numbers came from
+
         double modifiedModulo;
         if (modulo == 0) {
             modifiedModulo = 31.0;
@@ -408,10 +416,31 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         this.RBMMemIntercept = memSizeValues[2];
     }
 
+    protected int calculateMaxNumEntries() {
+        double maxHashsetMemSize = HybridIntKeyLookupStore.getHashsetMemSize(HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD-1);
+        double intArrMemSize = HybridIntKeyLookupStore.getIntArrMemSize();
+        double minRBMMemSize = HybridIntKeyLookupStore.getRBMMemSizeWithModulo(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD, modulo);
+
+        if (memSizeCap == 0) {
+            return Integer.MAX_VALUE;
+        }
+        if (memSizeCap >= minRBMMemSize) {
+            // max number of elements will be when we have an RBM
+
+            return (int) Math.pow(memSizeCap / (this.RBMMemBufferMultiplier * Math.pow(10, this.RBMMemIntercept)), 1 / this.RBMMemSlope);
+        }
+        if (memSizeCap < intArrMemSize) {
+            // max number of elements will be when we have a hash set
+            return Math.min((int) (memSizeCap / HASHSET_MEM_SLOPE), HASHSET_TO_INTARR_THRESHOLD-1);
+        }
+        // max number of elements will be when we have an intArr
+        return HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD - 1;
+    }
+
     protected static double getHashsetMemSize(int numEntries) {
         // See https://quip-amazon.com/9Vl3A3kBq2bR/IntKeyLookupStore-Size-Estimates
         // for an explanation of where these numbers came from
-        return 6.46 * Math.pow(10, -6) * numEntries;
+        return HASHSET_MEM_SLOPE * numEntries;
     }
 
     protected static double getIntArrMemSize() {
@@ -455,6 +484,10 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
     public double getRBMMemIntercept() {
         return RBMMemIntercept;
+    }
+
+    public int getMaxNumEntries() {
+        return maxNumEntries;
     }
 
     @Override

@@ -248,17 +248,84 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
         }
     }
 
-    public void testMemoryCapBlocksTransitions() {
+    public void testMemoryCapBlocksTransitions() throws Exception {
         double[] testModulos = new double[]{0, Math.pow(2, 31), Math.pow(2, 29), Math.pow(2, 28), Math.pow(2, 26)};
         for (int i = 0; i < testModulos.length; i++) {
             int modulo = (int) testModulos[i];
-            double intArrMemSize = HybridIntKeyLookupStore.getIntArrMemSize(); //
             double maxHashsetMemSize = HybridIntKeyLookupStore.getHashsetMemSize(HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD-1);
+            double intArrMemSize = HybridIntKeyLookupStore.getIntArrMemSize();
             double minRBMMemSize = HybridIntKeyLookupStore.getRBMMemSizeWithModulo(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD, modulo);
             //System.out.println("hash max " + maxHashsetMemSize);
-            System.out.println("intarr size " + intArrMemSize); // Hash -> intArr is indeed monotonic, 0.03 -> 0.381 MB
-            System.out.println("smallest RBM size" + minRBMMemSize);
-            HybridIntKeyLookupStore rbm = new HybridIntKeyLookupStore(modulo, intArrMemSize);
+            //System.out.println("intarr size " + intArrMemSize); // Hash -> intArr is indeed monotonic, 0.03 -> 0.381 MB
+            //System.out.println("smallest RBM size" + minRBMMemSize);
+            //System.out.println("1M RBM size " + HybridIntKeyLookupStore.getRBMMemSizeWithModulo(1000000, modulo));
+
+            // test that transitions in data structure do indeed monotonically increase predicted memory size
+            assertTrue(maxHashsetMemSize < intArrMemSize);
+            assertTrue(intArrMemSize < minRBMMemSize);
+
+            HybridIntKeyLookupStore kls = new HybridIntKeyLookupStore(modulo, intArrMemSize-0.01);
+            for (int j = 0; j < HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD - 1; j++) {
+                boolean didAdd = kls.add(j);
+                assertTrue(didAdd);
+            }
+            // now try to add one more, which would cause a transition and push us past the memory cap
+            assertFalse(kls.getIsAtCapacity());
+            assertEquals("HashSet", kls.getCurrentStructure());
+            boolean didAdd = kls.add(HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD-1);
+            assertFalse(didAdd);
+            assertTrue(kls.getIsAtCapacity());
+            assertEquals("HashSet", kls.getCurrentStructure());
+
+            kls = new HybridIntKeyLookupStore(modulo, minRBMMemSize);
+            System.out.println("max num entries " + kls.getMaxNumEntries());
+            for (int j = 0; j < HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD - 1; j++) {
+                didAdd = kls.add(j);
+                if (!didAdd) {
+                    System.out.println(j);
+                }
+                assertTrue(didAdd);
+            }
+            assertFalse(kls.getIsAtCapacity());
+            didAdd = kls.add(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD);
+            assertFalse(didAdd);
+            assertTrue(kls.getIsAtCapacity());
+            assertEquals("intArr", kls.getCurrentStructure());
+        }
+    }
+
+    public void testMemoryCapBlocksAdd() throws Exception {
+        double[] testModulos = new double[]{0, Math.pow(2, 31), Math.pow(2, 29), Math.pow(2, 28), Math.pow(2, 26)};
+        for (int i = 0; i < testModulos.length; i++) {
+            int modulo = (int) testModulos[i];
+
+            // test where max number of entries should be 3000
+            double memSizeCap = HybridIntKeyLookupStore.HASHSET_MEM_SLOPE * 3000;
+            HybridIntKeyLookupStore kls = new HybridIntKeyLookupStore(modulo, memSizeCap);
+            //System.out.println(memSizeCap);
+            for (int j = 0; j < 3500; j++) {
+                kls.add(j);
+            }
+            assertEquals(3000, kls.getSize());
+            assertEquals("HashSet", kls.getCurrentStructure());
+
+            // test where max number of entries should be 999,999 (bounded at intArr size)
+            memSizeCap = HybridIntKeyLookupStore.getIntArrMemSize();
+            kls = new HybridIntKeyLookupStore(modulo, memSizeCap);
+            for (int j = 0; j < 105000; j++) {
+                kls.add(j);
+            }
+            assertEquals(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD-1, kls.getSize());
+            assertEquals("intArr", kls.getCurrentStructure());
+
+            int maxEntries = 2342000;
+            memSizeCap = HybridIntKeyLookupStore.getRBMMemSizeWithModulo(maxEntries, modulo);
+            kls = new HybridIntKeyLookupStore(modulo, memSizeCap);
+            for (int j = 0; j < maxEntries+1000; j++) {
+                kls.add(j);
+            }
+            //System.out.println(kls.getMaxNumEntries());
+            assertTrue(Math.abs(maxEntries - kls.getSize()) < 2); // exact cap varies a small amount bc of floating point
         }
     }
 }
