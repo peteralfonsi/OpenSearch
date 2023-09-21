@@ -31,7 +31,11 @@
 
 package org.opensearch.indices;
 
+import java.util.ArrayList;
 import java.util.Random;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
 
 // Tests base functionality of HybridIntKeyLookupStore for both that class and the inheriting
 // RemovableHybridIntKeyLookupStore.
@@ -326,6 +330,74 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
             }
             //System.out.println(kls.getMaxNumEntries());
             assertTrue(Math.abs(maxEntries - kls.getSize()) < 2); // exact cap varies a small amount bc of floating point
+        }
+    }
+
+    public void testConcurrency() throws Exception {
+        Random rand = new Random();
+        for (int j = 0; j < 5; j++) { // test with different numbers of threads
+            HybridIntKeyLookupStore base_kls = new HybridIntKeyLookupStore((int) Math.pow(2, 29), 0.0);
+            RemovableHybridIntKeyLookupStore rkls = new RemovableHybridIntKeyLookupStore((int) Math.pow(2, 29), 0.0);
+            for (HybridIntKeyLookupStore kls: new HybridIntKeyLookupStore[]{base_kls, rkls}) {
+                int numThreads = rand.nextInt(50) + 1;
+                ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(numThreads);
+                // In this test we want to add the first 200K numbers and check they're all correctly there.
+                // We do some duplicates too to ensure those aren't incorrectly added.
+                int amountToAdd = 200000;
+                ArrayList<Future<Boolean>> wasAdded = new ArrayList<>(amountToAdd); // idk why i cant make an array???
+                ArrayList<Future<Boolean>> duplicatesWasAdded = new ArrayList<>();
+                for (int i = 0; i < amountToAdd; i++) {
+                    wasAdded.add(null);
+                }
+                for (int i = 0; i < amountToAdd; i++) {
+                    final int val = i;
+                    Future<Boolean> fut = executor.submit(() -> {
+                        boolean didAdd;
+                        try {
+                            didAdd = kls.add(val);
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
+                        return didAdd;
+                    });
+                    wasAdded.set(val, fut);
+                    if (val % 1000 == 0) {
+                        // do a duplicate add
+                        Future<Boolean> duplicateFut = executor.submit(() -> {
+                            boolean didAdd;
+                            try {
+                                didAdd = kls.add(val);
+                            } catch (Exception e) {
+                                throw new RuntimeException(e);
+                            }
+                            return didAdd;
+                        });
+                        duplicatesWasAdded.add(duplicateFut);
+                    }
+                }
+                int originalAdds = 0;
+                int duplicateAdds = 0;
+                for (Future<Boolean> fut : wasAdded) {
+                    if (fut.get()) {
+                        originalAdds++;
+                    }
+                }
+                for (Future<Boolean> duplicateFut : duplicatesWasAdded) {
+                    if (duplicateFut.get()) {
+                        duplicateAdds++;
+                    }
+                }
+                for (int i = 0; i < amountToAdd; i++) {
+                    assertTrue(kls.contains(i));
+                }
+                //System.out.println(originalAdds);
+                //System.out.println(duplicateAdds);
+                //System.out.println(kls.getNumCollisions());
+                assertEquals(amountToAdd, originalAdds + duplicateAdds);
+                assertEquals(amountToAdd, kls.getSize());
+                assertEquals(amountToAdd / 1000, kls.getNumCollisions());
+                executor.shutdown();
+            }
         }
     }
 }

@@ -94,4 +94,8 @@ public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore im
         return numSuccessfulRemovals;
     }
 
+    public boolean valueHasHadCollision(int value) {
+        return collidedInts.contains(transform(value));
+    }
+
 }
