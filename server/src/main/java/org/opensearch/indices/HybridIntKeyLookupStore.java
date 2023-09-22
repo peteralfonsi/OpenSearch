@@ -73,6 +73,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     protected final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     protected final Lock readLock = lock.readLock();
     protected final Lock writeLock = lock.writeLock();
+    
 
     // These are used to estimate RBM memory usage
     protected double RBMMemSlope;
