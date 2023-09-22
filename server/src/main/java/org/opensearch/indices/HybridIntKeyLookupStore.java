@@ -32,11 +32,12 @@
 
 package org.opensearch.indices;
 
-import org.roaringbitmap.RoaringBitmap;
-import java.util.HashSet;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+
+import org.roaringbitmap.RoaringBitmap;
 
 /**
  * A store which dynamically switches its internal data structure from hash set to sorted int array
@@ -49,7 +50,10 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     public static final int INTARR_TO_RBM_THRESHOLD = INTARR_SIZE;
     public static final double HASHSET_MEM_SLOPE = 6.46 * Math.pow(10, -6); // used to calculate memory usage
 
-    public enum StructureTypes {
+    /**
+     * Used to keep track of which structure is being used to store values.
+     */
+    protected enum StructureTypes {
         HASHSET,
         INTARR,
         RBM

@@ -31,8 +31,10 @@
 
 package org.opensearch.indices;
 
-import java.util.ArrayList;
 import org.opensearch.common.Randomness;
+import org.opensearch.test.OpenSearchTestCase;
+
+import java.util.ArrayList;
 import java.util.Random;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -41,7 +43,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 // Tests base functionality of HybridIntKeyLookupStore for both that class and the inheriting
 // RemovableHybridIntKeyLookupStore.
 
-public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneTestCase {
+public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
     public void testInit() throws Exception {
         HybridIntKeyLookupStore base_kls = new HybridIntKeyLookupStore((int) Math.pow(2, 29), 0.0);
         RemovableHybridIntKeyLookupStore rkls = new RemovableHybridIntKeyLookupStore((int) Math.pow(2, 29), 0.0);

@@ -32,10 +32,12 @@
 
 package org.opensearch.indices;
 
+import org.opensearch.test.OpenSearchTestCase;
+
 // NOTE: Only new functionality is tested here.
 // Inherited functionality is tested for both this class and the superclass in HybridIntKeyLookupStoreTests.java.
 
-public class RemovableHybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneTestCase {
+public class RemovableHybridIntKeyLookupStoreTests extends OpenSearchTestCase {
     public void testRemoveNoCollisions() throws Exception {
         RemovableHybridIntKeyLookupStore rkls = new RemovableHybridIntKeyLookupStore(0, 100.0);
         // there should be no collisions for sequential positive numbers up to modulo
