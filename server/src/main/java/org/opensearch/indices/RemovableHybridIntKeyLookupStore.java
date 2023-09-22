@@ -34,6 +34,11 @@ package org.opensearch.indices;
 
 import java.util.HashSet;
 
+/**
+ * A store which supports safe removal of keys by maintaining a hashset of values that have had collisions.
+ * For reasoning behind design decisions, see
+ * https://quip-amazon.com/JdWGAYm2doCm/Roaring-Bitmap-Performance-Testing
+ */
 public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore implements IntKeyLookupStore {
     private HashSet<Integer> collidedInts;
     private int numRemovalAttempts;
@@ -56,6 +61,7 @@ public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore im
         return true;
     }
 
+    // Check if the value to remove has had a collision, and if not, remove it
     @Override
     public boolean remove(int value) throws IllegalStateException {
         int transformedValue = transform(value);

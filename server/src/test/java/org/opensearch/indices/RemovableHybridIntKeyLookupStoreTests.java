@@ -35,7 +35,6 @@ package org.opensearch.indices;
 // NOTE: Only new functionality is tested here.
 // Inherited functionality is tested for both this class and the superclass in HybridIntKeyLookupStoreTests.java.
 
-
 public class RemovableHybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneTestCase {
     public void testRemoveNoCollisions() throws Exception {
         RemovableHybridIntKeyLookupStore rkls = new RemovableHybridIntKeyLookupStore(0, 100.0);
