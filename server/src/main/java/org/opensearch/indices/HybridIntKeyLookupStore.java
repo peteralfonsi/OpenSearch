@@ -38,6 +38,11 @@ import java.util.Arrays;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+/**
+ * A store which dynamically switches its internal data structure from hash set to sorted int array
+ * to roaring bitmap. For reasoning behind design decisions, see
+ * https://quip-amazon.com/JdWGAYm2doCm/Roaring-Bitmap-Performance-Testing
+ */
 public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     public static final int HASHSET_TO_INTARR_THRESHOLD = 5000;
     public static final int INTARR_SIZE = 100000;
@@ -61,7 +66,6 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     protected HashSet<Integer> hashset;
     protected int[] intArr;
     protected RoaringBitmap rbm;
-    // set these to null once they're replaced - then GC will pick it up allegedly
     protected final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     protected final Lock readLock = lock.readLock();
     protected final Lock writeLock = lock.writeLock();
@@ -87,7 +91,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         this.maxNumEntries = calculateMaxNumEntries();
     }
 
-    protected final int customAbs(int value) { // this seems really extra of the forbidden-apis-config to enforce...
+    protected final int customAbs(int value) {
         if (value < 0 && value > Integer.MIN_VALUE) {
             return -value;
         } else if (value >= 0) {
@@ -97,21 +101,24 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     protected final int transform(int value) {
+        // We only use negative numbers to simplify sorting the int array
         return modulo == 0 ? -customAbs(value) : -customAbs(value % modulo);
     }
 
-    protected void intArrChecks(int value) throws Exception {
+    // Helper function for intArr operations
+    protected void intArrChecks(int value) throws IllegalStateException {
         if (currentStructure != StructureTypes.INTARR) {
-            throw new Exception("Cannot run isInIntArr when currentStructure is not INTARR!!");
+            throw new IllegalStateException("Cannot run isInIntArr when currentStructure is not INTARR!!");
         }
         if (value > 0) {
-            throw new Exception("Cannot use positive value " + Integer.toString(value) + " in isInIntArr");
+            throw new IllegalStateException("Cannot use positive value " + Integer.toString(value) + " in isInIntArr");
         }
     }
 
-    protected final boolean isInIntArr(int value, int arrSize, boolean doAdd) throws Exception { // write lock?
-        // Checks for presence of value in intArr. If doAdd is true and the value is not already there, adds it.
-        // Returns true if the value was already contained (and therefore not added again), false otherwise
+    /** Checks for presence of value in intArr. If doAdd is true and the value is not already there, adds it.
+     * Returns true if the value was already contained (and therefore not added again), false otherwise
+     */
+    protected final boolean isInIntArr(int value, int arrSize, boolean doAdd) throws IllegalStateException {
         Lock lock = doAdd ? writeLock : readLock;
         lock.lock();
         try {
@@ -131,9 +138,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         }
     }
 
-    protected final void switchHashsetToIntArr() throws Exception { // write lock?
-        // during the transitions, especially intarr->RBM, the memory usage will spike. Not sure how to handle this, or if it's really a
-        // problem?
+    protected final void switchHashsetToIntArr() throws IllegalStateException {
         writeLock.lock();
         try {
             if (currentStructure == StructureTypes.HASHSET) {
@@ -154,7 +159,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         }
     }
 
-    protected final void switchIntArrToRBM() { // write lock?
+    protected final void switchIntArrToRBM() {
         writeLock.lock();
         try {
             if (currentStructure == StructureTypes.INTARR) {
@@ -174,18 +179,16 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
      * Checks if adding an additional value would require us to change data structures.
      * If so, start that change.
      */
-    protected final void handleStructureSwitch() throws Exception { // write lock?
+    protected final void handleStructureSwitch() throws IllegalStateException { // write lock?
         writeLock.lock();
         try {
             if (size == HASHSET_TO_INTARR_THRESHOLD - 1) {
-                //if (getIntArrMemSize() >= memSizeCap && memSizeCap != 0) {
                 if (maxNumEntries <= HASHSET_TO_INTARR_THRESHOLD) {
                     isAtCapacity = true;
                     return;
                 }
                 switchHashsetToIntArr();
             } else if (size == INTARR_TO_RBM_THRESHOLD - 1) {
-                //if (getRBMMemSize(INTARR_TO_RBM_THRESHOLD) >= memSizeCap && memSizeCap != 0) {
                 if (maxNumEntries <= INTARR_TO_RBM_THRESHOLD) {
                     isAtCapacity = true;
                     return;
@@ -197,7 +200,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         }
     }
 
-    protected final void removeFromIntArr(int value) throws Exception {
+    protected final void removeFromIntArr(int value) throws IllegalStateException {
         writeLock.lock();
         try {
             intArrChecks(value);
@@ -217,7 +220,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public boolean add(int value) throws Exception {
+    public boolean add(int value) throws IllegalStateException {
         writeLock.lock();
         try {
             if (size == maxNumEntries) {
@@ -244,7 +247,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
                         }
                         break;
                     default:
-                        throw new Exception("currentStructure is none of possible values");
+                        throw new IllegalStateException("currentStructure is none of possible values");
                 }
                 if (alreadyContained) {
                     handleCollisions(transformedValue);
@@ -259,8 +262,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         }
     }
 
-    protected boolean containsTransformed(int transformedValue) throws Exception {
-        // fill in with switch statement
+    protected boolean containsTransformed(int transformedValue) throws IllegalStateException {
         readLock.lock();
         try {
             switch (currentStructure) {
@@ -271,16 +273,15 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
                 case RBM:
                     return rbm.contains(transformedValue);
                 default:
-                    throw new Exception("currentStructure is none of possible values");
+                    throw new IllegalStateException("currentStructure is none of possible values");
             }
         } finally {
             readLock.unlock();
         }
     }
 
+    // Check the array is sorted with no duplicate elements (except 0)
     protected boolean arrayCorrectlySorted() {
-        // I think this is necessary as a protected method for unit testing, but shouldn't be used otherwise
-        // How should I improve this?
         readLock.lock();
         try {
             if (currentStructure == StructureTypes.INTARR) {
@@ -298,7 +299,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public boolean contains(int value) throws Exception {
+    public boolean contains(int value) throws IllegalStateException {
         int transformedValue = transform(value);
         return containsTransformed(transformedValue);
     }
@@ -309,7 +310,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public boolean remove(int value) throws Exception {
+    public boolean remove(int value) throws IllegalStateException {
         return false;
     }
 
@@ -318,7 +319,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         return false;
     }
 
-    protected void removeHelperFunction(int transformedValue) throws Exception {
+    protected void removeHelperFunction(int transformedValue) throws IllegalStateException {
         // allows code to be reused in forceRemove() of this class and remove() of inheriting class
         // shouldn't be called on its own, or on a value that's not already inside the structure
         switch (currentStructure) {
@@ -335,7 +336,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         }
     }
     @Override
-    public void forceRemove(int value) throws Exception {
+    public void forceRemove(int value) throws IllegalStateException {
         writeLock.lock();
         guaranteesNoFalseNegatives = false;
         try {
@@ -375,7 +376,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public String getCurrentStructure() throws Exception {
+    public String getCurrentStructure() throws IllegalStateException {
         switch (currentStructure) {
             case HASHSET:
                 return "HashSet";
@@ -384,7 +385,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
             case RBM:
                 return "RBM";
             default:
-                throw new Exception("currentStructure is none of possible values");
+                throw new IllegalStateException("currentStructure is none of possible values");
         }
     }
 
@@ -404,7 +405,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     protected static double[] memSizeHelperFunction(int modulo) {
-        // Run to set up values to help estimate RBM size given a modulo
+        // Sets up values to help estimate RBM size given a modulo
         // Returns an array of {bufferMultiplier, slope, intercept}
         // See https://quip-amazon.com/9Vl3A3kBq2bR/IntKeyLookupStore-Size-Estimates
         // for an explanation of where these numbers came from
@@ -455,7 +456,6 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         }
         if (memSizeCap >= minRBMMemSize) {
             // max number of elements will be when we have an RBM
-
             return (int) Math.pow(memSizeCap / (this.RBMMemBufferMultiplier * Math.pow(10, this.RBMMemIntercept)), 1 / this.RBMMemSlope);
         }
         if (memSizeCap < intArrMemSize) {
@@ -525,7 +525,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public void regenerateStore(int[] newValues) throws Exception {
+    public void regenerateStore(int[] newValues) throws IllegalStateException {
         intArr = null;
         rbm = null;
         size = 0;

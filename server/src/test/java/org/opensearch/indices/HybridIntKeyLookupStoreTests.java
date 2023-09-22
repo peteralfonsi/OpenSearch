@@ -79,14 +79,12 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
                 kls.add(val);
                 addedValues[i] = val;
             }
-            System.out.println(kls.getSize());
             assertTrue(kls.arrayCorrectlySorted()); // Not sure if this is really good as a public method - but idk how else to do it?
             assertTrue(numToAdd - kls.getSize() < 20); // size should not be too different from numToAdd - exact number varies due to collisions
             int numToRemove = 20000;
             for (int j = 0; j < numToRemove; j++) {
                 kls.forceRemove(addedValues[j]);
             }
-            System.out.println(kls.getSize());
             assertTrue(numToAdd - numToRemove - kls.getSize() < 20);
             assertTrue(kls.arrayCorrectlySorted());
             assertTrue(kls.canHaveFalseNegatives());
@@ -129,7 +127,6 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
                 kls.forceRemove(i);
                 assertFalse(kls.contains(i));
             }
-            System.out.println(kls.contains(1901));
             assertEquals(1900, kls.getSize());
             int lastSize = kls.getSize();
             for (int i = kls.getSize(); i < HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD; i++) {
@@ -139,7 +136,6 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
                 assertEquals(1, kls.getSize() - lastSize);
                 lastSize = kls.getSize();
             }
-            System.out.println(kls.getSize());
             assertEquals("intArr", kls.getCurrentStructure());
             assertEquals(HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD, kls.getSize());
             for (int i = kls.getSize(); i < HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD + 1000; i++) {
@@ -242,9 +238,7 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
             if (logModulos[i] != 0) {
                 modulo = (int) Math.pow(2, logModulos[i]);
             }
-            //System.out.println(i);
             HybridIntKeyLookupStore rbm = new HybridIntKeyLookupStore(modulo, memSizeCap);
-            //System.out.println(Math.log(0.5 * rbm.getModulo()) / Math.log(2));
             assertEquals(memSizeCap, rbm.getMemorySizeCap(), 1.0);
             assertEquals(expectedMultipliers[i], rbm.getRBMMemBufferMultiplier(), delta);
             assertEquals(expectedSlopes[i], rbm.getRBMMemSlope(), delta);
@@ -259,10 +253,6 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
             double maxHashsetMemSize = HybridIntKeyLookupStore.getHashsetMemSize(HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD-1);
             double intArrMemSize = HybridIntKeyLookupStore.getIntArrMemSize();
             double minRBMMemSize = HybridIntKeyLookupStore.getRBMMemSizeWithModulo(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD, modulo);
-            //System.out.println("hash max " + maxHashsetMemSize);
-            //System.out.println("intarr size " + intArrMemSize); // Hash -> intArr is indeed monotonic, 0.03 -> 0.381 MB
-            //System.out.println("smallest RBM size" + minRBMMemSize);
-            //System.out.println("1M RBM size " + HybridIntKeyLookupStore.getRBMMemSizeWithModulo(1000000, modulo));
 
             // test that transitions in data structure do indeed monotonically increase predicted memory size
             assertTrue(maxHashsetMemSize < intArrMemSize);
@@ -306,7 +296,6 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
             // test where max number of entries should be 3000
             double memSizeCap = HybridIntKeyLookupStore.HASHSET_MEM_SLOPE * 3000;
             HybridIntKeyLookupStore kls = new HybridIntKeyLookupStore(modulo, memSizeCap);
-            //System.out.println(memSizeCap);
             for (int j = 0; j < 3500; j++) {
                 kls.add(j);
             }
@@ -328,7 +317,6 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
             for (int j = 0; j < maxEntries+1000; j++) {
                 kls.add(j);
             }
-            //System.out.println(kls.getMaxNumEntries());
             assertTrue(Math.abs(maxEntries - kls.getSize()) < 2); // exact cap varies a small amount bc of floating point
         }
     }
@@ -390,9 +378,6 @@ public class HybridIntKeyLookupStoreTests extends org.apache.lucene.util.LuceneT
                 for (int i = 0; i < amountToAdd; i++) {
                     assertTrue(kls.contains(i));
                 }
-                //System.out.println(originalAdds);
-                //System.out.println(duplicateAdds);
-                //System.out.println(kls.getNumCollisions());
                 assertEquals(amountToAdd, originalAdds + duplicateAdds);
                 assertEquals(amountToAdd, kls.getSize());
                 assertEquals(amountToAdd / 1000, kls.getNumCollisions());

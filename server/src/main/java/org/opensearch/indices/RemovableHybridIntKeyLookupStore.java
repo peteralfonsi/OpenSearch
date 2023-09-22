@@ -57,7 +57,7 @@ public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore im
     }
 
     @Override
-    public boolean remove(int value) throws Exception {
+    public boolean remove(int value) throws IllegalStateException {
         int transformedValue = transform(value);
         readLock.lock();
         try {
