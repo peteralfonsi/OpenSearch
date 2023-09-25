@@ -301,7 +301,7 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
             int modulo = (int) testModulos[i];
 
             // test where max number of entries should be 3000
-            long memSizeCapInBytes = (long) (HybridIntKeyLookupStore.HASHSET_MEM_SLOPE * 3000 * RBMSizeEstimator.BYTES_IN_MB);
+            long memSizeCapInBytes = (long) (RBMSizeEstimator.HASHSET_MEM_SLOPE * 3000 * RBMSizeEstimator.BYTES_IN_MB);
             HybridIntKeyLookupStore kls = new HybridIntKeyLookupStore(modulo, memSizeCapInBytes);
             for (int j = 0; j < 3500; j++) {
                 kls.add(j);

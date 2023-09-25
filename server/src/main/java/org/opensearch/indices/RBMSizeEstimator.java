@@ -33,12 +33,13 @@
 package org.opensearch.indices;
 
 /**
- * A class used to estimate roaring bitmap memory sizes.
+ * A class used to estimate roaring bitmap memory sizes (and hash set sizes).
  * An instance is made with a particular modulo to avoid recomputing
  * values.
  */
 public class RBMSizeEstimator {
     public static final int BYTES_IN_MB = 1048576;
+    public static final double HASHSET_MEM_SLOPE = 6.46 * Math.pow(10, -6);
     protected double slope;
     protected double bufferMultiplier;
     protected double intercept;
@@ -103,6 +104,10 @@ public class RBMSizeEstimator {
 
     protected static double convertBytesToMB(long valBytes) {
         return (double) valBytes / BYTES_IN_MB;
+    }
+
+    protected static long getHashsetMemSizeInBytes(int numEntries) {
+        return convertMBToBytes(HASHSET_MEM_SLOPE * numEntries);
     }
 
     public double getSlope() {

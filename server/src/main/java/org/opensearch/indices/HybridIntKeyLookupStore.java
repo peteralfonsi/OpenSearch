@@ -47,7 +47,6 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     public static final int HASHSET_TO_INTARR_THRESHOLD = 5000;
     public static final int INTARR_SIZE = 100000;
     public static final int INTARR_TO_RBM_THRESHOLD = INTARR_SIZE;
-    public static final double HASHSET_MEM_SLOPE = 6.46 * Math.pow(10, -6); // used to calculate memory usage
 
     /**
      * Used to keep track of which structure is being used to store values.
@@ -414,14 +413,14 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         }
         if (memSizeCapInBytes < intArrMemSize) {
             // max number of elements will be when we have a hash set
-            return Math.min((int) (RBMSizeEstimator.convertBytesToMB(memSizeCapInBytes) / HASHSET_MEM_SLOPE), HASHSET_TO_INTARR_THRESHOLD - 1);
+            return Math.min((int) (RBMSizeEstimator.convertBytesToMB(memSizeCapInBytes) / RBMSizeEstimator.HASHSET_MEM_SLOPE), HASHSET_TO_INTARR_THRESHOLD - 1);
         }
         // max number of elements will be when we have an intArr
         return INTARR_TO_RBM_THRESHOLD - 1;
     }
 
     protected static long getHashsetMemSizeInBytes(int numEntries) {
-        return RBMSizeEstimator.convertMBToBytes(HASHSET_MEM_SLOPE * numEntries);
+        return RBMSizeEstimator.getHashsetMemSizeInBytes(numEntries);
     }
 
     protected static long getIntArrMemSizeInBytes() {
