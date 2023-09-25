@@ -38,11 +38,13 @@ package org.opensearch.indices;
  * values.
  */
 public class RBMSizeEstimator {
-    public static final double HASHSET_MEM_SLOPE = 6.46 * Math.pow(10, -6);
+    public static final int BYTES_IN_MB = 1048576;
     protected double slope;
     protected double bufferMultiplier;
     protected double intercept;
     protected int modulo;
+
+
     RBMSizeEstimator(int modulo) {
         this.modulo = modulo;
         double[] memSizeValues = calculateMemoryCoefficients(modulo);
@@ -95,6 +97,14 @@ public class RBMSizeEstimator {
         return (int) Math.pow(sizeInMB / (bufferMultiplier * Math.pow(10, intercept)), 1 / slope);
     }
 
+    protected static long convertMBToBytes(double valMB) {
+        return (long) (valMB * BYTES_IN_MB);
+    }
+
+    protected static double convertBytesToMB(long valBytes) {
+        return (double) valBytes / BYTES_IN_MB;
+    }
+
     public double getSlope() {
         return slope;
     }
@@ -104,5 +114,4 @@ public class RBMSizeEstimator {
     public double getBufferMultiplier() {
         return bufferMultiplier;
     }
-
 }

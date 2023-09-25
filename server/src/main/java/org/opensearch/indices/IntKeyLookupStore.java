@@ -152,5 +152,5 @@ public interface IntKeyLookupStore {
     /**
      * Deletes all keys and resets all stats related to adding.
      */
-    void clear();
+    void clear() throws Exception;
 }

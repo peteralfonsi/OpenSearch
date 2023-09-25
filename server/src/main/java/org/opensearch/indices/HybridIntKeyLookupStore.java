@@ -48,7 +48,6 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     public static final int INTARR_SIZE = 100000;
     public static final int INTARR_TO_RBM_THRESHOLD = INTARR_SIZE;
     public static final double HASHSET_MEM_SLOPE = 6.46 * Math.pow(10, -6); // used to calculate memory usage
-    public static final int BYTES_IN_MB = 1048576;
 
     /**
      * Used to keep track of which structure is being used to store values.
@@ -89,7 +88,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         this.numAddAttempts = 0;
         this.numCollisions = 0;
         this.guaranteesNoFalseNegatives = true;
-        this.memSizeCapInBytes = memSizeCapInBytes ; // A cap of 0 means no cap
+        this.memSizeCapInBytes = memSizeCapInBytes; // A cap of 0 means no cap
         this.sizeEstimator = new RBMSizeEstimator(modulo / 2);
         // The effective modulo is halved compared to tests because of taking only negative values for the sorted int array
         this.maxNumEntries = calculateMaxNumEntries();
@@ -411,18 +410,18 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         if (memSizeCapInBytes >= minRBMMemSize) {
             // max number of elements will be when we have an RBM
             // coefficients for memory calculations were done in MB, so we convert here
-            return sizeEstimator.getNumEntriesFromSizeInMB(convertBytesToMB(memSizeCapInBytes));
+            return sizeEstimator.getNumEntriesFromSizeInMB(RBMSizeEstimator.convertBytesToMB(memSizeCapInBytes));
         }
         if (memSizeCapInBytes < intArrMemSize) {
             // max number of elements will be when we have a hash set
-            return Math.min((int) (convertBytesToMB(memSizeCapInBytes) / HASHSET_MEM_SLOPE), HASHSET_TO_INTARR_THRESHOLD - 1);
+            return Math.min((int) (RBMSizeEstimator.convertBytesToMB(memSizeCapInBytes) / HASHSET_MEM_SLOPE), HASHSET_TO_INTARR_THRESHOLD - 1);
         }
         // max number of elements will be when we have an intArr
         return INTARR_TO_RBM_THRESHOLD - 1;
     }
 
     protected static long getHashsetMemSizeInBytes(int numEntries) {
-        return convertMBToBytes(HASHSET_MEM_SLOPE * numEntries);
+        return RBMSizeEstimator.convertMBToBytes(HASHSET_MEM_SLOPE * numEntries);
     }
 
     protected static long getIntArrMemSizeInBytes() {
@@ -430,20 +429,14 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     protected long getRBMMemSizeInBytes(int numEntries) {
-        return convertMBToBytes(sizeEstimator.getSizeInMB(numEntries));
+        return RBMSizeEstimator.convertMBToBytes(sizeEstimator.getSizeInMB(numEntries));
     }
 
     protected static long getRBMMemSizeWithModuloInBytes(int numEntries, int modulo) {
-        return convertMBToBytes(RBMSizeEstimator.getSizeWithModuloInMB(numEntries, modulo / 2));
+        return RBMSizeEstimator.convertMBToBytes(RBMSizeEstimator.getSizeWithModuloInMB(numEntries, modulo / 2));
     }
 
-    protected static long convertMBToBytes(double valMB) {
-        return (long) (valMB * BYTES_IN_MB);
-    }
 
-    protected static double convertBytesToMB(long valBytes) {
-        return (double) valBytes / BYTES_IN_MB;
-    }
 
     @Override
     public long getMemorySizeInBytes() {
@@ -501,7 +494,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public void clear() {
+    public void clear() throws Exception {
         regenerateStore(new int[]{});
     }
 }

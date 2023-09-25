@@ -242,7 +242,7 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
         double[] expectedMultipliers = new double[] { 1.35, 1.35, 1.6, 1.6, 1.6, 1.6 };
         double[] expectedSlopes = new double[] { 0.69, 0.69, 0.75, 0.75, 0.88, 0.88 };
         double[] expectedIntercepts = new double[] { -3, -3, -3.5, -3.5, -4.5, -4.5 };
-        long memSizeCapInBytes = (long) 100.0 * HybridIntKeyLookupStore.BYTES_IN_MB;
+        long memSizeCapInBytes = (long) 100.0 * RBMSizeEstimator.BYTES_IN_MB;
         double delta = 0.01;
         for (int i = 0; i < logModulos.length; i++) {
             int modulo = 0;
@@ -301,7 +301,7 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
             int modulo = (int) testModulos[i];
 
             // test where max number of entries should be 3000
-            long memSizeCapInBytes = (long) (HybridIntKeyLookupStore.HASHSET_MEM_SLOPE * 3000 * HybridIntKeyLookupStore.BYTES_IN_MB);
+            long memSizeCapInBytes = (long) (HybridIntKeyLookupStore.HASHSET_MEM_SLOPE * 3000 * RBMSizeEstimator.BYTES_IN_MB);
             HybridIntKeyLookupStore kls = new HybridIntKeyLookupStore(modulo, memSizeCapInBytes);
             for (int j = 0; j < 3500; j++) {
                 kls.add(j);
