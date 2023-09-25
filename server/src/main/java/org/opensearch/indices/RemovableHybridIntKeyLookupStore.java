@@ -42,8 +42,8 @@ public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore im
     private int numRemovalAttempts;
     private int numSuccessfulRemovals;
 
-    RemovableHybridIntKeyLookupStore(int modulo, double memSizeCap) {
-        super(modulo, memSizeCap);
+    RemovableHybridIntKeyLookupStore(int modulo, long memSizeCapInBytes) {
+        super(modulo, memSizeCapInBytes);
         collidedInts = new HashSet<>();
         numRemovalAttempts = 0;
         numSuccessfulRemovals = 0;
@@ -87,8 +87,14 @@ public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore im
     }
 
     @Override
-    public double getMemorySize() {
-        return super.getMemorySize() + getHashsetMemSize(collidedInts.size());
+    public long getMemorySizeInBytes() {
+        return super.getMemorySizeInBytes() + getHashsetMemSizeInBytes(collidedInts.size());
+    }
+
+    @Override
+    public void regenerateStore(int[] newValues) throws IllegalStateException {
+        collidedInts = new HashSet<>();
+        super.regenerateStore(newValues);
     }
 
     public int getNumRemovalAttempts() {

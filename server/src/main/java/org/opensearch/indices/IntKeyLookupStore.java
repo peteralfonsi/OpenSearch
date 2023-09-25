@@ -118,19 +118,6 @@ public interface IntKeyLookupStore {
     String getCurrentStructure() throws Exception;
 
     /**
-     * If the structure uses a roaring bitmap with a modulo at some point, returns that modulo.
-     * If it uses a RBM without a modulo or doesn't use an RBM, returns 0.
-     * @return The modulo.
-     */
-    int getModulo();
-
-    /**
-     * Returns true if the transformation involves taking -abs(), simplifying int[] access and sorting
-     * @return Whether transformed values are always negative.
-     */
-    boolean isUsingNegativeOnly();
-
-    /**
      * Checks if two values would collide after being transformed by this store's transformation.
      * @param value1 The first value to compare.
      * @param value2 The second value to compare.
@@ -142,18 +129,18 @@ public interface IntKeyLookupStore {
      * Returns an estimate of the store's memory usage.
      * @return The memory usage, in MB
      */
-    double getMemorySize();
+    long getMemorySizeInBytes();
 
     /**
      * Returns the cap for the store's memory usage.
-     * @return The cap, in MB
+     * @return The cap, in bytes
      */
-    double getMemorySizeCap();
+    long getMemorySizeCapInBytes();
 
     /**
      * Returns whether the store is at memory capacity
      */
-    boolean getIsAtCapacity();
+    boolean isAtCapacity();
 
     /**
      * Deletes the internal data structure and regenerates it from the values passed in.
@@ -161,4 +148,9 @@ public interface IntKeyLookupStore {
      * @param newValues The keys that should be in the reset structure.
      */
     void regenerateStore(int[] newValues) throws Exception;
+
+    /**
+     * Deletes all keys and resets all stats related to adding.
+     */
+    void clear();
 }

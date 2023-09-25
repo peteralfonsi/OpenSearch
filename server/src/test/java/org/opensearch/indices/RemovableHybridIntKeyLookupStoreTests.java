@@ -39,7 +39,8 @@ import org.opensearch.test.OpenSearchTestCase;
 
 public class RemovableHybridIntKeyLookupStoreTests extends OpenSearchTestCase {
     public void testRemoveNoCollisions() throws Exception {
-        RemovableHybridIntKeyLookupStore rkls = new RemovableHybridIntKeyLookupStore(0, 100.0);
+        long memCap = 100L * HybridIntKeyLookupStore.BYTES_IN_MB;
+        RemovableHybridIntKeyLookupStore rkls = new RemovableHybridIntKeyLookupStore(0, memCap);
         // there should be no collisions for sequential positive numbers up to modulo
         assertTrue(rkls.supportsRemoval());
         for (int i = 0; i < HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD - 1; i++) {
@@ -90,7 +91,8 @@ public class RemovableHybridIntKeyLookupStoreTests extends OpenSearchTestCase {
 
     public void testRemoveWithCollisions() throws Exception {
         int modulo = (int) Math.pow(2, 26);
-        RemovableHybridIntKeyLookupStore rkls = new RemovableHybridIntKeyLookupStore(modulo, 100.0);
+        long memCap = 100L * HybridIntKeyLookupStore.BYTES_IN_MB;
+        RemovableHybridIntKeyLookupStore rkls = new RemovableHybridIntKeyLookupStore(modulo, memCap);
         for (int i = 0; i < 10; i++) {
             rkls.add(i);
             if (i % 2 == 0) {
