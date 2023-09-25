@@ -75,10 +75,9 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     protected final Lock writeLock = lock.writeLock();
 
 
-    // These are used to estimate RBM memory usage
-    protected double RBMMemSlope;
-    protected double RBMMemBufferMultiplier;
-    protected double RBMMemIntercept;
+    // Used to estimate RBM memory usage
+    protected RBMSizeEstimator sizeEstimator;
+
     protected int maxNumEntries;
     protected boolean atCapacity;
 
@@ -91,7 +90,8 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         this.numCollisions = 0;
         this.guaranteesNoFalseNegatives = true;
         this.memSizeCapInBytes = memSizeCapInBytes ; // A cap of 0 means no cap
-        memSizeInitFunction(); // Initialize values for RBM memory size estimates
+        this.sizeEstimator = new RBMSizeEstimator(modulo / 2);
+        // The effective modulo is halved compared to tests because of taking only negative values for the sorted int array
         this.maxNumEntries = calculateMaxNumEntries();
     }
 
@@ -400,46 +400,6 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         return transform(value1) == transform(value2);
     }
 
-    protected static double[] memSizeHelperFunction(int modulo) {
-        // Sets up values to help estimate RBM size given a modulo
-        // Returns an array of {bufferMultiplier, slope, intercept}
-
-        double modifiedModulo;
-        if (modulo == 0) {
-            modifiedModulo = 31.0;
-        } else {
-            modifiedModulo = Math.log(0.5 * modulo) / Math.log(2);
-        }
-        // Note the effective modulos are 0.5x compared to tests, since we also use only negative numbers due to the intArr
-        double highCutoff = 29.001; // Floating point makes 29 not work
-        double lowCutoff = 28.0;
-        double bufferMultiplier = 1.35;
-        if (modifiedModulo <= highCutoff) {
-            bufferMultiplier = 1.6;
-        }
-
-        double slope;
-        double intercept;
-        if (modifiedModulo > highCutoff) {
-            slope = 0.69;
-            intercept = -3;
-        } else if (modifiedModulo >= lowCutoff) {
-            slope = 0.75;
-            intercept = -3.5;
-        } else {
-            slope = 0.88;
-            intercept = -4.5;
-        }
-        return new double[] { bufferMultiplier, slope, intercept };
-    }
-
-    protected void memSizeInitFunction() {
-        double[] memSizeValues = memSizeHelperFunction(modulo);
-        this.RBMMemBufferMultiplier = memSizeValues[0];
-        this.RBMMemSlope = memSizeValues[1];
-        this.RBMMemIntercept = memSizeValues[2];
-    }
-
     protected int calculateMaxNumEntries() {
         double maxHashsetMemSize = getHashsetMemSizeInBytes(HASHSET_TO_INTARR_THRESHOLD - 1);
         double intArrMemSize = getIntArrMemSizeInBytes();
@@ -451,7 +411,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         if (memSizeCapInBytes >= minRBMMemSize) {
             // max number of elements will be when we have an RBM
             // coefficients for memory calculations were done in MB, so we convert here
-            return (int) Math.pow(convertBytesToMB(memSizeCapInBytes) / (this.RBMMemBufferMultiplier * Math.pow(10, this.RBMMemIntercept)), 1 / this.RBMMemSlope);
+            return sizeEstimator.getNumEntriesFromSizeInMB(convertBytesToMB(memSizeCapInBytes));
         }
         if (memSizeCapInBytes < intArrMemSize) {
             // max number of elements will be when we have a hash set
@@ -470,12 +430,11 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     protected long getRBMMemSizeInBytes(int numEntries) {
-        return convertMBToBytes(Math.pow(numEntries, RBMMemSlope) * Math.pow(10, RBMMemIntercept) * RBMMemBufferMultiplier);
+        return convertMBToBytes(sizeEstimator.getSizeInMB(numEntries));
     }
 
     protected static long getRBMMemSizeWithModuloInBytes(int numEntries, int modulo) {
-        double[] memSizeValues = memSizeHelperFunction(modulo);
-        return convertMBToBytes(Math.pow(numEntries, memSizeValues[1]) * Math.pow(10, memSizeValues[2]) * memSizeValues[0]);
+        return convertMBToBytes(RBMSizeEstimator.getSizeWithModuloInMB(numEntries, modulo / 2));
     }
 
     protected static long convertMBToBytes(double valMB) {
@@ -505,15 +464,15 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     public double getRBMMemSlope() {
-        return RBMMemSlope;
+        return sizeEstimator.getSlope();
     }
 
     public double getRBMMemBufferMultiplier() {
-        return RBMMemBufferMultiplier;
+        return sizeEstimator.getBufferMultiplier();
     }
 
     public double getRBMMemIntercept() {
-        return RBMMemIntercept;
+        return sizeEstimator.getIntercept();
     }
 
     public int getMaxNumEntries() {
