@@ -41,8 +41,7 @@ import org.roaringbitmap.RoaringBitmap;
 
 /**
  * A store which dynamically switches its internal data structure from hash set to sorted int array
- * to roaring bitmap. For reasoning behind design decisions, see
- * https://quip-amazon.com/JdWGAYm2doCm/Roaring-Bitmap-Performance-Testing
+ * to roaring bitmap.
  */
 public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     public static final int HASHSET_TO_INTARR_THRESHOLD = 5000;
@@ -73,7 +72,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     protected final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     protected final Lock readLock = lock.readLock();
     protected final Lock writeLock = lock.writeLock();
-    
+
 
     // These are used to estimate RBM memory usage
     protected double RBMMemSlope;
@@ -413,8 +412,6 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     protected static double[] memSizeHelperFunction(int modulo) {
         // Sets up values to help estimate RBM size given a modulo
         // Returns an array of {bufferMultiplier, slope, intercept}
-        // See https://quip-amazon.com/9Vl3A3kBq2bR/IntKeyLookupStore-Size-Estimates
-        // for an explanation of where these numbers came from
 
         double modifiedModulo;
         if (modulo == 0) {
@@ -473,8 +470,6 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     protected static double getHashsetMemSize(int numEntries) {
-        // See https://quip-amazon.com/9Vl3A3kBq2bR/IntKeyLookupStore-Size-Estimates
-        // for an explanation of where these numbers came from
         return HASHSET_MEM_SLOPE * numEntries;
     }
 
@@ -483,8 +478,6 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     protected double getRBMMemSize(int numEntries) {
-        // See https://quip-amazon.com/9Vl3A3kBq2bR/IntKeyLookupStore-Size-Estimates
-        // for an explanation of where these numbers came from
         return Math.pow(numEntries, RBMMemSlope) * Math.pow(10, RBMMemIntercept) * RBMMemBufferMultiplier;
     }
 

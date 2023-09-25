@@ -36,8 +36,6 @@ import java.util.HashSet;
 
 /**
  * A store which supports safe removal of keys by maintaining a hashset of values that have had collisions.
- * For reasoning behind design decisions, see
- * https://quip-amazon.com/JdWGAYm2doCm/Roaring-Bitmap-Performance-Testing
  */
 public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore implements IntKeyLookupStore {
     private HashSet<Integer> collidedInts;
