@@ -37,7 +37,7 @@ import org.roaringbitmap.RoaringBitmap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public class RBMIntKeyLookupStore implements IntKeyLookupStore {
+public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
     // This class shares a lot of the same fields with HybridIntKeyLookupStore, but basically none of the logic
     // besides getters, so I decided against making it the superclass to HybridIntKeyLookupStore
     protected final int modulo;
@@ -82,7 +82,10 @@ public class RBMIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public boolean add(int value) throws Exception {
+    public boolean add(Integer value) throws Exception {
+        if (value == null) {
+            return false;
+        }
         writeLock.lock();
         numAddAttempts++;
         try {
@@ -105,7 +108,10 @@ public class RBMIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public boolean contains(int value) throws Exception {
+    public boolean contains(Integer value) throws Exception {
+        if (value == null) {
+            return false;
+        }
         int transformedValue = transform(value);
         readLock.lock();
         try {
@@ -116,12 +122,15 @@ public class RBMIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public int getInternalRepresentation(int value) {
-        return transform(value);
+    public Integer getInternalRepresentation(Integer value) {
+        if (value == null) {
+            return 0;
+        }
+        return Integer.valueOf(transform(value));
     }
 
     @Override
-    public boolean remove(int value) throws Exception {
+    public boolean remove(Integer value) throws Exception {
         return false;
     }
 
@@ -131,7 +140,10 @@ public class RBMIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public void forceRemove(int value) throws Exception {
+    public void forceRemove(Integer value) throws Exception {
+        if (value == null) {
+            return;
+        }
         writeLock.lock();
         guaranteesNoFalseNegatives = false;
         try {
@@ -174,7 +186,10 @@ public class RBMIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public boolean isCollision(int value1, int value2) {
+    public boolean isCollision(Integer value1, Integer value2) {
+        if (value1 == null || value2 == null) {
+            return false;
+        }
         return transform(value1) == transform(value2);
     }
 
@@ -194,20 +209,22 @@ public class RBMIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public void regenerateStore(int[] newValues) throws Exception {
+    public void regenerateStore(Integer[] newValues) throws Exception {
         rbm.clear();
         size = 0;
         this.numAddAttempts = 0;
         this.numCollisions = 0;
         this.guaranteesNoFalseNegatives = true;
-        for (int newValue : newValues) {
-            add(newValue);
+        for (int i = 0; i < newValues.length; i++) {
+            if (newValues[i] != null) {
+                add(newValues[i]);
+            }
         }
     }
 
     @Override
     public void clear() throws Exception {
-        regenerateStore(new int[]{});
+        regenerateStore(new Integer[]{});
     }
 
     public double getRBMMemSlope() {

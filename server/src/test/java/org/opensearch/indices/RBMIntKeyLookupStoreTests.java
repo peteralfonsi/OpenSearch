@@ -119,7 +119,7 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
                 kls.add(i);
             }
             assertEquals(numToAdd, kls.getSize());
-            int[] newVals = new int[1000]; // margin accounts for collisions
+            Integer[] newVals = new Integer[1000]; // margin accounts for collisions
             for (int j = 0; j < newVals.length; j++) {
                 newVals[j] = rand.nextInt();
             }
@@ -314,5 +314,23 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
         assertFalse(rkls.remove(offset + modulo));
         assertTrue(rkls.valueHasHadCollision(offset + 15 * modulo));
         assertTrue(rkls.contains(offset + 17 * modulo));
+    }
+
+    public void testNullInputs() throws Exception {
+        RBMIntKeyLookupStore base_kls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+        RemovableRBMIntKeyLookupStore rkls = new RemovableRBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+        for (RBMIntKeyLookupStore kls : new RBMIntKeyLookupStore[] { base_kls, rkls }) {
+            assertFalse(kls.add(null));
+            assertFalse(kls.contains(null));
+            assertEquals(0, (int) kls.getInternalRepresentation(null));
+            assertFalse(kls.remove(null));
+            kls.forceRemove(null);
+            assertFalse(kls.canHaveFalseNegatives());
+            assertFalse(kls.isCollision(null, null));
+            assertEquals(0, kls.getNumAddAttempts());
+            Integer[] newVals = new Integer[]{1, 17, -2, null, -4, null};
+            kls.regenerateStore(newVals);
+            assertEquals(4, kls.getSize());
+        }
     }
 }

@@ -43,7 +43,7 @@ import org.roaringbitmap.RoaringBitmap;
  * A store which dynamically switches its internal data structure from hash set to sorted int array
  * to roaring bitmap.
  */
-public class HybridIntKeyLookupStore implements IntKeyLookupStore {
+public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
     public static final int HASHSET_TO_INTARR_THRESHOLD = 5000;
     public static final int INTARR_SIZE = 100000;
     public static final int INTARR_TO_RBM_THRESHOLD = INTARR_SIZE;
@@ -222,7 +222,10 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public boolean add(int value) throws IllegalStateException {
+    public boolean add(Integer value) throws IllegalStateException {
+        if (value == null) {
+            return false;
+        }
         writeLock.lock();
         try {
             if (size == maxNumEntries) {
@@ -302,18 +305,24 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public boolean contains(int value) throws IllegalStateException {
+    public boolean contains(Integer value) throws IllegalStateException {
+        if (value == null) {
+            return false;
+        }
         int transformedValue = transform(value);
         return containsTransformed(transformedValue);
     }
 
     @Override
-    public int getInternalRepresentation(int value) {
-        return transform(value);
+    public Integer getInternalRepresentation(Integer value) {
+        if (value == null) {
+            return 0;
+        }
+        return Integer.valueOf(transform(value));
     }
 
     @Override
-    public boolean remove(int value) throws IllegalStateException {
+    public boolean remove(Integer value) throws IllegalStateException {
         return false;
     }
 
@@ -340,7 +349,10 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public void forceRemove(int value) throws IllegalStateException {
+    public void forceRemove(Integer value) throws IllegalStateException {
+        if (value == null) {
+            return;
+        }
         writeLock.lock();
         guaranteesNoFalseNegatives = false;
         try {
@@ -394,7 +406,10 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public boolean isCollision(int value1, int value2) {
+    public boolean isCollision(Integer value1, Integer value2) {
+        if (value1 == null || value2 == null) {
+            return false;
+        }
         return transform(value1) == transform(value2);
     }
 
@@ -477,7 +492,7 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
     }
 
     @Override
-    public void regenerateStore(int[] newValues) throws IllegalStateException {
+    public void regenerateStore(Integer[] newValues) throws IllegalStateException {
         intArr = null;
         rbm = null;
         size = 0;
@@ -487,13 +502,15 @@ public class HybridIntKeyLookupStore implements IntKeyLookupStore {
         currentStructure = StructureTypes.HASHSET;
         hashset = new HashSet<>();
 
-        for (int value : newValues) {
-            add(value);
+        for (int i = 0; i < newValues.length; i++) {
+            if (newValues[i] != null) {
+                add(newValues[i]);
+            }
         }
     }
 
     @Override
     public void clear() throws Exception {
-        regenerateStore(new int[]{});
+        regenerateStore(new Integer[]{});
     }
 }

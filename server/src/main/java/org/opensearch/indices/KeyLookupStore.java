@@ -38,7 +38,7 @@ package org.opensearch.indices;
  * int values. The internal representations may have collisions. Example transformations include a modulo
  * or -abs(value), or some combination.
  */
-public interface IntKeyLookupStore {
+public interface KeyLookupStore<T> {
     /**
      * Transforms the input value into the internal representation for this keystore
      * and adds it to the internal data structure.
@@ -46,7 +46,7 @@ public interface IntKeyLookupStore {
      * @return true if the value was added, false if it wasn't added because of a
      * collision or if it was already present.
      */
-    boolean add(int value) throws Exception;
+    boolean add(T value) throws Exception;
 
     /**
      * Checks if the transformation of the value is in the keystore.
@@ -54,7 +54,7 @@ public interface IntKeyLookupStore {
      * @return true if the value was found, false otherwise. Due to collisions, false positives are
      * possible, but there should be no false negatives unless forceRemove() is called.
      */
-    boolean contains(int value) throws Exception;
+    boolean contains(T value) throws Exception;
 
     /**
      * Returns the transformed version of the input value, that would be used to stored it in the keystore.
@@ -62,7 +62,7 @@ public interface IntKeyLookupStore {
      * @param value The value to transform.
      * @return The transformed value.
      */
-    int getInternalRepresentation(int value);
+    T getInternalRepresentation(T value);
 
     /**
      * Attempts to safely remove a value from the internal structure, maintaining the property that contains(value)
@@ -71,7 +71,7 @@ public interface IntKeyLookupStore {
      * @param value The value to attempt to remove.
      * @return true if the value was removed, false if it wasn't.
      */
-    boolean remove(int value) throws Exception;
+    boolean remove(T value) throws Exception;
 
     /**
      * Check if the implementing class supports safe removals. If it doesn't, remove() will always return false.
@@ -84,7 +84,7 @@ public interface IntKeyLookupStore {
      * contains() to return false negatives for future values.
      * @param value The value to forcibly remove.
      */
-    void forceRemove(int value) throws Exception;
+    void forceRemove(T value) throws Exception;
 
     /**
      * Check if the object currently guarantees having no false negatives when running contains().
@@ -123,7 +123,7 @@ public interface IntKeyLookupStore {
      * @param value2 The second value to compare.
      * @return true if the transformations are equal, false otherwise.
      */
-    boolean isCollision(int value1, int value2);
+    boolean isCollision(T value1, T value2);
 
     /**
      * Returns an estimate of the store's memory usage.
@@ -147,7 +147,7 @@ public interface IntKeyLookupStore {
      * Also resets all stats related to adding.
      * @param newValues The keys that should be in the reset structure.
      */
-    void regenerateStore(int[] newValues) throws Exception;
+    void regenerateStore(T[] newValues) throws Exception;
 
     /**
      * Deletes all keys and resets all stats related to adding.

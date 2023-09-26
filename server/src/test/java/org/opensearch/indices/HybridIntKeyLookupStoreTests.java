@@ -189,7 +189,7 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
                 for (int i = 0; i < resetNum; i++) {
                     kls.add(i);
                 }
-                int[] newVals = new int[(int) (resetNum * 1.1)]; // margin accounts for collisions
+                Integer[] newVals = new Integer[(int) (resetNum * 1.1)]; // margin accounts for collisions
                 for (int j = 0; j < newVals.length; j++) {
                     newVals[j] = rand.nextInt();
                 }
@@ -390,6 +390,24 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
                 assertEquals(amountToAdd / 1000, kls.getNumCollisions());
                 executor.shutdown();
             }
+        }
+    }
+
+    public void testNullInputs() throws Exception {
+        HybridIntKeyLookupStore base_kls = new HybridIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+        RemovableHybridIntKeyLookupStore rkls = new RemovableHybridIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+        for (HybridIntKeyLookupStore kls : new HybridIntKeyLookupStore[] { base_kls, rkls }) {
+            assertFalse(kls.add(null));
+            assertFalse(kls.contains(null));
+            assertEquals(0, (int) kls.getInternalRepresentation(null));
+            assertFalse(kls.remove(null));
+            kls.forceRemove(null);
+            assertFalse(kls.canHaveFalseNegatives());
+            assertFalse(kls.isCollision(null, null));
+            assertEquals(0, kls.getNumAddAttempts());
+            Integer[] newVals = new Integer[]{1, 17, -2, null, -4, null};
+            kls.regenerateStore(newVals);
+            assertEquals(4, kls.getSize());
         }
     }
 }

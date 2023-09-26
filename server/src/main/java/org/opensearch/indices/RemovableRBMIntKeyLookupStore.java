@@ -35,7 +35,7 @@ package org.opensearch.indices;
 import org.roaringbitmap.RoaringBitmap;
 import java.util.HashSet;
 
-public class RemovableRBMIntKeyLookupStore extends RBMIntKeyLookupStore implements IntKeyLookupStore {
+public class RemovableRBMIntKeyLookupStore extends RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
     // The code for this class is almost the same as RemovableHybridIntKeyLookupStore,
     // just with different superclasses.
     // I considered changing the separate Removable classes into a CollisionHandler object
@@ -67,7 +67,10 @@ public class RemovableRBMIntKeyLookupStore extends RBMIntKeyLookupStore implemen
 
     // Check if the value to remove has had a collision, and if not, remove it
     @Override
-    public boolean remove(int value) throws Exception {
+    public boolean remove(Integer value) throws Exception {
+        if (value == null) {
+            return false;
+        }
         int transformedValue = transform(value);
         readLock.lock();
         try {
@@ -98,7 +101,7 @@ public class RemovableRBMIntKeyLookupStore extends RBMIntKeyLookupStore implemen
     }
 
     @Override
-    public void regenerateStore(int[] newValues) throws Exception {
+    public void regenerateStore(Integer[] newValues) throws Exception {
         collidedInts = new HashSet<>();
         super.regenerateStore(newValues);
     }
@@ -111,7 +114,10 @@ public class RemovableRBMIntKeyLookupStore extends RBMIntKeyLookupStore implemen
         return numSuccessfulRemovals;
     }
 
-    public boolean valueHasHadCollision(int value) {
+    public boolean valueHasHadCollision(Integer value) {
+        if (value == null) {
+            return false;
+        }
         return collidedInts.contains(transform(value));
     }
 }

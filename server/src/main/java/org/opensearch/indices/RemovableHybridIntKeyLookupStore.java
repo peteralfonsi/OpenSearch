@@ -37,7 +37,7 @@ import java.util.HashSet;
 /**
  * A store which supports safe removal of keys by maintaining a hashset of values that have had collisions.
  */
-public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore implements IntKeyLookupStore {
+public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
     private HashSet<Integer> collidedInts;
     private int numRemovalAttempts;
     private int numSuccessfulRemovals;
@@ -62,7 +62,10 @@ public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore im
 
     // Check if the value to remove has had a collision, and if not, remove it
     @Override
-    public boolean remove(int value) throws IllegalStateException {
+    public boolean remove(Integer value) throws IllegalStateException {
+        if (value == null) {
+            return false;
+        }
         int transformedValue = transform(value);
         readLock.lock();
         try {
@@ -92,7 +95,7 @@ public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore im
     }
 
     @Override
-    public void regenerateStore(int[] newValues) throws IllegalStateException {
+    public void regenerateStore(Integer[] newValues) throws IllegalStateException {
         collidedInts = new HashSet<>();
         super.regenerateStore(newValues);
     }
@@ -105,7 +108,10 @@ public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore im
         return numSuccessfulRemovals;
     }
 
-    public boolean valueHasHadCollision(int value) {
+    public boolean valueHasHadCollision(Integer value) {
+        if (value == null) {
+            return false;
+        }
         return collidedInts.contains(transform(value));
     }
 
