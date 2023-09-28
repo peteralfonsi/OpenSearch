@@ -138,6 +138,7 @@ public class QueryPhase {
                     new TopDocsAndMaxScore(new TopDocs(new TotalHits(0, TotalHits.Relation.EQUAL_TO), Lucene.EMPTY_SCORE_DOCS), Float.NaN),
                     new DocValueFormat[0]
                 );
+            searchContext.queryResult().setTookTimeNanos();
             return;
         }
 
@@ -292,7 +293,7 @@ public class QueryPhase {
                     queryResult.nodeQueueSize(rExecutor.getCurrentQueueSize());
                     queryResult.serviceTimeEWMA((long) rExecutor.getTaskExecutionEWMA());
                 }
-
+                queryResult.setTookTimeNanos();
                 return shouldRescore;
             } finally {
                 // Search phase has finished, no longer need to check for timeout

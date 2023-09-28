@@ -87,13 +87,17 @@ public final class QuerySearchResult extends SearchPhaseResult {
     private int nodeQueueSize = -1;
 
     private final boolean isNull;
+    private long startTimeNanos;
+    private long tookTimeNanos;
 
     public QuerySearchResult() {
         this(false);
+        this.startTimeNanos = System.nanoTime();
     }
 
     public QuerySearchResult(StreamInput in) throws IOException {
         super(in);
+        this.startTimeNanos = System.nanoTime();
         isNull = in.readBoolean();
         if (isNull == false) {
             ShardSearchContextId id = new ShardSearchContextId(in);
@@ -102,6 +106,7 @@ public final class QuerySearchResult extends SearchPhaseResult {
     }
 
     public QuerySearchResult(ShardSearchContextId contextId, SearchShardTarget shardTarget, ShardSearchRequest shardSearchRequest) {
+        this.startTimeNanos = System.nanoTime();
         this.contextId = contextId;
         setSearchShardTarget(shardTarget);
         isNull = false;
@@ -364,6 +369,7 @@ public final class QuerySearchResult extends SearchPhaseResult {
         nodeQueueSize = in.readInt();
         setShardSearchRequest(in.readOptionalWriteable(ShardSearchRequest::new));
         setRescoreDocIds(new RescoreDocIds(in));
+        tookTimeNanos = in.readVLong();
     }
 
     @Override
@@ -406,6 +412,8 @@ public final class QuerySearchResult extends SearchPhaseResult {
         out.writeInt(nodeQueueSize);
         out.writeOptionalWriteable(getShardSearchRequest());
         getRescoreDocIds().writeTo(out);
+        setTookTimeNanos(); // put at end to capture as much of the time as possible
+        out.writeVLong(tookTimeNanos); // VLong as took time should always be positive
     }
 
     public TotalHits getTotalHits() {
@@ -414,5 +422,13 @@ public final class QuerySearchResult extends SearchPhaseResult {
 
     public float getMaxScore() {
         return maxScore;
+    }
+
+    public long getTookTimeNanos() {
+        return tookTimeNanos;
+    }
+
+    public void setTookTimeNanos() {
+        tookTimeNanos = System.nanoTime() - startTimeNanos;
     }
 }
