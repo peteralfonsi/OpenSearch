@@ -237,33 +237,13 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
         }
     }
 
-    public void testMemoryCapValueInitialization() {
-        double[] logModulos = new double[] { 0.0, 31.2, 30, 29, 28, 13 }; // these will decrement by 1
-        double[] expectedMultipliers = new double[] { 1.35, 1.35, 1.6, 1.6, 1.6, 1.6 };
-        double[] expectedSlopes = new double[] { 0.69, 0.69, 0.75, 0.75, 0.88, 0.88 };
-        double[] expectedIntercepts = new double[] { -3, -3, -3.5, -3.5, -4.5, -4.5 };
-        long memSizeCapInBytes = (long) 100.0 * RBMSizeEstimator.BYTES_IN_MB;
-        double delta = 0.01;
-        for (int i = 0; i < logModulos.length; i++) {
-            int modulo = 0;
-            if (logModulos[i] != 0) {
-                modulo = (int) Math.pow(2, logModulos[i]);
-            }
-            HybridIntKeyLookupStore rbm = new HybridIntKeyLookupStore(modulo, memSizeCapInBytes);
-            assertEquals(rbm.memSizeCapInBytes, rbm.getMemorySizeCapInBytes(), 1.0);
-            assertEquals(expectedMultipliers[i], rbm.getRBMMemBufferMultiplier(), delta);
-            assertEquals(expectedSlopes[i], rbm.getRBMMemSlope(), delta);
-            assertEquals(expectedIntercepts[i], rbm.getRBMMemIntercept(), delta);
-        }
-    }
-
     public void testMemoryCapBlocksTransitions() throws Exception {
         double[] testModulos = new double[] { 0, Math.pow(2, 31), Math.pow(2, 29), Math.pow(2, 28), Math.pow(2, 26) };
         for (int i = 0; i < testModulos.length; i++) {
             int modulo = (int) testModulos[i];
-            long maxHashsetMemSize = HybridIntKeyLookupStore.getHashsetMemSizeInBytes(HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD - 1);
+            long maxHashsetMemSize = RBMSizeEstimator.getHashsetMemSizeInBytes(HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD - 1);
             long intArrMemSize = HybridIntKeyLookupStore.getIntArrMemSizeInBytes();
-            long minRBMMemSize = HybridIntKeyLookupStore.getRBMMemSizeWithModuloInBytes(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD, modulo);
+            long minRBMMemSize = RBMSizeEstimator.getSizeInBytes(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD);
 
             // test that transitions in data structure do indeed monotonically increase predicted memory size
             assertTrue(maxHashsetMemSize < intArrMemSize);
@@ -319,12 +299,14 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
             assertEquals("intArr", kls.getCurrentStructure());
 
             int maxEntries = 2342000;
-            memSizeCapInBytes = HybridIntKeyLookupStore.getRBMMemSizeWithModuloInBytes(maxEntries, modulo);
+            memSizeCapInBytes = RBMSizeEstimator.getSizeInBytes(maxEntries);
             kls = new HybridIntKeyLookupStore(modulo, memSizeCapInBytes);
             for (int j = 0; j < maxEntries + 1000; j++) {
                 kls.add(j);
             }
-            assertTrue(Math.abs(maxEntries - kls.getSize()) < 5); // exact cap varies a small amount bc of floating point
+            assertTrue(Math.abs(maxEntries - kls.getSize()) < (double) maxEntries / 25);
+            // exact cap varies a small amount bc of floating point, especially when we use bytes instead of MB for calculations
+            // precision gets much worse when we compose the two functions, as we do here, but this wouldn't happen in an actual use case
         }
     }
 

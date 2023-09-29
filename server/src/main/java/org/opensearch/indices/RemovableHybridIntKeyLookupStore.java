@@ -91,7 +91,7 @@ public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore im
 
     @Override
     public long getMemorySizeInBytes() {
-        return super.getMemorySizeInBytes() + getHashsetMemSizeInBytes(collidedInts.size());
+        return super.getMemorySizeInBytes() + RBMSizeEstimator.getHashsetMemSizeInBytes(collidedInts.size());
     }
 
     @Override

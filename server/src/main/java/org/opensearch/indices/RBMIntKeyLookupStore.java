@@ -50,7 +50,6 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
     protected final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     protected final Lock readLock = lock.readLock();
     protected final Lock writeLock = lock.writeLock();
-    protected RBMSizeEstimator sizeEstimator;
     protected int maxNumEntries;
     protected boolean atCapacity;
 
@@ -61,16 +60,22 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
         this.numCollisions = 0;
         this.guaranteesNoFalseNegatives = true;
         this.memSizeCapInBytes = memSizeCapInBytes; // A cap of 0 means no cap
-        this.sizeEstimator = new RBMSizeEstimator(modulo);
         this.maxNumEntries = calculateMaxNumEntries();
         this.rbm = new RoaringBitmap();
+    }
+
+    public long memEstimateRBMLib() {  // debug only
+        if (rbm != null) {
+            return rbm.getLongSizeInBytes();
+        }
+        return 0L;
     }
 
     protected int calculateMaxNumEntries() {
         if (memSizeCapInBytes == 0) {
             return Integer.MAX_VALUE;
         }
-        return sizeEstimator.getNumEntriesFromSizeInMB(RBMSizeEstimator.convertBytesToMB(memSizeCapInBytes));
+        return RBMSizeEstimator.getNumEntriesFromSizeInBytes(memSizeCapInBytes);
     }
 
     protected final int transform(int value) {
@@ -195,7 +200,7 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
 
     @Override
     public long getMemorySizeInBytes() {
-        return RBMSizeEstimator.convertMBToBytes(sizeEstimator.getSizeInMB(size));
+        return RBMSizeEstimator.getSizeInBytes(size);
     }
 
     @Override
@@ -225,17 +230,5 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
     @Override
     public void clear() throws Exception {
         regenerateStore(new Integer[]{});
-    }
-
-    public double getRBMMemSlope() {
-        return sizeEstimator.getSlope();
-    }
-
-    public double getRBMMemBufferMultiplier() {
-        return sizeEstimator.getBufferMultiplier();
-    }
-
-    public double getRBMMemIntercept() {
-        return sizeEstimator.getIntercept();
     }
 }

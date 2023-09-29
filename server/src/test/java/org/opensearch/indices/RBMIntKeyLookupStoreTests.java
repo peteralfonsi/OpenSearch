@@ -148,40 +148,19 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
         }
     }
 
-    public void testMemoryCapValueInitialization() {
-        double[] logModulos = new double[] { 0.0, 31.2, 30, 29, 28, 13 }; // these will NOT decrement by 1
-        double[] expectedMultipliers = new double[] { 1.35, 1.35, 1.35, 1.6, 1.6, 1.6 };
-        double[] expectedSlopes = new double[] { 0.69, 0.69, 0.69, 0.75, 0.75, 0.88 };
-        double[] expectedIntercepts = new double[] { -3, -3, -3, -3.5, -3.5, -4.5 };
-        long memSizeCapInBytes = (long) 100.0 * RBMSizeEstimator.BYTES_IN_MB;
-        double delta = 0.01;
-        for (int i = 0; i < logModulos.length; i++) {
-            int modulo = 0;
-            if (logModulos[i] != 0) {
-                modulo = (int) Math.pow(2, logModulos[i]);
-            }
-            RBMIntKeyLookupStore base_kls = new RBMIntKeyLookupStore(modulo, memSizeCapInBytes);
-            RemovableRBMIntKeyLookupStore rkls = new RemovableRBMIntKeyLookupStore(modulo, memSizeCapInBytes);
-            for (RBMIntKeyLookupStore kls : new RBMIntKeyLookupStore[] { base_kls, rkls }) {
-                assertEquals(kls.memSizeCapInBytes, kls.getMemorySizeCapInBytes(), 1.0);
-                assertEquals(expectedMultipliers[i], kls.getRBMMemBufferMultiplier(), delta);
-                assertEquals(expectedSlopes[i], kls.getRBMMemSlope(), delta);
-                assertEquals(expectedIntercepts[i], kls.getRBMMemIntercept(), delta);
-            }
-        }
-    }
-
     public void testMemoryCapBlocksAdd() throws Exception {
         int modulo = (int) Math.pow(2, 29);
         for (int maxEntries: new int[]{2342000, 1000, 100000}) {
-            long memSizeCapInBytes = HybridIntKeyLookupStore.getRBMMemSizeWithModuloInBytes(maxEntries, modulo);
+            long memSizeCapInBytes = RBMSizeEstimator.getSizeInBytes(maxEntries);
             RBMIntKeyLookupStore base_kls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), memSizeCapInBytes);
             RemovableRBMIntKeyLookupStore rkls = new RemovableRBMIntKeyLookupStore((int) Math.pow(2, 29), memSizeCapInBytes);
             for (RBMIntKeyLookupStore kls : new RBMIntKeyLookupStore[] { base_kls, rkls }) {
                 for (int j = 0; j < maxEntries + 1000; j++) {
                     kls.add(j);
                 }
-                assertTrue(Math.abs(maxEntries - kls.getSize()) < 5); // exact cap varies a small amount bc of floating point
+                assertTrue(Math.abs(maxEntries - kls.getSize()) < (double) maxEntries / 25);
+                // exact cap varies a small amount bc of floating point, especially when we use bytes instead of MB for calculations
+                // precision gets much worse when we compose the two functions, as we do here, but this wouldn't happen in an actual use case
             }
         }
     }

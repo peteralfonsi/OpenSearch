@@ -55,7 +55,7 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
         HASHSET,
         INTARR,
         RBM
-    };
+    }
 
     protected StructureTypes currentStructure;
     protected final int modulo;
@@ -73,9 +73,6 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
     protected final Lock writeLock = lock.writeLock();
 
 
-    // Used to estimate RBM memory usage
-    protected RBMSizeEstimator sizeEstimator;
-
     protected int maxNumEntries;
     protected boolean atCapacity;
 
@@ -88,9 +85,17 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
         this.numCollisions = 0;
         this.guaranteesNoFalseNegatives = true;
         this.memSizeCapInBytes = memSizeCapInBytes; // A cap of 0 means no cap
-        this.sizeEstimator = new RBMSizeEstimator(modulo / 2);
         // The effective modulo is halved compared to tests because of taking only negative values for the sorted int array
         this.maxNumEntries = calculateMaxNumEntries();
+        //intArr = null;
+        //rbm = null;
+    }
+
+    public long memEstimateRBMLib() {  // debug only
+        if (rbm != null) {
+            return rbm.getLongSizeInBytes();
+        }
+        return 0L;
     }
 
     protected final int customAbs(int value) {
@@ -414,17 +419,16 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
     }
 
     protected int calculateMaxNumEntries() {
-        double maxHashsetMemSize = getHashsetMemSizeInBytes(HASHSET_TO_INTARR_THRESHOLD - 1);
+        double maxHashsetMemSize = RBMSizeEstimator.getHashsetMemSizeInBytes(HASHSET_TO_INTARR_THRESHOLD - 1);
         double intArrMemSize = getIntArrMemSizeInBytes();
-        double minRBMMemSize = getRBMMemSizeWithModuloInBytes(INTARR_TO_RBM_THRESHOLD, modulo);
+        double minRBMMemSize = RBMSizeEstimator.getSizeInBytes(INTARR_TO_RBM_THRESHOLD);
 
         if (memSizeCapInBytes == 0) {
             return Integer.MAX_VALUE;
         }
         if (memSizeCapInBytes >= minRBMMemSize) {
             // max number of elements will be when we have an RBM
-            // coefficients for memory calculations were done in MB, so we convert here
-            return sizeEstimator.getNumEntriesFromSizeInMB(RBMSizeEstimator.convertBytesToMB(memSizeCapInBytes));
+            return Math.max(RBMSizeEstimator.getNumEntriesFromSizeInBytes(memSizeCapInBytes), INTARR_TO_RBM_THRESHOLD); // there's some floating point weirdness, so we need the min to ensure we dont get values slightly below 100k
         }
         if (memSizeCapInBytes < intArrMemSize) {
             // max number of elements will be when we have a hash set
@@ -434,33 +438,19 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
         return INTARR_TO_RBM_THRESHOLD - 1;
     }
 
-    protected static long getHashsetMemSizeInBytes(int numEntries) {
-        return RBMSizeEstimator.getHashsetMemSizeInBytes(numEntries);
-    }
-
     protected static long getIntArrMemSizeInBytes() {
         return (long) (4 * INTARR_SIZE + 24);
     }
-
-    protected long getRBMMemSizeInBytes(int numEntries) {
-        return RBMSizeEstimator.convertMBToBytes(sizeEstimator.getSizeInMB(numEntries));
-    }
-
-    protected static long getRBMMemSizeWithModuloInBytes(int numEntries, int modulo) {
-        return RBMSizeEstimator.convertMBToBytes(RBMSizeEstimator.getSizeWithModuloInMB(numEntries, modulo / 2));
-    }
-
-
 
     @Override
     public long getMemorySizeInBytes() {
         switch (currentStructure) {
             case HASHSET:
-                return getHashsetMemSizeInBytes(size);
+                return RBMSizeEstimator.getHashsetMemSizeInBytes(size);
             case INTARR:
                 return getIntArrMemSizeInBytes();
             case RBM:
-                return getRBMMemSizeInBytes(size);
+                return RBMSizeEstimator.getSizeInBytes(size);
         }
         return 0;
     }
@@ -468,18 +458,6 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
     @Override
     public long getMemorySizeCapInBytes() {
         return memSizeCapInBytes;
-    }
-
-    public double getRBMMemSlope() {
-        return sizeEstimator.getSlope();
-    }
-
-    public double getRBMMemBufferMultiplier() {
-        return sizeEstimator.getBufferMultiplier();
-    }
-
-    public double getRBMMemIntercept() {
-        return sizeEstimator.getIntercept();
     }
 
     public int getMaxNumEntries() {
