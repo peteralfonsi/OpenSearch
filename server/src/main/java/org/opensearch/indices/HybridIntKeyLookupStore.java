@@ -91,13 +91,6 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
         //rbm = null;
     }
 
-    public long memEstimateRBMLib() {  // debug only
-        if (rbm != null) {
-            return rbm.getLongSizeInBytes();
-        }
-        return 0L;
-    }
-
     protected final int customAbs(int value) {
         if (value < 0 && value > Integer.MIN_VALUE) {
             return -value;

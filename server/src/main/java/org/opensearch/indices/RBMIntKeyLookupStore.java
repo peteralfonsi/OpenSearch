@@ -64,13 +64,6 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
         this.rbm = new RoaringBitmap();
     }
 
-    public long memEstimateRBMLib() {  // debug only
-        if (rbm != null) {
-            return rbm.getLongSizeInBytes();
-        }
-        return 0L;
-    }
-
     protected int calculateMaxNumEntries() {
         if (memSizeCapInBytes == 0) {
             return Integer.MAX_VALUE;

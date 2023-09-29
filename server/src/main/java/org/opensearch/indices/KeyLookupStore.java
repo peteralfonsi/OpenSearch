@@ -40,7 +40,6 @@ package org.opensearch.indices;
  */
 public interface KeyLookupStore<T> {
 
-    long memEstimateRBMLib(); // debug only
     /**
      * Transforms the input value into the internal representation for this keystore
      * and adds it to the internal data structure.
