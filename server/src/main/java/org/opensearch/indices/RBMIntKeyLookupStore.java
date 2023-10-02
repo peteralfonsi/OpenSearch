@@ -32,31 +32,125 @@
 
 package org.opensearch.indices;
 
+import org.opensearch.common.metrics.CounterMetric;
+import org.roaringbitmap.RoaringBitmap;
+
 import java.util.HashSet;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-public class RBMIntKeyLookupStore extends BaseRBMIntKeyLookupStore implements KeyLookupStore<Integer> {
-    // The code for this class is almost the same as RemovableHybridIntKeyLookupStore,
-    // just with different superclasses.
-    // I considered changing the separate Removable classes into a CollisionHandler object
-    // which could be reused as a field of the KeyLookupStore objects, but since we will ultimately
-    // only use one of these four possible classes after doing performance testing,
-    // I don't think it's worth it to make the logic more complex just to avoid reusing code that might be deleted.
-
-    private HashSet<Integer> collidedInts;
-
-    RBMIntKeyLookupStore(int modulo, long memSizeCapInBytes) {
-        super(modulo, memSizeCapInBytes);
-        collidedInts = new HashSet<>();
+/**
+ * This class implements KeyLookupStore<Integer> using a roaring bitmap with a modulo applied to values.
+ * The modulo increases the density of values, which makes RBMs more memory-efficient. The recommended modulo is ~2^29.
+ * It also maintains a hash set of values which have had collisions. Values which haven't had collisions can be
+ * safely removed from the store. The fraction of collided values should be low,
+ * about 0.3% for a store with 10^7 values and a modulo of 2^29.
+ * The store estimates its memory footprint and will stop adding more values once it reaches its memory cap.
+ */
+public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
+    protected final int modulo;
+    protected class KeyStoreStats {
+        protected int size;
+        protected long memSizeCapInBytes;
+        protected CounterMetric numAddAttempts;
+        protected CounterMetric numCollisions;
+        protected boolean guaranteesNoFalseNegatives;
+        protected int maxNumEntries;
+        protected boolean atCapacity;
+        protected CounterMetric numRemovalAttempts; // used in removable classes
+        protected CounterMetric numSuccessfulRemovals;
+        protected KeyStoreStats(long memSizeCapInBytes, int maxNumEntries) {
+            this.size = 0;
+            this.numAddAttempts = new CounterMetric();
+            this.numCollisions = new CounterMetric();
+            this.guaranteesNoFalseNegatives = true;
+            this.memSizeCapInBytes = memSizeCapInBytes;
+            this.maxNumEntries = maxNumEntries;
+            this.atCapacity = false;
+            this.numRemovalAttempts = new CounterMetric();
+            this.numSuccessfulRemovals = new CounterMetric();
+        }
     }
 
-    @Override
+    protected KeyStoreStats stats;
+    protected RoaringBitmap rbm;
+    private HashSet<Integer> collidedInts;
+    protected final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    protected final Lock readLock = lock.readLock();
+    protected final Lock writeLock = lock.writeLock();
+
+    RBMIntKeyLookupStore(int modulo, long memSizeCapInBytes) {
+        this.modulo = modulo;
+        this.stats = new KeyStoreStats(memSizeCapInBytes, calculateMaxNumEntries(memSizeCapInBytes));
+        this.rbm = new RoaringBitmap();
+        collidedInts = new HashSet<>();
+
+    }
+
+    protected int calculateMaxNumEntries(long memSizeCapInBytes) {
+        if (memSizeCapInBytes == 0) {
+            return Integer.MAX_VALUE;
+        }
+        return RBMSizeEstimator.getNumEntriesFromSizeInBytes(memSizeCapInBytes);
+    }
+
+    protected final int transform(int value) {
+        return modulo == 0 ? value : value % modulo;
+    }
+
     protected void handleCollisions(int transformedValue) {
         stats.numCollisions.inc();
         collidedInts.add(transformedValue);
     }
 
+    @Override
+    public boolean add(Integer value) throws Exception {
+        if (value == null) {
+            return false;
+        }
+        writeLock.lock();
+        stats.numAddAttempts.inc();
+        try {
+            if (stats.size == stats.maxNumEntries) {
+                stats.atCapacity = true;
+                return false;
+            }
+            int transformedValue = transform(value);
+            boolean alreadyContained = contains(value);
+            if (!alreadyContained) {
+                rbm.add(transformedValue);
+                stats.size++;
+                return true;
+            }
+            handleCollisions(transformedValue);
+            return false;
+        } finally {
+            writeLock.unlock();
+        }
+    }
 
-    // Check if the value to remove has had a collision, and if not, remove it
+    @Override
+    public boolean contains(Integer value) throws Exception {
+        if (value == null) {
+            return false;
+        }
+        int transformedValue = transform(value);
+        readLock.lock();
+        try {
+            return rbm.contains(transformedValue);
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    @Override
+    public Integer getInternalRepresentation(Integer value) {
+        if (value == null) {
+            return 0;
+        }
+        return Integer.valueOf(transform(value));
+    }
+
     @Override
     public boolean remove(Integer value) throws Exception {
         if (value == null) {
@@ -86,17 +180,95 @@ public class RBMIntKeyLookupStore extends BaseRBMIntKeyLookupStore implements Ke
         }
     }
 
+
+    @Override
+    public void forceRemove(Integer value) throws Exception {
+        if (value == null) {
+            return;
+        }
+        writeLock.lock();
+        stats.guaranteesNoFalseNegatives = false;
+        try {
+            int transformedValue = transform(value);
+            rbm.remove(transformedValue);
+            stats.size--;
+        } finally {
+            writeLock.unlock();
+        }
+    }
+
+    @Override
+    public boolean canHaveFalseNegatives() {
+        return !stats.guaranteesNoFalseNegatives;
+    }
+
+    @Override
+    public int getSize() {
+        readLock.lock();
+        try {
+            return stats.size;
+        } finally {
+            readLock.unlock();
+        }
+    }
+
+    @Override
+    public int getTotalAdds() {
+        return (int) stats.numAddAttempts.count();
+    }
+
+    @Override
+    public int getCollisions() {
+        return (int) stats.numCollisions.count();
+    }
+
+
+    @Override
+    public boolean isCollision(Integer value1, Integer value2) {
+        if (value1 == null || value2 == null) {
+            return false;
+        }
+        return transform(value1) == transform(value2);
+    }
+
     @Override
     public long getMemorySizeInBytes() {
-        return super.getMemorySizeInBytes() + RBMSizeEstimator.getHashsetMemSizeInBytes(collidedInts.size());
+        return RBMSizeEstimator.getSizeInBytes(stats.size) + RBMSizeEstimator.getHashsetMemSizeInBytes(collidedInts.size());
+    }
+
+    @Override
+    public long getMemorySizeCapInBytes() {
+        return stats.memSizeCapInBytes;
+    }
+
+    @Override
+    public boolean isFull() {
+        return stats.atCapacity;
     }
 
     @Override
     public void regenerateStore(Integer[] newValues) throws Exception {
+        rbm.clear();
         collidedInts = new HashSet<>();
-        super.regenerateStore(newValues);
+        stats.size = 0;
+        stats.numAddAttempts = new CounterMetric();
+        stats.numCollisions = new CounterMetric();
+        stats.guaranteesNoFalseNegatives = true;
+        stats.numRemovalAttempts = new CounterMetric();
+        stats.numSuccessfulRemovals = new CounterMetric();
+        for (int i = 0; i < newValues.length; i++) {
+            if (newValues[i] != null) {
+                add(newValues[i]);
+            }
+        }
     }
 
+
+
+    @Override
+    public void clear() throws Exception {
+        regenerateStore(new Integer[]{});
+    }
     public int getNumRemovalAttempts() {
         return (int) stats.numRemovalAttempts.count();
     }
