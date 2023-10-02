@@ -37,7 +37,9 @@ import java.util.HashSet;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import org.opensearch.common.metrics.CounterMetric;
 import org.roaringbitmap.RoaringBitmap;
+import org.w3c.dom.css.Counter;
 
 /**
  * A store which dynamically switches its internal data structure from hash set to sorted int array
@@ -51,19 +53,39 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
     /**
      * Used to keep track of which structure is being used to store values.
      */
-    protected enum StructureTypes {
+    public enum StructureTypes {
         HASHSET,
         INTARR,
         RBM
     }
 
+    protected class KeyStoreStats {
+        protected int size;
+        protected long memSizeCapInBytes;
+        protected CounterMetric numAddAttempts;
+        protected CounterMetric numCollisions;
+        protected boolean guaranteesNoFalseNegatives;
+        protected int maxNumEntries;
+        protected boolean atCapacity;
+        protected CounterMetric numRemovalAttempts; // used in removable classes
+        protected CounterMetric numSuccessfulRemovals;
+        protected KeyStoreStats(long memSizeCapInBytes, int maxNumEntries) {
+            this.size = 0;
+            this.numAddAttempts = new CounterMetric();
+            this.numCollisions = new CounterMetric();
+            this.guaranteesNoFalseNegatives = true;
+            this.memSizeCapInBytes = memSizeCapInBytes;
+            this.maxNumEntries = maxNumEntries;
+            this.atCapacity = false;
+            this.numRemovalAttempts = new CounterMetric();
+            this.numSuccessfulRemovals = new CounterMetric();
+        }
+    }
+
+    protected KeyStoreStats stats;
     protected StructureTypes currentStructure;
     protected final int modulo;
-    protected int size;
-    protected long memSizeCapInBytes;
-    protected int numAddAttempts;
-    protected int numCollisions;
-    protected boolean guaranteesNoFalseNegatives;
+
 
     protected HashSet<Integer> hashset;
     protected int[] intArr;
@@ -72,23 +94,11 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
     protected final Lock readLock = lock.readLock();
     protected final Lock writeLock = lock.writeLock();
 
-
-    protected int maxNumEntries;
-    protected boolean atCapacity;
-
     public HybridIntKeyLookupStore(int modulo, long memSizeCapInBytes) {
         this.modulo = modulo; // A modulo of 0 means no modulo
         this.hashset = new HashSet<Integer>();
         this.currentStructure = StructureTypes.HASHSET;
-        this.size = 0;
-        this.numAddAttempts = 0;
-        this.numCollisions = 0;
-        this.guaranteesNoFalseNegatives = true;
-        this.memSizeCapInBytes = memSizeCapInBytes; // A cap of 0 means no cap
-        // The effective modulo is halved compared to tests because of taking only negative values for the sorted int array
-        this.maxNumEntries = calculateMaxNumEntries();
-        //intArr = null;
-        //rbm = null;
+        this.stats = new KeyStoreStats(memSizeCapInBytes, calculateMaxNumEntries(memSizeCapInBytes));
     }
 
     protected final int customAbs(int value) {
@@ -142,14 +152,14 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
         writeLock.lock();
         try {
             if (currentStructure == StructureTypes.HASHSET) {
-                size = 0;
+                stats.size = 0;
                 intArr = new int[INTARR_SIZE];
                 currentStructure = StructureTypes.INTARR;
                 for (int value : hashset) {
-                    boolean alreadyContained = isInIntArr(value, size, true);
+                    boolean alreadyContained = isInIntArr(value, stats.size, true);
                     // should never be already contained, but just to be safe
                     if (!alreadyContained) {
-                        size++;
+                        stats.size++;
                     }
                 }
                 hashset = null;
@@ -165,7 +175,7 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
             if (currentStructure == StructureTypes.INTARR) {
                 currentStructure = StructureTypes.RBM;
                 rbm = new RoaringBitmap();
-                for (int i = 0; i < size; i++) {
+                for (int i = 0; i < stats.size; i++) {
                     rbm.add(intArr[i]);
                 }
                 intArr = null;
@@ -182,15 +192,15 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
     protected final void handleStructureSwitch() throws IllegalStateException { // write lock?
         writeLock.lock();
         try {
-            if (size == HASHSET_TO_INTARR_THRESHOLD - 1) {
-                if (maxNumEntries <= HASHSET_TO_INTARR_THRESHOLD) {
-                    atCapacity = true;
+            if (stats.size == HASHSET_TO_INTARR_THRESHOLD - 1) {
+                if (stats.maxNumEntries <= HASHSET_TO_INTARR_THRESHOLD) {
+                    stats.atCapacity = true;
                     return;
                 }
                 switchHashsetToIntArr();
-            } else if (size == INTARR_TO_RBM_THRESHOLD - 1) {
-                if (maxNumEntries <= INTARR_TO_RBM_THRESHOLD) {
-                    atCapacity = true;
+            } else if (stats.size == INTARR_TO_RBM_THRESHOLD - 1) {
+                if (stats.maxNumEntries <= INTARR_TO_RBM_THRESHOLD) {
+                    stats.atCapacity = true;
                     return;
                 }
                 switchIntArrToRBM();
@@ -204,11 +214,11 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
         writeLock.lock();
         try {
             intArrChecks(value);
-            int index = Arrays.binarySearch(intArr, 0, size, value);
+            int index = Arrays.binarySearch(intArr, 0, stats.size, value);
             if (index >= 0) {
-                System.arraycopy(intArr, index + 1, intArr, index, size - index - 1);
-                intArr[size - 1] = 0;
-                size--;
+                System.arraycopy(intArr, index + 1, intArr, index, stats.size - index - 1);
+                intArr[stats.size - 1] = 0;
+                stats.size--;
             }
         } finally {
             writeLock.unlock();
@@ -216,7 +226,7 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
     }
 
     protected void handleCollisions(int transformedValue) {
-        numCollisions++;
+        stats.numCollisions.inc();
     }
 
     @Override
@@ -226,13 +236,13 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
         }
         writeLock.lock();
         try {
-            if (size == maxNumEntries) {
-                atCapacity = true;
+            if (stats.size == stats.maxNumEntries) {
+                stats.atCapacity = true;
             }
             handleStructureSwitch(); // also might set atCapacity
-            if (!atCapacity) {
+            if (!stats.atCapacity) {
 
-                numAddAttempts++;
+                stats.numAddAttempts.inc();
                 int transformedValue = transform(value);
                 boolean alreadyContained;
 
@@ -241,7 +251,7 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
                         alreadyContained = !(hashset.add(transformedValue));
                         break;
                     case INTARR:
-                        alreadyContained = isInIntArr(transformedValue, size, true);
+                        alreadyContained = isInIntArr(transformedValue, stats.size, true);
                         break;
                     case RBM:
                         alreadyContained = containsTransformed(transformedValue);
@@ -256,7 +266,7 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
                     handleCollisions(transformedValue);
                     return false;
                 }
-                size++;
+                stats.size++;
                 return true;
             }
             return false;
@@ -272,7 +282,7 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
                 case HASHSET:
                     return hashset.contains(transformedValue);
                 case INTARR:
-                    return isInIntArr(transformedValue, size, false);
+                    return isInIntArr(transformedValue, stats.size, false);
                 case RBM:
                     return rbm.contains(transformedValue);
                 default:
@@ -324,10 +334,6 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
         return false;
     }
 
-    @Override
-    public boolean supportsRemoval() {
-        return false;
-    }
 
     protected void removeHelperFunction(int transformedValue) throws IllegalStateException {
         // allows code to be reused in forceRemove() of this class and remove() of inheriting class
@@ -335,14 +341,14 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
         switch (currentStructure) {
             case HASHSET:
                 hashset.remove(transformedValue);
-                size--;
+                stats.size--;
                 return;
             case INTARR:
                 removeFromIntArr(transformedValue); // size is decreased in this function already
                 return;
             case RBM:
                 rbm.remove(transformedValue);
-                size--;
+                stats.size--;
         }
     }
 
@@ -352,7 +358,7 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
             return;
         }
         writeLock.lock();
-        guaranteesNoFalseNegatives = false;
+        stats.guaranteesNoFalseNegatives = false;
         try {
             int transformedValue = transform(value);
             boolean alreadyContained = contains(transformedValue);
@@ -366,41 +372,32 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
 
     @Override
     public boolean canHaveFalseNegatives() {
-        return !guaranteesNoFalseNegatives;
+        return !stats.guaranteesNoFalseNegatives;
     }
 
     @Override
     public int getSize() {
         readLock.lock(); // needed because size is changed during switchHashsetToIntarr()
         try {
-            return size;
+            return stats.size;
         } finally {
             readLock.unlock();
         }
     }
 
     @Override
-    public int getNumAddAttempts() {
-        return numAddAttempts;
+    public int getTotalAdds() {
+        return (int) stats.numAddAttempts.count();
     }
 
     @Override
-    public int getNumCollisions() {
-        return numCollisions;
+    public int getCollisions() {
+        return (int) stats.numCollisions.count();
     }
 
-    @Override
-    public String getCurrentStructure() throws IllegalStateException {
-        switch (currentStructure) {
-            case HASHSET:
-                return "HashSet";
-            case INTARR:
-                return "intArr";
-            case RBM:
-                return "RBM";
-            default:
-                throw new IllegalStateException("currentStructure is none of possible values");
-        }
+
+    public StructureTypes getCurrentStructure() throws IllegalStateException {
+        return currentStructure;
     }
 
     @Override
@@ -411,7 +408,7 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
         return transform(value1) == transform(value2);
     }
 
-    protected int calculateMaxNumEntries() {
+    protected int calculateMaxNumEntries(long memSizeCapInBytes) {
         double maxHashsetMemSize = RBMSizeEstimator.getHashsetMemSizeInBytes(HASHSET_TO_INTARR_THRESHOLD - 1);
         double intArrMemSize = getIntArrMemSizeInBytes();
         double minRBMMemSize = RBMSizeEstimator.getSizeInBytes(INTARR_TO_RBM_THRESHOLD);
@@ -439,37 +436,39 @@ public class HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
     public long getMemorySizeInBytes() {
         switch (currentStructure) {
             case HASHSET:
-                return RBMSizeEstimator.getHashsetMemSizeInBytes(size);
+                return RBMSizeEstimator.getHashsetMemSizeInBytes(stats.size);
             case INTARR:
                 return getIntArrMemSizeInBytes();
             case RBM:
-                return RBMSizeEstimator.getSizeInBytes(size);
+                return RBMSizeEstimator.getSizeInBytes(stats.size);
         }
         return 0;
     }
 
     @Override
     public long getMemorySizeCapInBytes() {
-        return memSizeCapInBytes;
+        return stats.memSizeCapInBytes;
     }
 
     public int getMaxNumEntries() {
-        return maxNumEntries;
+        return stats.maxNumEntries;
     }
 
     @Override
-    public boolean isAtCapacity() {
-        return atCapacity;
+    public boolean isFull() {
+        return stats.atCapacity;
     }
 
     @Override
     public void regenerateStore(Integer[] newValues) throws IllegalStateException {
         intArr = null;
         rbm = null;
-        size = 0;
-        numCollisions = 0;
-        numAddAttempts = 0;
-        guaranteesNoFalseNegatives = true;
+        stats.size = 0;
+        stats.numCollisions = new CounterMetric();
+        stats.numAddAttempts = new CounterMetric();
+        stats.guaranteesNoFalseNegatives = true;
+        stats.numRemovalAttempts = new CounterMetric();
+        stats.numSuccessfulRemovals = new CounterMetric();
         currentStructure = StructureTypes.HASHSET;
         hashset = new HashSet<>();
 

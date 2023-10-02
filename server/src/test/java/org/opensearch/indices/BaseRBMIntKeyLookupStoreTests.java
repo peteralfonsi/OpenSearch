@@ -40,22 +40,22 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 
-public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
+public class BaseRBMIntKeyLookupStoreTests extends OpenSearchTestCase {
     // Tests mostly based on HybridIntKeyStoreTests.java
     public void testInit() {
         long memCap = 100 * RBMSizeEstimator.BYTES_IN_MB;
-        RBMIntKeyLookupStore base_kls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), memCap);
-        RemovableRBMIntKeyLookupStore rkls = new RemovableRBMIntKeyLookupStore((int) Math.pow(2, 29), memCap);
-        for (RBMIntKeyLookupStore kls : new RBMIntKeyLookupStore[] { base_kls, rkls }) {
+        BaseRBMIntKeyLookupStore base_kls = new BaseRBMIntKeyLookupStore((int) Math.pow(2, 29), memCap);
+        RBMIntKeyLookupStore rkls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), memCap);
+        for (BaseRBMIntKeyLookupStore kls : new BaseRBMIntKeyLookupStore[] { base_kls, rkls }) {
             assertEquals(0, kls.getSize());
             assertEquals(memCap, kls.getMemorySizeCapInBytes());
         }
     }
     public void testTransformationLogic() throws Exception {
         int modulo = (int) Math.pow(2, 29);
-        RBMIntKeyLookupStore base_kls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
-        RemovableRBMIntKeyLookupStore rkls = new RemovableRBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
-        for (RBMIntKeyLookupStore kls : new RBMIntKeyLookupStore[] { base_kls, rkls }) {
+        BaseRBMIntKeyLookupStore base_kls = new BaseRBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+        RBMIntKeyLookupStore rkls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+        for (BaseRBMIntKeyLookupStore kls : new BaseRBMIntKeyLookupStore[] { base_kls, rkls }) {
             int offset = 3;
             for (int i = 0; i < 4; i++) { // after this we run into max value, but thats not a flaw with the class design
                 int posValue = i * modulo + offset;
@@ -73,9 +73,9 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
     }
 
     public void testContainsAndForceRemove() throws Exception {
-        RBMIntKeyLookupStore base_kls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
-        RemovableRBMIntKeyLookupStore rkls = new RemovableRBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
-        for (RBMIntKeyLookupStore kls : new RBMIntKeyLookupStore[] { base_kls, rkls }) {
+        BaseRBMIntKeyLookupStore base_kls = new BaseRBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+        RBMIntKeyLookupStore rkls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+        for (BaseRBMIntKeyLookupStore kls : new BaseRBMIntKeyLookupStore[] { base_kls, rkls }) {
             for (int i = 0; i < 2000; i++) {
                 kls.add(i);
                 assertTrue(kls.contains(i));
@@ -91,20 +91,20 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
 
     public void testAddingStatsGetters() throws Exception {
         int modulo = (int) Math.pow(2, 15);
-        RBMIntKeyLookupStore base_kls = new RBMIntKeyLookupStore(modulo, 0L);
-        RemovableRBMIntKeyLookupStore rkls = new RemovableRBMIntKeyLookupStore(modulo, 0L);
-        for (RBMIntKeyLookupStore kls : new RBMIntKeyLookupStore[] { base_kls, rkls }) {
+        BaseRBMIntKeyLookupStore base_kls = new BaseRBMIntKeyLookupStore(modulo, 0L);
+        RBMIntKeyLookupStore rkls = new RBMIntKeyLookupStore(modulo, 0L);
+        for (BaseRBMIntKeyLookupStore kls : new BaseRBMIntKeyLookupStore[] { base_kls, rkls }) {
             kls.add(15);
             kls.add(-15);
-            assertEquals(2, kls.getNumAddAttempts());
-            assertEquals(0, kls.getNumCollisions());
+            assertEquals(2, kls.getTotalAdds());
+            assertEquals(0, kls.getCollisions());
 
             int offset = 1;
             for (int i = 0; i < 10; i++) {
                 kls.add(i * modulo + offset);
             }
-            assertEquals(12, kls.getNumAddAttempts());
-            assertEquals(9, kls.getNumCollisions());
+            assertEquals(12, kls.getTotalAdds());
+            assertEquals(9, kls.getCollisions());
         }
 
     }
@@ -112,9 +112,9 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
     public void testRegenerateStore() throws Exception {
         int numToAdd = 10000000;
         Random rand = Randomness.get();
-        RBMIntKeyLookupStore base_kls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
-        RemovableRBMIntKeyLookupStore rkls = new RemovableRBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
-        for (RBMIntKeyLookupStore kls : new RBMIntKeyLookupStore[] { base_kls, rkls }) {
+        BaseRBMIntKeyLookupStore base_kls = new BaseRBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+        RBMIntKeyLookupStore rkls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+        for (BaseRBMIntKeyLookupStore kls : new BaseRBMIntKeyLookupStore[] { base_kls, rkls }) {
             for (int i = 0; i < numToAdd; i++) {
                 kls.add(i);
             }
@@ -133,9 +133,9 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
     }
 
     public void testAddingDuplicates() throws Exception {
-        RBMIntKeyLookupStore base_kls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
-        RemovableRBMIntKeyLookupStore rkls = new RemovableRBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
-        for (RBMIntKeyLookupStore kls : new RBMIntKeyLookupStore[] { base_kls, rkls }) {
+        BaseRBMIntKeyLookupStore base_kls = new BaseRBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+        RBMIntKeyLookupStore rkls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+        for (BaseRBMIntKeyLookupStore kls : new BaseRBMIntKeyLookupStore[] { base_kls, rkls }) {
             int numToAdd = 4820411;
             for (int i = 0; i < numToAdd; i++) {
                 kls.add(i);
@@ -152,9 +152,9 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
         int modulo = (int) Math.pow(2, 29);
         for (int maxEntries: new int[]{2342000, 1000, 100000}) {
             long memSizeCapInBytes = RBMSizeEstimator.getSizeInBytes(maxEntries);
-            RBMIntKeyLookupStore base_kls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), memSizeCapInBytes);
-            RemovableRBMIntKeyLookupStore rkls = new RemovableRBMIntKeyLookupStore((int) Math.pow(2, 29), memSizeCapInBytes);
-            for (RBMIntKeyLookupStore kls : new RBMIntKeyLookupStore[] { base_kls, rkls }) {
+            BaseRBMIntKeyLookupStore base_kls = new BaseRBMIntKeyLookupStore((int) Math.pow(2, 29), memSizeCapInBytes);
+            RBMIntKeyLookupStore rkls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), memSizeCapInBytes);
+            for (BaseRBMIntKeyLookupStore kls : new BaseRBMIntKeyLookupStore[] { base_kls, rkls }) {
                 for (int j = 0; j < maxEntries + 1000; j++) {
                     kls.add(j);
                 }
@@ -170,9 +170,9 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
         int modulo = (int) Math.pow(2, 29);
         long memCap = 100 * RBMSizeEstimator.BYTES_IN_MB;
         for (int j = 0; j < 5; j++) { // test with different numbers of threads
-            RBMIntKeyLookupStore base_kls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
-            RemovableRBMIntKeyLookupStore rkls = new RemovableRBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
-            for (RBMIntKeyLookupStore kls : new RBMIntKeyLookupStore[] { base_kls, rkls }) {
+            BaseRBMIntKeyLookupStore base_kls = new BaseRBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+            RBMIntKeyLookupStore rkls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+            for (BaseRBMIntKeyLookupStore kls : new BaseRBMIntKeyLookupStore[] { base_kls, rkls }) {
                 int numThreads = rand.nextInt(50) + 1;
                 ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(numThreads);
                 // In this test we want to add the first 200K numbers and check they're all correctly there.
@@ -226,7 +226,7 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
                 }
                 assertEquals(amountToAdd, originalAdds + duplicateAdds);
                 assertEquals(amountToAdd, kls.getSize());
-                assertEquals(amountToAdd / 1000, kls.getNumCollisions());
+                assertEquals(amountToAdd / 1000, kls.getCollisions());
                 executor.shutdown();
             }
         }
@@ -236,9 +236,8 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
         // only for RemovableRBMIntKeyLookupStore
         long memCap = 100L * RBMSizeEstimator.BYTES_IN_MB;
         int numToAdd = 195000;
-        RemovableRBMIntKeyLookupStore rkls = new RemovableRBMIntKeyLookupStore(0, memCap);
+        RBMIntKeyLookupStore rkls = new RBMIntKeyLookupStore(0, memCap);
         // there should be no collisions for sequential positive numbers up to modulo
-        assertTrue(rkls.supportsRemoval());
         for (int i = 0; i < numToAdd; i++) {
             rkls.add(i);
         }
@@ -253,7 +252,7 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
     public void testRemoveWithCollisions() throws Exception {
         int modulo = (int) Math.pow(2, 26);
         long memCap = 100L * RBMSizeEstimator.BYTES_IN_MB;
-        RemovableRBMIntKeyLookupStore rkls = new RemovableRBMIntKeyLookupStore(modulo, memCap);
+        RBMIntKeyLookupStore rkls = new RBMIntKeyLookupStore(modulo, memCap);
         for (int i = 0; i < 10; i++) {
             rkls.add(i);
             if (i % 2 == 1) {
@@ -296,9 +295,9 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
     }
 
     public void testNullInputs() throws Exception {
-        RBMIntKeyLookupStore base_kls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
-        RemovableRBMIntKeyLookupStore rkls = new RemovableRBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
-        for (RBMIntKeyLookupStore kls : new RBMIntKeyLookupStore[] { base_kls, rkls }) {
+        BaseRBMIntKeyLookupStore base_kls = new BaseRBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+        RBMIntKeyLookupStore rkls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
+        for (BaseRBMIntKeyLookupStore kls : new BaseRBMIntKeyLookupStore[] { base_kls, rkls }) {
             assertFalse(kls.add(null));
             assertFalse(kls.contains(null));
             assertEquals(0, (int) kls.getInternalRepresentation(null));
@@ -306,7 +305,7 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
             kls.forceRemove(null);
             assertFalse(kls.canHaveFalseNegatives());
             assertFalse(kls.isCollision(null, null));
-            assertEquals(0, kls.getNumAddAttempts());
+            assertEquals(0, kls.getTotalAdds());
             Integer[] newVals = new Integer[]{1, 17, -2, null, -4, null};
             kls.regenerateStore(newVals);
             assertEquals(4, kls.getSize());

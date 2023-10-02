@@ -39,26 +39,18 @@ import java.util.HashSet;
  */
 public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore implements KeyLookupStore<Integer> {
     private HashSet<Integer> collidedInts;
-    private int numRemovalAttempts;
-    private int numSuccessfulRemovals;
 
     RemovableHybridIntKeyLookupStore(int modulo, long memSizeCapInBytes) {
         super(modulo, memSizeCapInBytes);
         collidedInts = new HashSet<>();
-        numRemovalAttempts = 0;
-        numSuccessfulRemovals = 0;
     }
 
     @Override
     protected void handleCollisions(int transformedValue) {
-        numCollisions++;
+        stats.numCollisions.inc();
         collidedInts.add(transformedValue);
     }
 
-    @Override
-    public boolean supportsRemoval() {
-        return true;
-    }
 
     // Check if the value to remove has had a collision, and if not, remove it
     @Override
@@ -72,7 +64,7 @@ public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore im
             if (!contains(value)) {
                 return false;
             }
-            numRemovalAttempts++;
+            stats.numRemovalAttempts.inc();
             if (collidedInts.contains(transformedValue)) {
                 return false;
             }
@@ -82,7 +74,7 @@ public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore im
         writeLock.lock();
         try {
             removeHelperFunction(transformedValue);
-            numSuccessfulRemovals++;
+            stats.numSuccessfulRemovals.inc();
             return true;
         } finally {
             writeLock.unlock();
@@ -101,11 +93,11 @@ public class RemovableHybridIntKeyLookupStore extends HybridIntKeyLookupStore im
     }
 
     public int getNumRemovalAttempts() {
-        return numRemovalAttempts;
+        return (int) stats.numRemovalAttempts.count();
     }
 
     public int getNumSuccessfulRemovals() {
-        return numSuccessfulRemovals;
+        return (int) stats.numSuccessfulRemovals.count();
     }
 
     public boolean valueHasHadCollision(Integer value) {
