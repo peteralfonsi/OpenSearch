@@ -39,7 +39,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.opensearch.common.metrics.CounterMetric;
 import org.roaringbitmap.RoaringBitmap;
-import org.w3c.dom.css.Counter;
 
 /**
  * A store which dynamically switches its internal data structure from hash set to sorted int array
