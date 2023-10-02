@@ -48,7 +48,7 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
         HybridIntKeyLookupStore base_kls = new HybridIntKeyLookupStore((int) Math.pow(2, 29), 0L);
         RemovableHybridIntKeyLookupStore rkls = new RemovableHybridIntKeyLookupStore((int) Math.pow(2, 29), 0L);
         for (HybridIntKeyLookupStore kls : new HybridIntKeyLookupStore[] { base_kls, rkls }) {
-            assertEquals("HashSet", kls.getCurrentStructure());
+            assertEquals(HybridIntKeyLookupStore.StructureTypes.HASHSET, kls.getCurrentStructure());
             assertEquals(0, kls.getSize());
         }
     }
@@ -60,12 +60,12 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
             for (int i = 0; i < HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD; i++) {
                 kls.add(i);
             }
-            assertEquals("intArr", kls.getCurrentStructure());
+            assertEquals(HybridIntKeyLookupStore.StructureTypes.INTARR, kls.getCurrentStructure());
             assertEquals(HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD, kls.getSize());
             for (int i = HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD; i < HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD; i++) {
                 kls.add(i);
             }
-            assertEquals("RBM", kls.getCurrentStructure());
+            assertEquals(HybridIntKeyLookupStore.StructureTypes.RBM, kls.getCurrentStructure());
             assertEquals(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD, kls.getSize());
         }
     }
@@ -140,13 +140,13 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
                 assertEquals(1, kls.getSize() - lastSize);
                 lastSize = kls.getSize();
             }
-            assertEquals("intArr", kls.getCurrentStructure());
+            assertEquals(HybridIntKeyLookupStore.StructureTypes.INTARR, kls.getCurrentStructure());
             assertEquals(HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD, kls.getSize());
             for (int i = kls.getSize(); i < HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD + 1000; i++) {
                 kls.add(i);
                 assertTrue(kls.contains(i));
             }
-            assertEquals("RBM", kls.getCurrentStructure());
+            assertEquals(HybridIntKeyLookupStore.StructureTypes.RBM, kls.getCurrentStructure());
             assertEquals(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD + 1000, kls.getSize());
             for (int i = 5000; i < 10000; i++) {
                 kls.forceRemove(i);
@@ -163,15 +163,15 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
         for (HybridIntKeyLookupStore kls : new HybridIntKeyLookupStore[] { base_kls, rkls }) {
             kls.add(15);
             kls.add(-15);
-            assertEquals(2, kls.getNumAddAttempts());
-            assertEquals(1, kls.getNumCollisions());
+            assertEquals(2, kls.getTotalAdds());
+            assertEquals(1, kls.getCollisions());
 
             int offset = 1;
             for (int i = 0; i < 10; i++) {
                 kls.add(i * modulo + offset);
             }
-            assertEquals(12, kls.getNumAddAttempts());
-            assertEquals(10, kls.getNumCollisions());
+            assertEquals(12, kls.getTotalAdds());
+            assertEquals(10, kls.getCollisions());
         }
     }
 
@@ -199,7 +199,7 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
             }
             // test clear()
             kls.clear();
-            assertEquals("HashSet", kls.getCurrentStructure());
+            assertEquals(HybridIntKeyLookupStore.StructureTypes.HASHSET, kls.getCurrentStructure());
             assertEquals(0, kls.getSize());
         }
     }
@@ -255,23 +255,23 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
                 assertTrue(didAdd);
             }
             // now try to add one more, which would cause a transition and push us past the memory cap
-            assertFalse(kls.isAtCapacity());
-            assertEquals("HashSet", kls.getCurrentStructure());
+            assertFalse(kls.isFull());
+            assertEquals(HybridIntKeyLookupStore.StructureTypes.HASHSET, kls.getCurrentStructure());
             boolean didAdd = kls.add(HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD - 1);
             assertFalse(didAdd);
-            assertTrue(kls.isAtCapacity());
-            assertEquals("HashSet", kls.getCurrentStructure());
+            assertTrue(kls.isFull());
+            assertEquals(HybridIntKeyLookupStore.StructureTypes.HASHSET, kls.getCurrentStructure());
 
             kls = new HybridIntKeyLookupStore(modulo, minRBMMemSize);
             for (int j = 0; j < HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD - 1; j++) {
                 didAdd = kls.add(j);
                 assertTrue(didAdd);
             }
-            assertFalse(kls.isAtCapacity());
+            assertFalse(kls.isFull());
             didAdd = kls.add(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD);
             assertFalse(didAdd);
-            assertTrue(kls.isAtCapacity());
-            assertEquals("intArr", kls.getCurrentStructure());
+            assertTrue(kls.isFull());
+            assertEquals(HybridIntKeyLookupStore.StructureTypes.INTARR, kls.getCurrentStructure());
         }
     }
 
@@ -287,7 +287,7 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
                 kls.add(j);
             }
             assertTrue(Math.abs(3000 - kls.getSize()) < 2); // double --> long conversion adds a bit of lossiness
-            assertEquals("HashSet", kls.getCurrentStructure());
+            assertEquals(HybridIntKeyLookupStore.StructureTypes.HASHSET, kls.getCurrentStructure());
 
             // test where max number of entries should be 999,999 (bounded at intArr size)
             memSizeCapInBytes = HybridIntKeyLookupStore.getIntArrMemSizeInBytes();
@@ -296,7 +296,7 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
                 kls.add(j);
             }
             assertEquals(HybridIntKeyLookupStore.INTARR_TO_RBM_THRESHOLD - 1, kls.getSize());
-            assertEquals("intArr", kls.getCurrentStructure());
+            assertEquals(HybridIntKeyLookupStore.StructureTypes.INTARR, kls.getCurrentStructure());
 
             int maxEntries = 2342000;
             memSizeCapInBytes = RBMSizeEstimator.getSizeInBytes(maxEntries);
@@ -369,7 +369,7 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
                 }
                 assertEquals(amountToAdd, originalAdds + duplicateAdds);
                 assertEquals(amountToAdd, kls.getSize());
-                assertEquals(amountToAdd / 1000, kls.getNumCollisions());
+                assertEquals(amountToAdd / 1000, kls.getCollisions());
                 executor.shutdown();
             }
         }
@@ -386,7 +386,7 @@ public class HybridIntKeyLookupStoreTests extends OpenSearchTestCase {
             kls.forceRemove(null);
             assertFalse(kls.canHaveFalseNegatives());
             assertFalse(kls.isCollision(null, null));
-            assertEquals(0, kls.getNumAddAttempts());
+            assertEquals(0, kls.getTotalAdds());
             Integer[] newVals = new Integer[]{1, 17, -2, null, -4, null};
             kls.regenerateStore(newVals);
             assertEquals(4, kls.getSize());

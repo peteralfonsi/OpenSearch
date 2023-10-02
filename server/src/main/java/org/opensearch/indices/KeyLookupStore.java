@@ -74,11 +74,6 @@ public interface KeyLookupStore<T> {
      */
     boolean remove(T value) throws Exception;
 
-    /**
-     * Check if the implementing class supports safe removals. If it doesn't, remove() will always return false.
-     * @return true if the class supports safe removals, false if it doesn't.
-     */
-    boolean supportsRemoval();
 
     /**
      * Remove the transformed version of this value from the store. Calling this function may cause
@@ -104,19 +99,14 @@ public interface KeyLookupStore<T> {
      * Returns the number of times add() has been run, including unsuccessful attempts.
      * @return The number of adding attempts.
      */
-    int getNumAddAttempts();
+    int getTotalAdds();
 
     /**
      * Returns the number of times add() has returned false due to a collision.
      * @return The number of collisions.
      */
-    int getNumCollisions();
+    int getCollisions();
 
-    /**
-     * Returns the current internal data structure.
-     * @return A string representing the currently used internal data structure.
-     */
-    String getCurrentStructure() throws Exception;
 
     /**
      * Checks if two values would collide after being transformed by this store's transformation.
@@ -139,9 +129,9 @@ public interface KeyLookupStore<T> {
     long getMemorySizeCapInBytes();
 
     /**
-     * Returns whether the store is at memory capacity
+     * Returns whether the store is at memory capacity and can't accept more entries
      */
-    boolean isAtCapacity();
+    boolean isFull();
 
     /**
      * Deletes the internal data structure and regenerates it from the values passed in.

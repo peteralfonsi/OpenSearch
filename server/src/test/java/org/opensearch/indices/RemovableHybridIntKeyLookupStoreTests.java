@@ -42,7 +42,6 @@ public class RemovableHybridIntKeyLookupStoreTests extends OpenSearchTestCase {
         long memCap = 100L * RBMSizeEstimator.BYTES_IN_MB;
         RemovableHybridIntKeyLookupStore rkls = new RemovableHybridIntKeyLookupStore(0, memCap);
         // there should be no collisions for sequential positive numbers up to modulo
-        assertTrue(rkls.supportsRemoval());
         for (int i = 0; i < HybridIntKeyLookupStore.HASHSET_TO_INTARR_THRESHOLD - 1; i++) {
             rkls.add(i);
         }
