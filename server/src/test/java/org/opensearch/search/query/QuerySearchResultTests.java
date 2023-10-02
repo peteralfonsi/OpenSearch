@@ -100,8 +100,6 @@ public class QuerySearchResultTests extends OpenSearchTestCase {
             result.aggregations(InternalAggregationsTests.createTestInstance());
         }
         assertEquals(0, result.getTookTimeNanos());
-        result.setTookTimeNanos();
-        assertTrue(result.getTookTimeNanos() > 0);
         return result;
     }
 

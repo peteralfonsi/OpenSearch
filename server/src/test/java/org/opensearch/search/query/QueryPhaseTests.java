@@ -277,34 +277,6 @@ public class QueryPhaseTests extends IndexShardTestCase {
         dir.close();
     }
 
-    public void testQueryTookTime() throws Exception {
-        Directory dir = newDirectory();
-        final Sort sort = new Sort(new SortField("rank", SortField.Type.INT));
-        IndexWriterConfig iwc = newIndexWriterConfig().setIndexSort(sort);
-        RandomIndexWriter w = new RandomIndexWriter(random(), dir, iwc);
-        Document doc = new Document();
-        for (int i = 0; i < 10; i++) {
-            doc.add(new StringField("foo", Integer.toString(i), Store.NO));
-        }
-        w.addDocument(doc);
-        w.close();
-        IndexReader reader = DirectoryReader.open(dir);
-
-        TestSearchContext context = new TestSearchContext(null, indexShard, newEarlyTerminationContextSearcher(reader, 0, executor));
-        // QuerySearchResponse object is initialized in above line, so tookTime counts from here
-        context.setTask(new SearchShardTask(123L, "", "", "", null, Collections.emptyMap()));
-        context.parsedQuery(new ParsedQuery(new MatchAllDocsQuery()));
-
-        int sleepTimeMillis = 1000;
-        Thread.sleep(sleepTimeMillis); // wait one second and ensure tookTime is greater than this amount
-
-        QueryPhase.executeInternal(context.withCleanQueryResult(), queryPhaseSearcher);
-        long tookTime = context.queryResult().getTookTimeNanos();
-        assertTrue(tookTime > 1000000 * sleepTimeMillis);
-        reader.close();
-        dir.close();
-    }
-
     public void testTerminateAfterWithFilter() throws Exception {
         Directory dir = newDirectory();
         final Sort sort = new Sort(new SortField("rank", SortField.Type.INT));

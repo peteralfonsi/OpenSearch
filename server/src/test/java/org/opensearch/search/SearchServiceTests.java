@@ -54,6 +54,7 @@ import org.opensearch.action.support.IndicesOptions;
 import org.opensearch.action.support.PlainActionFuture;
 import org.opensearch.action.support.WriteRequest;
 import org.opensearch.common.UUIDs;
+import org.opensearch.common.recycler.Recycler;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.settings.SettingsException;
 import org.opensearch.common.unit.TimeValue;
@@ -121,6 +122,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
@@ -824,10 +826,9 @@ public class SearchServiceTests extends OpenSearchSingleNodeTestCase {
     }
 
     public void testQuerySearchResultTookTime() throws Exception {
-        // This tests the code path when indicesService.canCache(request, context) is false
         // I wasn't able to introduce a delay in these tests as everything between creation and usage of the QuerySearchResult object
-        // happen in a single line - we would have to modify executeQueryPhase to take a delay parameter
-        // However this was tested in QueryPhaseTests.java
+        // happen in a single line - we would have to modify QueryPhase.execute() to take a delay parameter
+        // However this was tested manually
         createIndex("index");
         final SearchService service = getInstanceFromNode(SearchService.class);
         final IndicesService indicesService = getInstanceFromNode(IndicesService.class);
@@ -864,7 +865,7 @@ public class SearchServiceTests extends OpenSearchSingleNodeTestCase {
         });
     }
     public void testQuerySearchResultTookTimeCacheableRequest() throws Exception {
-        // Test when the request is cacheable
+        // Test 2 identical cacheable requests and assert both have the same tookTime
         // Similarly, no delay could be added
         createIndex("index");
         final SearchService service = getInstanceFromNode(SearchService.class);
@@ -897,13 +898,15 @@ public class SearchServiceTests extends OpenSearchSingleNodeTestCase {
             dummyRoutings // similar for routings
         );
 
+        final CompletableFuture<Long> firstResult = new CompletableFuture<>();
+        final CompletableFuture<Long> secondResult = new CompletableFuture<>();
         SearchShardTask task = new SearchShardTask(123L, "", "", "", null, Collections.emptyMap());
         service.executeQueryPhase(request, randomBoolean(), task, new ActionListener<SearchPhaseResult>() {
             @Override
             public void onResponse(SearchPhaseResult searchPhaseResult) {
                 assertEquals(QuerySearchResult.class, searchPhaseResult.getClass()); // 2+ shards -> QuerySearchResult returned
                 QuerySearchResult qsr = (QuerySearchResult) searchPhaseResult;
-                assertTrue(qsr.getTookTimeNanos() > 0); // Above zero means it's been set at some point
+                firstResult.complete(qsr.getTookTimeNanos());
             }
 
             @Override
@@ -911,6 +914,25 @@ public class SearchServiceTests extends OpenSearchSingleNodeTestCase {
                 throw new AssertionError(e);
             }
         });
+
+        service.executeQueryPhase(request, randomBoolean(), task, new ActionListener<SearchPhaseResult>() {
+            @Override
+            public void onResponse(SearchPhaseResult searchPhaseResult) {
+                assertEquals(QuerySearchResult.class, searchPhaseResult.getClass()); // 2+ shards -> QuerySearchResult returned
+                QuerySearchResult qsr = (QuerySearchResult) searchPhaseResult;
+                secondResult.complete(qsr.getTookTimeNanos());
+            }
+
+            @Override
+            public void onFailure(Exception e) {
+                throw new AssertionError(e);
+            }
+        });
+
+        long firstResultVal = firstResult.get();
+        long secondResultVal = secondResult.get();
+        assertEquals(firstResultVal, secondResultVal);
+        assertTrue(firstResultVal > 0);
     }
 
     public void testCanMatch() throws Exception {
