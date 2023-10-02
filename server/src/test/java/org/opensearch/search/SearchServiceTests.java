@@ -1108,8 +1108,6 @@ public class SearchServiceTests extends OpenSearchSingleNodeTestCase {
                 try {
                     // make sure that the wrapper is called when the query is actually executed
                     assertEquals(1, numWrapInvocations.get());
-                    System.out.println(searchPhaseResult.getClass());
-                    //System.out.println(((QuerySearchResult) searchPhaseResult).getTookTimeNanos());
                 } finally {
                     latch.countDown();
                 }
