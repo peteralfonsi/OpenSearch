@@ -54,7 +54,6 @@ import org.opensearch.action.support.IndicesOptions;
 import org.opensearch.action.support.PlainActionFuture;
 import org.opensearch.action.support.WriteRequest;
 import org.opensearch.common.UUIDs;
-import org.opensearch.common.recycler.Recycler;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.settings.SettingsException;
 import org.opensearch.common.unit.TimeValue;
@@ -864,6 +863,7 @@ public class SearchServiceTests extends OpenSearchSingleNodeTestCase {
             }
         });
     }
+
     public void testQuerySearchResultTookTimeCacheableRequest() throws Exception {
         // Test 2 identical cacheable requests and assert both have the same tookTime
         // Similarly, no delay could be added
@@ -882,8 +882,8 @@ public class SearchServiceTests extends OpenSearchSingleNodeTestCase {
         );
         searchSourceBuilder.size(0); // from testIgnoreScriptfieldIfSizeZero
 
-        String[] dummyRoutings = new String[]{};
-        OriginalIndices dummyOriginalIndices = new OriginalIndices(new String[]{"index'"}, IndicesOptions.LENIENT_EXPAND_OPEN);
+        String[] dummyRoutings = new String[] {};
+        OriginalIndices dummyOriginalIndices = new OriginalIndices(new String[] { "index'" }, IndicesOptions.LENIENT_EXPAND_OPEN);
 
         ShardSearchRequest request = new ShardSearchRequest(
             dummyOriginalIndices,
@@ -893,7 +893,8 @@ public class SearchServiceTests extends OpenSearchSingleNodeTestCase {
             new AliasFilter(null, Strings.EMPTY_ARRAY),
             1.0f,
             0L,
-            // if nowInMillis is negative, it fails when trying to write the shardSearchRequest to cache as it uses WriteVLong which only takes positive longs
+            // if nowInMillis is negative, it fails when trying to write the shardSearchRequest to cache as it uses WriteVLong which only
+            // takes positive longs
             null,
             dummyRoutings // similar for routings
         );
