@@ -113,6 +113,7 @@ import org.opensearch.indices.IndexingMemoryController;
 import org.opensearch.indices.IndicesQueryCache;
 import org.opensearch.indices.IndicesRequestCache;
 import org.opensearch.indices.IndicesService;
+import org.opensearch.indices.IndicesRequestCacheTookTimePolicy;
 import org.opensearch.indices.ShardLimitValidator;
 import org.opensearch.indices.analysis.HunspellService;
 import org.opensearch.indices.breaker.BreakerSettings;
@@ -671,7 +672,9 @@ public final class ClusterSettings extends AbstractScopedSettings {
                 // Remote cluster state settings
                 RemoteClusterStateService.REMOTE_CLUSTER_STATE_ENABLED_SETTING,
                 RemoteStoreNodeService.REMOTE_STORE_COMPATIBILITY_MODE_SETTING,
-                IndicesService.CLUSTER_REMOTE_TRANSLOG_BUFFER_INTERVAL_SETTING
+                IndicesService.CLUSTER_REMOTE_TRANSLOG_BUFFER_INTERVAL_SETTING,
+
+                IndicesRequestCacheTookTimePolicy.INDICES_REQUEST_CACHE_DISK_TIMETOOK_THRESHOLD_SETTING
             )
         )
     );

@@ -32,6 +32,7 @@
 
 package org.opensearch.indices;
 
+import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
@@ -41,19 +42,22 @@ import org.opensearch.search.query.QuerySearchResult;
 import java.io.IOException;
 
 public class IndicesRequestCacheTookTimePolicy implements CacheTierPolicy<QuerySearchResult> {
-    public static final Setting<TimeValue> INDEX_REQUEST_CACHE_DISK_TIMETOOK_THRESHOLD_SETTING = Setting.positiveTimeSetting(
+    public static final Setting<TimeValue> INDICES_REQUEST_CACHE_DISK_TIMETOOK_THRESHOLD_SETTING = Setting.positiveTimeSetting(
         "index.requests.cache.disk.tooktime.threshold",
         new TimeValue(10),
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
-        // I think node scope is appropriate, because disk seek time probably depends on node hardware?
-        // Or did Sagar mean something else by "cluster-level", I can't find a cluster scope in Setting.java
     );
 
-    private TimeValue threshold; // is this correct to be final if it's dynamic? How can we change this in the policy as someone changes it with the API?
+    private TimeValue threshold;
 
-    public IndicesRequestCacheTookTimePolicy(Settings settings) {
-        this.threshold = INDEX_REQUEST_CACHE_DISK_TIMETOOK_THRESHOLD_SETTING.get(settings);
+    public IndicesRequestCacheTookTimePolicy(Settings settings, ClusterSettings clusterSettings) {
+        this.threshold = INDICES_REQUEST_CACHE_DISK_TIMETOOK_THRESHOLD_SETTING.get(settings);
+        clusterSettings.addSettingsUpdateConsumer(INDICES_REQUEST_CACHE_DISK_TIMETOOK_THRESHOLD_SETTING, this::setThreshold);
+    }
+
+    public void setThreshold(TimeValue threshold) { // public so that we can manually set value in unit test
+        this.threshold = threshold;
     }
 
     protected String buildDeniedString(TimeValue tookTime, TimeValue threshold) {
@@ -66,7 +70,6 @@ public class IndicesRequestCacheTookTimePolicy implements CacheTierPolicy<QueryS
     }
     @Override
     public CheckDataResult checkData(BytesReference data) throws IOException {
-        // maybe check value of setting here, each time?
         QuerySearchResult qsr;
         try {
             qsr = new QuerySearchResult(data.streamInput());

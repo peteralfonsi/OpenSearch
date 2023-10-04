@@ -82,10 +82,5 @@ public class IndicesRequestCacheDiskTierPolicy implements CacheTierPolicy<QueryS
             }
         }
         return result;
-
-        // This executes:
-        // return tookTimePolicy.checkData(data)
-        //      .andThen(() -> otherPolicy.checkData(data)
-        //      .andThen(() -> secondOtherPolicy.checkData(data) ...
     }
 }
