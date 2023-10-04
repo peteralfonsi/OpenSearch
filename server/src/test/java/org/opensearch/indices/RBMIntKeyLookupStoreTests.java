@@ -132,8 +132,8 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
     public void testMemoryCapBlocksAdd() throws Exception {
         int modulo = (int) Math.pow(2, 29);
         for (int maxEntries: new int[]{2342000, 1000, 100000}) {
-            long memSizeCapInBytes = RBMSizeEstimator.getSizeInBytes(maxEntries);
-            RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), memSizeCapInBytes);
+            long memSizeCapInBytes = RBMSizeEstimator.getSizeInBytesWithModulo(maxEntries, modulo);
+            RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(modulo, memSizeCapInBytes);
             for (int j = 0; j < maxEntries + 1000; j++) {
                 kls.add(j);
             }
@@ -281,5 +281,28 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
         Integer[] newVals = new Integer[]{1, 17, -2, null, -4, null};
         kls.regenerateStore(newVals);
         assertEquals(4, kls.getSize());
+    }
+
+    public void testMemoryCapValueInitialization() {
+        double[] logModulos = new double[] { 0.0, 31.2, 30, 29, 28, 13 };
+        double[] expectedMultipliers = new double[] { 1.2, 1.2, 1.2, 1, 1, 1 };
+        double[] expectedSlopes = new double[] { 0.637, 0.637, 0.637, 0.619, 0.614, 0.629 };
+        double[] expectedIntercepts = new double[] { 3.091, 3.091, 3.091, 2.993, 2.905, 2.603 };
+        long memSizeCapInBytes = (long) 100.0 * RBMSizeEstimator.BYTES_IN_MB;
+        double delta = 0.01;
+        for (int i = 0; i < logModulos.length; i++) {
+            int modulo = 0;
+            if (logModulos[i] != 0) {
+                modulo = (int) Math.pow(2, logModulos[i]);
+            }
+            RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(modulo, memSizeCapInBytes);
+            assertEquals(kls.stats.memSizeCapInBytes, kls.getMemorySizeCapInBytes(), 1.0);
+            assertEquals(expectedMultipliers[i], kls.sizeEstimator.bufferMultiplier, delta);
+            assertEquals(expectedSlopes[i], kls.sizeEstimator.slope, delta);
+            assertEquals(expectedIntercepts[i], kls.sizeEstimator.intercept, delta);
+            System.out.println("log modulo: " + logModulos[i]);
+            System.out.println("Estimated size at 10^6: " + kls.sizeEstimator.getSizeInBytes(1000000));
+        }
+
     }
 }

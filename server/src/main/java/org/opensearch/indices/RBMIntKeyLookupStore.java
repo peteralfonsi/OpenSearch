@@ -41,10 +41,10 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
  * This class implements KeyLookupStore<Integer> using a roaring bitmap with a modulo applied to values.
- * The modulo increases the density of values, which makes RBMs more memory-efficient. The recommended modulo is ~2^29.
+ * The modulo increases the density of values, which makes RBMs more memory-efficient. The recommended modulo is ~2^28.
  * It also maintains a hash set of values which have had collisions. Values which haven't had collisions can be
  * safely removed from the store. The fraction of collided values should be low,
- * about 0.3% for a store with 10^7 values and a modulo of 2^29.
+ * about 0.5% for a store with 10^7 values and a modulo of 2^28.
  * The store estimates its memory footprint and will stop adding more values once it reaches its memory cap.
  */
 public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
@@ -75,23 +75,24 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
     protected KeyStoreStats stats;
     protected RoaringBitmap rbm;
     private HashSet<Integer> collidedInts;
+    protected RBMSizeEstimator sizeEstimator;
     protected final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
     protected final Lock readLock = lock.readLock();
     protected final Lock writeLock = lock.writeLock();
 
     RBMIntKeyLookupStore(int modulo, long memSizeCapInBytes) {
         this.modulo = modulo;
+        sizeEstimator = new RBMSizeEstimator(modulo);
         this.stats = new KeyStoreStats(memSizeCapInBytes, calculateMaxNumEntries(memSizeCapInBytes));
         this.rbm = new RoaringBitmap();
         collidedInts = new HashSet<>();
-
     }
 
     protected int calculateMaxNumEntries(long memSizeCapInBytes) {
         if (memSizeCapInBytes == 0) {
             return Integer.MAX_VALUE;
         }
-        return RBMSizeEstimator.getNumEntriesFromSizeInBytes(memSizeCapInBytes);
+        return sizeEstimator.getNumEntriesFromSizeInBytes(memSizeCapInBytes);
     }
 
     protected final int transform(int value) {
@@ -233,7 +234,7 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
 
     @Override
     public long getMemorySizeInBytes() {
-        return RBMSizeEstimator.getSizeInBytes(stats.size) + RBMSizeEstimator.getHashsetMemSizeInBytes(collidedInts.size());
+        return sizeEstimator.getSizeInBytes(stats.size) + RBMSizeEstimator.getHashsetMemSizeInBytes(collidedInts.size());
     }
 
     @Override

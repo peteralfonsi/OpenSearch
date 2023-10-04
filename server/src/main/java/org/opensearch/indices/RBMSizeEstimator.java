@@ -41,20 +41,62 @@ package org.opensearch.indices;
 public class RBMSizeEstimator {
     public static final int BYTES_IN_MB = 1048576;
     public static final double HASHSET_MEM_SLOPE = 6.46 * Math.pow(10, -5);
-    public static final double slope = 0.62;
-    public static final double bufferMultiplier = 1.5;
-    public static final double intercept = 2.9;
+    protected final double slope;
+    protected final double bufferMultiplier;
+    protected final double intercept;
 
-    RBMSizeEstimator() {}
+    RBMSizeEstimator(int modulo) {
+        double[] memValues = calculateMemoryCoefficients(modulo);
+        this.bufferMultiplier = memValues[0];
+        this.slope = memValues[1];
+        this.intercept = memValues[2];
+    }
 
-    public static long getSizeInBytes(int numEntries) {
+    public static double[] calculateMemoryCoefficients(int modulo) {
+        // Sets up values to help estimate RBM size given a modulo
+        // Returns an array of {bufferMultiplier, slope, intercept}
+
+        double modifiedModulo;
+        if (modulo == 0) {
+            modifiedModulo = 32.0;
+        } else {
+            modifiedModulo = Math.log(modulo) / Math.log(2);
+        }
+        // we "round up" the modulo to the nearest tested value
+        double highCutoff = 29.001; // Floating point makes 29 not work
+        double mediumCutoff = 28.0;
+        double lowCutoff = 26.0;
+        double bufferMultiplier = 1.0;
+        double slope;
+        double intercept;
+        if (modifiedModulo > highCutoff) {
+            // modulo > 2^29
+            bufferMultiplier = 1.2;
+            slope = 0.637;
+            intercept = 3.091;
+        } else if (modifiedModulo > mediumCutoff) {
+            // 2^29 >= modulo > 2^28
+            slope = 0.619;
+            intercept = 2.993;
+        } else if (modifiedModulo > lowCutoff) {
+            // 2^28 >= modulo > 2^26
+            slope = 0.614;
+            intercept = 2.905;
+        } else {
+            slope = 0.628;
+            intercept = 2.603;
+        }
+        return new double[] { bufferMultiplier, slope, intercept };
+    }
+
+    public long getSizeInBytes(int numEntries) {
         // Based on a linear fit in log-log space, so that we minimize the error as a proportion rather than as
         // an absolute value. Should be within ~50% of the true value at worst, and should overestimate rather
         // than underestimate the memory usage
         return (long) ((long) Math.pow(numEntries, slope) * (long) Math.pow(10, intercept) * bufferMultiplier);
     }
 
-    public static int getNumEntriesFromSizeInBytes(long sizeInBytes) {
+    public int getNumEntriesFromSizeInBytes(long sizeInBytes) {
         // This function has some precision issues especially when composed with its inverse:
         // numEntries = getNumEntriesFromSizeInBytes(getSizeInBytes(numEntries))
         // In this case the result can be off by up to a couple percent
@@ -63,6 +105,17 @@ public class RBMSizeEstimator {
         return (int) Math.pow(sizeInBytes / (bufferMultiplier * Math.pow(10, intercept)), 1 / slope);
 
     }
+
+    public static long getSizeInBytesWithModulo(int numEntries, int modulo) {
+        double[] memValues = calculateMemoryCoefficients(modulo);
+        return (long) ((long) Math.pow(numEntries, memValues[1]) * (long) Math.pow(10, memValues[2]) * memValues[0]);
+    }
+
+    public static int getNumEntriesFromSizeInBytesWithModulo(long sizeInBytes, int modulo) {
+        double[] memValues = calculateMemoryCoefficients(modulo);
+        return (int) Math.pow(sizeInBytes / (memValues[0] * Math.pow(10, memValues[2])), 1 / memValues[1]);
+    }
+
 
     protected static long convertMBToBytes(double valMB) {
         return (long) (valMB * BYTES_IN_MB);
