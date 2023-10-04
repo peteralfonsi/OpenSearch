@@ -50,7 +50,7 @@ public class IndicesRequestCacheTookTimePolicy implements CacheTierPolicy<QueryS
         // Or did Sagar mean something else by "cluster-level", I can't find a cluster scope in Setting.java
     );
 
-    private final TimeValue threshold; // is this correct to be final if it's dynamic? How can we change this in the policy as someone changes it with the API?
+    private TimeValue threshold; // is this correct to be final if it's dynamic? How can we change this in the policy as someone changes it with the API?
 
     public IndicesRequestCacheTookTimePolicy(Settings settings) {
         this.threshold = INDEX_REQUEST_CACHE_DISK_TIMETOOK_THRESHOLD_SETTING.get(settings);

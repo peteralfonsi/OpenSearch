@@ -32,7 +32,6 @@
 
 package org.opensearch.indices;
 
-import org.opensearch.common.settings.Settings;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.search.query.QuerySearchResult;
 
@@ -46,6 +45,8 @@ public class IndicesRequestCacheDiskTierPolicy implements CacheTierPolicy<QueryS
     private final CacheTierPolicy<QuerySearchResult>[] policies;
     private final int numPolicies;
     private final boolean allowedByDefault;
+    public static String DEFAULT_DENIED_REASON = "No policies were supplied to IndicesRequestCacheDiskTierPolicy and allowedByDefault = false";
+    // available here for testing purposes
 
     public IndicesRequestCacheDiskTierPolicy(CacheTierPolicy<QuerySearchResult>[] policies, boolean allowedByDefault) {
         this.policies = policies;
@@ -59,8 +60,8 @@ public class IndicesRequestCacheDiskTierPolicy implements CacheTierPolicy<QueryS
                 return new CheckDataResult(true, null);
             } else {
                 return new CheckDataResult(
-                    false,
-                    "No policies were supplied to IndicesRequestCacheDiskTierPolicy and allowedByDefault = false"
+                    false, DEFAULT_DENIED_REASON
+
                 );
             }
         }
