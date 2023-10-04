@@ -67,7 +67,12 @@ public class IndicesRequestCacheTookTimePolicy implements CacheTierPolicy<QueryS
     @Override
     public CheckDataResult checkData(BytesReference data) throws IOException {
         // maybe check value of setting here, each time?
-        QuerySearchResult qsr = new QuerySearchResult(data.streamInput()); // may throw IOException
+        QuerySearchResult qsr;
+        try {
+            qsr = new QuerySearchResult(data.streamInput());
+        } catch (IllegalStateException ise) {
+            throw new IOException(ise);
+        }
         TimeValue tookTime = TimeValue.timeValueNanos(qsr.getTookTimeNanos());
         boolean isAccepted = true;
         String deniedReason = null;

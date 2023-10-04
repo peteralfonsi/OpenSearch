@@ -37,7 +37,7 @@ import java.util.function.Supplier;
 
 /**
  * A class used by a CacheTierPolicy to return a result for some data input.
- * The results can be chained together.
+ * The results can be chained together in a short-circuiting way.
  */
 public class CheckDataResult {
     private boolean isAccepted;

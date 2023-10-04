@@ -56,12 +56,19 @@ public class IndicesRequestCacheDiskTierPolicy implements CacheTierPolicy<QueryS
     @Override
     public CheckDataResult checkData(BytesReference data) throws IOException {
         if (numPolicies == 0) {
+            // still need to check the data can be deserialized into QuerySearchResult
+            QuerySearchResult qsr;
+            try {
+                qsr = new QuerySearchResult(data.streamInput());
+            } catch (IllegalStateException ise) {
+                throw new IOException(ise);
+            }
+
             if (allowedByDefault) {
                 return new CheckDataResult(true, null);
             } else {
                 return new CheckDataResult(
                     false, DEFAULT_DENIED_REASON
-
                 );
             }
         }

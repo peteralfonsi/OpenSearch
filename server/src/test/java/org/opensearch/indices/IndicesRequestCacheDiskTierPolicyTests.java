@@ -42,6 +42,7 @@ import org.opensearch.common.UUIDs;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.lucene.search.TopDocsAndMaxScore;
 import org.opensearch.core.common.Strings;
+import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.search.DocValueFormat;
@@ -74,6 +75,12 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
         }
         @Override
         public CheckDataResult checkData(BytesReference data) throws IOException {
+            QuerySearchResult qsr;
+            try {
+                qsr = new QuerySearchResult(data.streamInput());
+            } catch (IllegalStateException ise) {
+                throw new IOException(ise);
+            }
             if (doAccept) {
                 return new CheckDataResult(true, null);
             }
@@ -96,8 +103,9 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
             null,
             new String[0]
         );
+        ShardSearchContextId id = new ShardSearchContextId(UUIDs.base64UUID(), randomLong());
         QuerySearchResult result = new QuerySearchResult(
-            new ShardSearchContextId(UUIDs.base64UUID(), randomLong()),
+            id,
             new SearchShardTarget("node", shardId, null, OriginalIndices.NONE),
             shardSearchRequest
         );
@@ -106,8 +114,19 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
 
         result.setTookTimeNanos(tookTimeNanos);
         BytesStreamOutput out = new BytesStreamOutput();
+        // it appears to need a boolean and then a ShardSearchContextId written to the stream before the QSR in order to deserialize?
+        out.writeBoolean(false);
+        id.writeTo(out);
+
         result.writeToNoId(out);
-        return out.bytes(); 
+        return out.bytes();
+    }
+
+    public void testQSRSetupFunction() throws IOException {
+        long ttn = 100000000000L;
+        BytesReference qsrBytes = getQSRBytesReference(ttn);
+        QuerySearchResult qsr = new QuerySearchResult(qsrBytes.streamInput());
+        assertEquals(ttn, qsr.getTookTimeNanos());
     }
 
     public void testNoPolicies() throws Exception {
@@ -127,6 +146,20 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
         assertEquals(IndicesRequestCacheDiskTierPolicy.DEFAULT_DENIED_REASON, resultFalse.getDeniedReason());
 
     }
+
+    public void testBadBytesReference() throws Exception {
+        BytesReference badQSR = new BytesArray("I love bytes!!!");
+        // An empty policy should still enforce the right type, even if its default behavior is to accept
+        IndicesRequestCacheDiskTierPolicy emptyPolicy = new IndicesRequestCacheDiskTierPolicy(new CacheTierPolicy[]{}, true);
+        DummyIRCPolicy dummy = new DummyIRCPolicy(true, "dummy");
+        IndicesRequestCacheDiskTierPolicy oneDummyPolicy = new IndicesRequestCacheDiskTierPolicy(new CacheTierPolicy[]{ dummy }, true);
+        assertThrows(IOException.class, () -> oneDummyPolicy.checkData(badQSR));
+        assertThrows(IOException.class, () -> emptyPolicy.checkData(badQSR));
+        // add one checking took time policy once thats in
+
+
+    }
+
     /*public void testTookTimePolicy() throws Exception {
         IndicesRequestCacheTookTimePolicy tookTimePolicy = new IndicesRequestCacheTookTimePolicy(); // settings?
         CacheTierPolicy<QuerySearchResult>[] policies = new CacheTierPolicy[]{ tookTimePolicy };
@@ -161,7 +194,4 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
         assertNull(result.getDeniedReason());
 
     }
-
-
-
 }
