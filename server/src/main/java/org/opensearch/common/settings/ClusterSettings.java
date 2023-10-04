@@ -112,6 +112,7 @@ import org.opensearch.index.store.remote.filecache.FileCache;
 import org.opensearch.indices.IndexingMemoryController;
 import org.opensearch.indices.IndicesQueryCache;
 import org.opensearch.indices.IndicesRequestCache;
+import org.opensearch.indices.IndicesRequestCacheTookTimePolicy;
 import org.opensearch.indices.IndicesService;
 import org.opensearch.indices.ShardLimitValidator;
 import org.opensearch.indices.analysis.HunspellService;
