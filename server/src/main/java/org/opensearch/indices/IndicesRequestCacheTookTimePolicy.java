@@ -41,6 +41,11 @@ import org.opensearch.search.query.QuerySearchResult;
 
 import java.io.IOException;
 
+/**
+ * A cache tier policy which accepts queries whose took time is greater than some threshold,
+ * which is specified as a dynamic cluster-level setting. The threshold should be set to approximately
+ * the time it takes to get a result from the cache tier.
+ */
 public class IndicesRequestCacheTookTimePolicy implements CacheTierPolicy<QuerySearchResult> {
     public static final Setting<TimeValue> INDICES_REQUEST_CACHE_DISK_TIMETOOK_THRESHOLD_SETTING = Setting.positiveTimeSetting(
         "index.requests.cache.disk.tooktime.threshold",
@@ -62,12 +67,9 @@ public class IndicesRequestCacheTookTimePolicy implements CacheTierPolicy<QueryS
 
     protected String buildDeniedString(TimeValue tookTime, TimeValue threshold) {
         // separating out for use in testing
-        return String.format(
-            "Query took time %d ms is less than threshold value %d ms",
-            tookTime.getMillis(),
-            threshold.getMillis()
-        );
+        return "Query took time " + tookTime.getMillis() + " ms is less than threshold value " + threshold.getMillis() + " ms";
     }
+
     @Override
     public CheckDataResult checkData(BytesReference data) throws IOException {
         QuerySearchResult qsr;

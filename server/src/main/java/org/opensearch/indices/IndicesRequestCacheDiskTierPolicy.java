@@ -45,7 +45,8 @@ public class IndicesRequestCacheDiskTierPolicy implements CacheTierPolicy<QueryS
     private final CacheTierPolicy<QuerySearchResult>[] policies;
     private final int numPolicies;
     private final boolean allowedByDefault;
-    public static String DEFAULT_DENIED_REASON = "No policies were supplied to IndicesRequestCacheDiskTierPolicy and allowedByDefault = false";
+    public static String DEFAULT_DENIED_REASON =
+        "No policies were supplied to IndicesRequestCacheDiskTierPolicy and allowedByDefault = false";
     // available here for testing purposes
 
     public IndicesRequestCacheDiskTierPolicy(CacheTierPolicy<QuerySearchResult>[] policies, boolean allowedByDefault) {
@@ -53,6 +54,7 @@ public class IndicesRequestCacheDiskTierPolicy implements CacheTierPolicy<QueryS
         this.numPolicies = policies.length;
         this.allowedByDefault = allowedByDefault; // default behavior if no other policies are supplied
     }
+
     @Override
     public CheckDataResult checkData(BytesReference data) throws IOException {
         if (numPolicies == 0) {
@@ -67,9 +69,7 @@ public class IndicesRequestCacheDiskTierPolicy implements CacheTierPolicy<QueryS
             if (allowedByDefault) {
                 return new CheckDataResult(true, null);
             } else {
-                return new CheckDataResult(
-                    false, DEFAULT_DENIED_REASON
-                );
+                return new CheckDataResult(false, DEFAULT_DENIED_REASON);
             }
         }
         CheckDataResult result = policies[0].checkData(data);

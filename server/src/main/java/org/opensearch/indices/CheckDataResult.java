@@ -32,9 +32,6 @@
 
 package org.opensearch.indices;
 
-import java.util.Optional;
-import java.util.function.Supplier;
-
 /**
  * A class used by a CacheTierPolicy to return a result for some data input.
  * The results can be chained together in a short-circuiting way.
@@ -42,6 +39,7 @@ import java.util.function.Supplier;
 public class CheckDataResult {
     private boolean isAccepted;
     private String deniedReason; // null if the data was accepted, has an explanation if data was rejected
+
     public CheckDataResult(boolean isAccepted, String deniedReason) {
         this.isAccepted = isAccepted;
         this.deniedReason = deniedReason;
@@ -53,7 +51,6 @@ public class CheckDataResult {
         } else {
             return other;
         }
-        // removed the supplier bc i dont see the point and it makes throwing errors out of the lambda complicated
     }
 
     public boolean isAccepted() {

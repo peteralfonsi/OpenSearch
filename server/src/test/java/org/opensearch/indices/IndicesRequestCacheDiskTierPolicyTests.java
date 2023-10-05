@@ -56,27 +56,26 @@ import org.opensearch.search.internal.ShardSearchRequest;
 import org.opensearch.search.query.QuerySearchResult;
 import org.opensearch.test.OpenSearchTestCase;
 
-
 import java.io.IOException;
 
 public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
     public class DummyIRCPolicy implements CacheTierPolicy<QuerySearchResult> {
         private boolean doAccept;
         private final String name;
+
         public DummyIRCPolicy(boolean doAccept, String policyName) {
             this.doAccept = doAccept;
             this.name = policyName;
         }
 
         protected String buildDeniedString() {
-            return String.format(
-                "Dummy policy %s rejects this query",
-                name
-            );
+            return "Dummy policy " + name + "rejects this query";
         }
+
         public void setDoAccept(boolean newVal) {
             doAccept = newVal;
         }
+
         @Override
         public CheckDataResult checkData(BytesReference data) throws IOException {
             QuerySearchResult qsr;
@@ -141,7 +140,7 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
     }
 
     public void testNoPolicies() throws Exception {
-        CacheTierPolicy<QuerySearchResult>[] policies = new CacheTierPolicy[]{};
+        CacheTierPolicy<QuerySearchResult>[] policies = new CacheTierPolicy[] {};
         IndicesRequestCacheDiskTierPolicy policyDefaultTrue = new IndicesRequestCacheDiskTierPolicy(policies, true);
 
         BytesReference qsr = getQSRBytesReference(1000000L);
@@ -155,28 +154,27 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
         CheckDataResult resultFalse = policyDefaultFalse.checkData(qsrFalse);
         assertFalse(resultFalse.isAccepted());
         assertEquals(IndicesRequestCacheDiskTierPolicy.DEFAULT_DENIED_REASON, resultFalse.getDeniedReason());
-
     }
 
     public void testBadBytesReference() throws Exception {
         BytesReference badQSR = new BytesArray("I love bytes!!!");
         // An empty policy should still enforce the right type, even if its default behavior is to accept
-        IndicesRequestCacheDiskTierPolicy emptyPolicy = new IndicesRequestCacheDiskTierPolicy(new CacheTierPolicy[]{}, true);
+        IndicesRequestCacheDiskTierPolicy emptyPolicy = new IndicesRequestCacheDiskTierPolicy(new CacheTierPolicy[] {}, true);
         DummyIRCPolicy dummy = new DummyIRCPolicy(true, "dummy");
-        IndicesRequestCacheDiskTierPolicy oneDummyPolicy = new IndicesRequestCacheDiskTierPolicy(new CacheTierPolicy[]{ dummy }, true);
+        IndicesRequestCacheDiskTierPolicy oneDummyPolicy = new IndicesRequestCacheDiskTierPolicy(new CacheTierPolicy[] { dummy }, true);
         IndicesRequestCacheTookTimePolicy tookTimePolicy = getTookTimePolicy();
-        IndicesRequestCacheDiskTierPolicy tookTimeDiskTierPolicy = new IndicesRequestCacheDiskTierPolicy(new CacheTierPolicy[]{ tookTimePolicy }, true);
+        IndicesRequestCacheDiskTierPolicy tookTimeDiskTierPolicy = new IndicesRequestCacheDiskTierPolicy(
+            new CacheTierPolicy[] { tookTimePolicy },
+            true
+        );
         assertThrows(IOException.class, () -> oneDummyPolicy.checkData(badQSR));
         assertThrows(IOException.class, () -> emptyPolicy.checkData(badQSR));
         assertThrows(IOException.class, () -> tookTimeDiskTierPolicy.checkData(badQSR));
-
-
-
     }
 
     public void testTookTimePolicy() throws Exception {
         IndicesRequestCacheTookTimePolicy tookTimePolicy = getTookTimePolicy();
-        CacheTierPolicy<QuerySearchResult>[] policies = new CacheTierPolicy[]{ tookTimePolicy };
+        CacheTierPolicy<QuerySearchResult>[] policies = new CacheTierPolicy[] { tookTimePolicy };
         IndicesRequestCacheDiskTierPolicy policy = new IndicesRequestCacheDiskTierPolicy(policies, true);
 
         // manually set threshold for test
@@ -189,7 +187,10 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
 
         CheckDataResult shortResult = policy.checkData(shortQSR);
         assertFalse(shortResult.isAccepted());
-        assertEquals(tookTimePolicy.buildDeniedString(new TimeValue(shortMillis), new TimeValue((long) threshMillis)), shortResult.getDeniedReason());
+        assertEquals(
+            tookTimePolicy.buildDeniedString(new TimeValue(shortMillis), new TimeValue((long) threshMillis)),
+            shortResult.getDeniedReason()
+        );
 
         CheckDataResult longResult = policy.checkData(longQSR);
         assertTrue(longResult.isAccepted());
@@ -206,7 +207,7 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
         tookTimePolicy.setThreshold(new TimeValue((long) threshMillis));
 
         // add in a time policy once i figure out those settings
-        CacheTierPolicy<QuerySearchResult>[] policies = new CacheTierPolicy[]{ dummy1, dummy2, dummy3, tookTimePolicy };
+        CacheTierPolicy<QuerySearchResult>[] policies = new CacheTierPolicy[] { dummy1, dummy2, dummy3, tookTimePolicy };
         IndicesRequestCacheDiskTierPolicy policy = new IndicesRequestCacheDiskTierPolicy(policies, true);
 
         BytesReference qsr = getQSRBytesReference((long) (threshMillis * 0.5 * 1000000));
@@ -227,12 +228,14 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
         dummy3.setDoAccept(true);
         result = policy.checkData(qsr);
         assertFalse(result.isAccepted());
-        assertEquals(tookTimePolicy.buildDeniedString(new TimeValue((long) (threshMillis * 0.5)), new TimeValue((long) threshMillis)), result.getDeniedReason());
+        assertEquals(
+            tookTimePolicy.buildDeniedString(new TimeValue((long) (threshMillis * 0.5)), new TimeValue((long) threshMillis)),
+            result.getDeniedReason()
+        );
 
         qsr = getQSRBytesReference((long) (threshMillis * 2 * 1000000));
         result = policy.checkData(qsr);
         assertTrue(result.isAccepted());
         assertNull(result.getDeniedReason());
-
     }
 }
