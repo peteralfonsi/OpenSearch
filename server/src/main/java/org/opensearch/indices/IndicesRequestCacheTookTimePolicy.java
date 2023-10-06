@@ -47,7 +47,7 @@ import java.io.IOException;
  * the time it takes to get a result from the cache tier.
  */
 public class IndicesRequestCacheTookTimePolicy implements CacheTierPolicy<QuerySearchResult> {
-    public static final Setting<TimeValue> INDICES_REQUEST_CACHE_DISK_TIMETOOK_THRESHOLD_SETTING = Setting.positiveTimeSetting(
+    public static final Setting<TimeValue> INDICES_REQUEST_CACHE_DISK_TOOKTIME_THRESHOLD_SETTING = Setting.positiveTimeSetting(
         "index.requests.cache.disk.tooktime.threshold",
         new TimeValue(10),
         Setting.Property.Dynamic,
@@ -57,8 +57,8 @@ public class IndicesRequestCacheTookTimePolicy implements CacheTierPolicy<QueryS
     private TimeValue threshold;
 
     public IndicesRequestCacheTookTimePolicy(Settings settings, ClusterSettings clusterSettings) {
-        this.threshold = INDICES_REQUEST_CACHE_DISK_TIMETOOK_THRESHOLD_SETTING.get(settings);
-        clusterSettings.addSettingsUpdateConsumer(INDICES_REQUEST_CACHE_DISK_TIMETOOK_THRESHOLD_SETTING, this::setThreshold);
+        this.threshold = INDICES_REQUEST_CACHE_DISK_TOOKTIME_THRESHOLD_SETTING.get(settings);
+        clusterSettings.addSettingsUpdateConsumer(INDICES_REQUEST_CACHE_DISK_TOOKTIME_THRESHOLD_SETTING, this::setThreshold);
     }
 
     public void setThreshold(TimeValue threshold) { // public so that we can manually set value in unit test

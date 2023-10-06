@@ -674,7 +674,7 @@ public final class ClusterSettings extends AbstractScopedSettings {
                 RemoteStoreNodeService.REMOTE_STORE_COMPATIBILITY_MODE_SETTING,
                 IndicesService.CLUSTER_REMOTE_TRANSLOG_BUFFER_INTERVAL_SETTING,
 
-                IndicesRequestCacheTookTimePolicy.INDICES_REQUEST_CACHE_DISK_TIMETOOK_THRESHOLD_SETTING
+                IndicesRequestCacheTookTimePolicy.INDICES_REQUEST_CACHE_DISK_TOOKTIME_THRESHOLD_SETTING
             )
         )
     );
