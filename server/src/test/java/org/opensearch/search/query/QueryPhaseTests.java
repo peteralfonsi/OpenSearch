@@ -94,7 +94,6 @@ import org.opensearch.core.common.Strings;
 import org.opensearch.core.index.Index;
 import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.core.tasks.TaskCancelledException;
-import org.opensearch.index.IndexService;
 import org.opensearch.index.mapper.DateFieldMapper;
 import org.opensearch.index.mapper.MappedFieldType;
 import org.opensearch.index.mapper.MapperService;
@@ -109,14 +108,22 @@ import org.opensearch.index.shard.IndexShardTestCase;
 import org.opensearch.lucene.queries.MinDocQuery;
 import org.opensearch.search.DocValueFormat;
 import org.opensearch.search.collapse.CollapseBuilder;
-import org.opensearch.search.internal.*;
+import org.opensearch.search.internal.AliasFilter;
+import org.opensearch.search.internal.ContextIndexSearcher;
+import org.opensearch.search.internal.ScrollContext;
+import org.opensearch.search.internal.SearchContext;
+import org.opensearch.search.internal.ShardSearchRequest;
 import org.opensearch.search.sort.SortAndFormats;
 import org.opensearch.test.TestSearchContext;
 import org.opensearch.threadpool.ThreadPool;
 
 import java.io.IOException;
-import java.util.*;
-import java.util.concurrent.Delayed;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -1206,7 +1213,13 @@ public class QueryPhaseTests extends IndexShardTestCase {
     private class TestSearchContextWithRequest extends TestSearchContext {
         ShardSearchRequest request;
         Query query;
-        public TestSearchContextWithRequest(QueryShardContext queryShardContext, IndexShard indexShard, ContextIndexSearcher searcher, ShardSearchRequest request) {
+
+        public TestSearchContextWithRequest(
+            QueryShardContext queryShardContext,
+            IndexShard indexShard,
+            ContextIndexSearcher searcher,
+            ShardSearchRequest request
+        ) {
             super(queryShardContext, indexShard, searcher);
             this.request = request;
             this.query = new TermQuery(new Term("foo", "bar"));
@@ -1226,6 +1239,7 @@ public class QueryPhaseTests extends IndexShardTestCase {
     private class DelayedQueryPhaseSearcher extends QueryPhase.DefaultQueryPhaseSearcher implements QueryPhaseSearcher {
         // add delay into searchWith
         private final int sleepMillis;
+
         public DelayedQueryPhaseSearcher(int sleepMillis) {
             super();
             this.sleepMillis = sleepMillis;
