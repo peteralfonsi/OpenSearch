@@ -1154,7 +1154,7 @@ public class QueryPhaseTests extends IndexShardTestCase {
     }
 
     public void testQuerySearchResultTookTime() throws IOException {
-        int sleepMillis = 3000;
+        int sleepMillis = randomIntBetween(500, 4000); // between 0.5 and 4 sec
         DelayedQueryPhaseSearcher delayedQueryPhaseSearcher = new DelayedQueryPhaseSearcher(sleepMillis);
 
         // we need to test queryPhase.execute(), not executeInternal(), since that's what the timer wraps around
