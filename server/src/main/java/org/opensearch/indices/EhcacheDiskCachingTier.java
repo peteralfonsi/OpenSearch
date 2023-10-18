@@ -94,8 +94,6 @@ public class EhcacheDiskCachingTier implements DiskCachingTier<IndicesRequestCac
     }
 
     public void getManager() {
-        // based on https://stackoverflow.com/questions/53756412/ehcache-org-ehcache-statetransitionexception-persistence-directory-already-lo
-        // resolving double-initialization issue when using OpenSearchSingleNodeTestCase
         PersistentCacheManager oldCacheManager = cacheManagers.get(nodeId);
         if (oldCacheManager != null) {
             try {
