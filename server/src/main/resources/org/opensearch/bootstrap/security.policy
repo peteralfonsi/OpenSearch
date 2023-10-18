@@ -191,7 +191,13 @@ grant {
   // For ehcache
   permission java.lang.RuntimePermission "createClassLoader";
   permission java.lang.RuntimePermission "accessClassInPackage.sun.misc";
-
+  permission java.lang.RuntimePermission "getenv.*";
   permission java.lang.RuntimePermission "accessDeclaredMembers";
   permission java.lang.reflect.ReflectPermission "suppressAccessChecks";
+  permission java.io.FilePermission "disk_cache_tier", "read"; // change this to wherever we will put disk tier folder
+  permission java.io.FilePermission "disk_cache_tier", "write";
+  permission java.io.FilePermission "disk_cache_tier", "delete";
+  permission java.io.FilePermission "disk_cache_tier/-", "read";
+  permission java.io.FilePermission "disk_cache_tier/-", "write";
+  permission java.io.FilePermission "disk_cache_tier/-", "delete";
 };

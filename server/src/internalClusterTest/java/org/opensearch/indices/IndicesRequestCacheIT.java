@@ -664,6 +664,7 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
         assertSearchResponse(resp);
         // Should expect hit as here as refresh didn't happen
         assertCacheState(client, "index", 1, 1);
+        assertNumCacheEntries(client, "index", 1);
 
         // Explicit refresh would invalidate cache
         refresh();
@@ -672,6 +673,8 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
         assertSearchResponse(resp);
         // Should expect miss as key has changed due to change in IndexReader.CacheKey (due to refresh)
         assertCacheState(client, "index", 1, 2);
+        assertNumCacheEntries(client, "index", 1); // Shouldn't it just be the most recent query, since the first one was invalidated? (prob invalidation isnt in yet)
+        // yeah - evictions = 0, its not in yet
     }
 
     private static void assertCacheState(Client client, String index, long expectedHits, long expectedMisses) {
@@ -690,5 +693,15 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
         );
 
     }
-    
+
+    private static void assertNumCacheEntries(Client client, String index, long expectedEntries) {
+        RequestCacheStats requestCacheStats = client.admin()
+            .indices()
+            .prepareStats(index)
+            .setRequestCache(true)
+            .get()
+            .getTotal()
+            .getRequestCache();
+        assertEquals(expectedEntries, requestCacheStats.getEntries());
+    }
 }
