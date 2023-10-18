@@ -52,6 +52,7 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
     private long evictions;
     private long hitCount;
     private long missCount;
+    private long entries; // number of entries in the cache
 
     public RequestCacheStats() {}
 
@@ -60,13 +61,15 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
         evictions = in.readVLong();
         hitCount = in.readVLong();
         missCount = in.readVLong();
+        entries = in.readVLong();
     }
 
-    public RequestCacheStats(long memorySize, long evictions, long hitCount, long missCount) {
+    public RequestCacheStats(long memorySize, long evictions, long hitCount, long missCount, long entries) { //
         this.memorySize = memorySize;
         this.evictions = evictions;
         this.hitCount = hitCount;
         this.missCount = missCount;
+        this.entries = entries;
     }
 
     public void add(RequestCacheStats stats) {
@@ -74,6 +77,7 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
         this.evictions += stats.evictions;
         this.hitCount += stats.hitCount;
         this.missCount += stats.missCount;
+        this.entries += stats.entries;
     }
 
     public long getMemorySizeInBytes() {
@@ -96,12 +100,17 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
         return this.missCount;
     }
 
+    public long getEntries() {
+        return this.entries;
+    }
+
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         out.writeVLong(memorySize);
         out.writeVLong(evictions);
         out.writeVLong(hitCount);
         out.writeVLong(missCount);
+        out.writeVLong(entries);
     }
 
     @Override
@@ -111,6 +120,7 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
         builder.field(Fields.EVICTIONS, getEvictions());
         builder.field(Fields.HIT_COUNT, getHitCount());
         builder.field(Fields.MISS_COUNT, getMissCount());
+        builder.field(Fields.ENTRIES, getEntries());
         builder.endObject();
         return builder;
     }
@@ -127,5 +137,6 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
         static final String EVICTIONS = "evictions";
         static final String HIT_COUNT = "hit_count";
         static final String MISS_COUNT = "miss_count";
+        static final String ENTRIES = "entries";
     }
 }

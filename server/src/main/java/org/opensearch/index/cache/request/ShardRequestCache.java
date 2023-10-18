@@ -65,7 +65,8 @@ public final class ShardRequestCache {
             statsHolder.get(tierType).totalMetric.count(),
             statsHolder.get(tierType).evictionsMetric.count(),
             statsHolder.get(tierType).hitCount.count(),
-            statsHolder.get(tierType).missCount.count()
+            statsHolder.get(tierType).missCount.count(),
+            statsHolder.get(tierType).entries.count()
         );
     }
 
@@ -74,17 +75,20 @@ public final class ShardRequestCache {
         long totalEvictions = 0;
         long totalHits = 0;
         long totalMisses = 0;
+        long totalEntries = 0;
         for (TierType tierType : TierType.values()) {
             totalSize += statsHolder.get(tierType).totalMetric.count();
             totalEvictions += statsHolder.get(tierType).evictionsMetric.count();
             totalHits += statsHolder.get(tierType).hitCount.count();
             totalMisses += statsHolder.get(tierType).missCount.count();
+            totalEntries += statsHolder.get(tierType).entries.count();
         }
         return new RequestCacheStats(
             totalSize,
             totalEvictions,
             totalHits,
-            totalMisses
+            totalMisses,
+            totalEntries
         );
     }
 
@@ -98,6 +102,7 @@ public final class ShardRequestCache {
 
     public void onCached(Accountable key, BytesReference value, TierType tierType) {
         statsHolder.get(tierType).totalMetric.inc(key.ramBytesUsed() + value.ramBytesUsed());
+        statsHolder.get(tierType).entries.inc();
     }
 
     public void onRemoval(Accountable key, BytesReference value, boolean evicted, TierType tierType) {
@@ -112,6 +117,7 @@ public final class ShardRequestCache {
             dec += value.ramBytesUsed();
         }
         statsHolder.get(tierType).totalMetric.dec(dec);
+        statsHolder.get(tierType).entries.dec();
     }
 
     static class StatsHolder implements Serializable {
@@ -120,5 +126,6 @@ public final class ShardRequestCache {
         final CounterMetric totalMetric = new CounterMetric();
         final CounterMetric hitCount = new CounterMetric();
         final CounterMetric missCount = new CounterMetric();
+        final CounterMetric entries = new CounterMetric();
     }
 }
