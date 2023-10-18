@@ -33,8 +33,12 @@
 package org.opensearch.index.cache.request;
 
 import org.apache.lucene.util.Accountable;
+import org.opensearch.common.cache.tier.TierType;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.core.common.bytes.BytesReference;
+
+import java.io.Serializable;
+import java.util.EnumMap;
 
 /**
  * Tracks the portion of the request cache in use for a particular shard.
@@ -43,31 +47,65 @@ import org.opensearch.core.common.bytes.BytesReference;
  */
 public final class ShardRequestCache {
 
-    final CounterMetric evictionsMetric = new CounterMetric();
-    final CounterMetric totalMetric = new CounterMetric();
-    final CounterMetric hitCount = new CounterMetric();
-    final CounterMetric missCount = new CounterMetric();
+    // Holds stats common to all tiers
+    private final EnumMap<TierType, StatsHolder> statsHolder = new EnumMap<>(TierType.class);
+
+    public ShardRequestCache() {
+        for (TierType tierType : TierType.values()) {
+            statsHolder.put(tierType, new StatsHolder());
+        }
+    }
 
     public RequestCacheStats stats() {
         // TODO: Change RequestCacheStats to support disk tier stats.
-        return new RequestCacheStats(totalMetric.count(), evictionsMetric.count(), hitCount.count(), missCount.count());
+        return stats(TierType.ON_HEAP); //?
     }
 
-    public void onHit() {
-        hitCount.inc();
+    public RequestCacheStats stats(TierType tierType) {
+        return new RequestCacheStats(
+            statsHolder.get(tierType).totalMetric.count(),
+            statsHolder.get(tierType).evictionsMetric.count(),
+            statsHolder.get(tierType).hitCount.count(),
+            statsHolder.get(tierType).missCount.count(),
+            statsHolder.get(tierType).entries.count()
+        );
     }
 
-    public void onMiss() {
-        missCount.inc();
+    public RequestCacheStats overallStats() {
+        long totalSize = 0;
+        long totalEvictions = 0;
+        long totalHits = 0;
+        long totalMisses = 0;
+        long totalEntries = 0;
+        for (TierType tierType : TierType.values()) {
+            totalSize += statsHolder.get(tierType).totalMetric.count();
+            totalEvictions += statsHolder.get(tierType).evictionsMetric.count();
+            totalHits += statsHolder.get(tierType).hitCount.count();
+            totalMisses += statsHolder.get(tierType).missCount.count();
+            totalEntries += statsHolder.get(tierType).entries.count();
+        }
+        return new RequestCacheStats(
+            totalSize,
+            totalEvictions,
+            totalHits,
+            totalMisses,
+            totalEntries
+        );
     }
 
-    public void onCached(Accountable key, BytesReference value) {
-        totalMetric.inc(key.ramBytesUsed() + value.ramBytesUsed());
+    public void onMiss(TierType tierType) {
+        statsHolder.get(tierType).missCount.inc();
     }
 
-    public void onRemoval(Accountable key, BytesReference value, boolean evicted) {
+    public void onCached(Accountable key, BytesReference value, TierType tierType) {
+        statsHolder.get(tierType).totalMetric.inc(key.ramBytesUsed() + value.ramBytesUsed());
+        statsHolder.get(tierType).entries.inc();
+    }
+
+    public void onRemoval(Accountable key, BytesReference value, boolean evicted, TierType tierType) {
+
         if (evicted) {
-            evictionsMetric.inc();
+            statsHolder.get(tierType).evictionsMetric.inc();
         }
         long dec = 0;
         if (key != null) {
@@ -76,6 +114,16 @@ public final class ShardRequestCache {
         if (value != null) {
             dec += value.ramBytesUsed();
         }
-        totalMetric.dec(dec);
+        statsHolder.get(tierType).totalMetric.dec(dec);
+        statsHolder.get(tierType).entries.dec();
+    }
+
+    static class StatsHolder implements Serializable {
+
+        final CounterMetric evictionsMetric = new CounterMetric();
+        final CounterMetric totalMetric = new CounterMetric();
+        final CounterMetric hitCount = new CounterMetric();
+        final CounterMetric missCount = new CounterMetric();
+        final CounterMetric entries = new CounterMetric();
     }
 }
