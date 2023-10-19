@@ -16,6 +16,7 @@ import org.opensearch.core.common.io.stream.Writeable;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 /**
@@ -34,6 +35,10 @@ public class TieredCacheSpilloverStrategyHandler<K extends Writeable, V> impleme
      */
     private final List<CachingTier<K, V>> cachingTierList;
 
+    /*public AtomicInteger numGets; // debug only
+    public AtomicInteger numHeapGets;
+    public AtomicInteger numHeapHits;
+    public AtomicInteger numDiskHits;*/
     private TieredCacheSpilloverStrategyHandler(
         OnHeapCachingTier<K, V> onHeapCachingTier,
         DiskCachingTier<K, V> diskCachingTier,
@@ -43,6 +48,10 @@ public class TieredCacheSpilloverStrategyHandler<K extends Writeable, V> impleme
         this.diskCachingTier = Objects.requireNonNull(diskCachingTier);
         this.tieredCacheEventListener = tieredCacheEventListener;
         this.cachingTierList = Arrays.asList(onHeapCachingTier, diskCachingTier);
+        /*this.numGets = new AtomicInteger();
+        this.numHeapGets = new AtomicInteger();
+        this.numHeapHits = new AtomicInteger();
+        this.numDiskHits = new AtomicInteger();*/
         setRemovalListeners();
     }
 
@@ -118,8 +127,8 @@ public class TieredCacheSpilloverStrategyHandler<K extends Writeable, V> impleme
         return this.onHeapCachingTier;
     }
 
-    public DiskCachingTier<K, V> getDiskCachingTier() { // change to CachingTier after debug
-        return this.diskCachingTier;
+    public EhcacheDiskCachingTier getDiskCachingTier() { // change to CachingTier after debug
+        return (EhcacheDiskCachingTier) this.diskCachingTier;
     }
 
     private void setRemovalListeners() {
@@ -131,9 +140,22 @@ public class TieredCacheSpilloverStrategyHandler<K extends Writeable, V> impleme
     private Function<K, CacheValue<V>> getValueFromTierCache() {
         return key -> {
             for (CachingTier<K, V> cachingTier : cachingTierList) {
+                // counters are debug only
+                /*if (cachingTier.getTierType() == TierType.ON_HEAP) {
+                    numHeapGets.incrementAndGet();
+                } else if (cachingTier.getTierType() == TierType.DISK) {
+                    numGets.incrementAndGet();
+                }*/
+
                 V value = cachingTier.get(key);
                 if (value != null) {
                     tieredCacheEventListener.onHit(key, value, cachingTier.getTierType());
+                    /*if (cachingTier.getTierType() == TierType.ON_HEAP) {
+                        numHeapHits.incrementAndGet();
+                    }
+                    if (cachingTier.getTierType() == TierType.DISK) {
+                        numDiskHits.incrementAndGet();
+                    }*/
                     return new CacheValue<>(value, cachingTier.getTierType());
                 }
                 tieredCacheEventListener.onMiss(key, cachingTier.getTierType());

@@ -60,6 +60,7 @@ public class EhcacheDiskCachingTier implements DiskCachingTier<IndicesRequestCac
     private final EhcacheEventListener listener;
     private final IndicesRequestCache indicesRequestCache; // only used to create new Keys
     private final String nodeId;
+    public int numGets; // debug for concurrency test
     // private RBMIntKeyLookupStore keystore;
     // private CacheTierPolicy[] policies;
     // private IndicesRequestCacheDiskTierPolicy policy;
@@ -75,6 +76,7 @@ public class EhcacheDiskCachingTier implements DiskCachingTier<IndicesRequestCac
         this.indicesRequestCache = indicesRequestCache;
         this.nodeId = nodeId;
         this.diskCacheFP = PathUtils.get(BASE_DISK_CACHE_FP, nodeId).toString();
+        this.numGets = 0; // debug
         // I know this function warns it shouldn't often be used, we can fix it to use the roots once we pick a final FP
 
         getManager();
@@ -148,13 +150,17 @@ public class EhcacheDiskCachingTier implements DiskCachingTier<IndicesRequestCac
 
         // if (keystore.contains(key.hashCode()) {
         long now = System.nanoTime();
+        numGets++;
         BytesReference value = null;
         try {
             value = cache.get(new EhcacheKey(key));
-        } catch (IOException ignored) { // do smth with this later
+        } catch (IOException e) { // do smth with this later
+            System.out.println("Error in get!");
+            e.printStackTrace();
         }
         double tookTimeMillis = ((double) (System.nanoTime() - now)) / 1000000;
         getTimeMillisEWMA.addValue(tookTimeMillis);
+
         return value;
         // }
         // return null;

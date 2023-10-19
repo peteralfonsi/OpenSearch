@@ -46,6 +46,7 @@ import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.BytesRef;
 import org.opensearch.common.CheckedSupplier;
+import org.opensearch.common.Randomness;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
 import org.opensearch.common.settings.Settings;
@@ -67,8 +68,13 @@ import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Random;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
@@ -246,6 +252,83 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
 
         IOUtils.close(reader, writer, dir, cache);
         cache.closeDiskTier();
+    }
+
+    public void testEhcacheConcurrency() throws Exception {
+        ShardRequestCache requestCacheStats = new ShardRequestCache();
+        Settings.Builder settingsBuilder = Settings.builder();
+        long heapSizeBytes = 0; // skip directly to disk cache
+        settingsBuilder.put("indices.requests.cache.size", new ByteSizeValue(heapSizeBytes));
+        IndicesRequestCache cache = new IndicesRequestCache(settingsBuilder.build(), getInstanceFromNode(IndicesService.class));
+
+        Directory dir = newDirectory();
+        IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig());
+        writer.addDocument(newDoc(0, "foo"));
+        DirectoryReader reader = OpenSearchDirectoryReader.wrap(DirectoryReader.open(writer), new ShardId("foo", "bar", 1));
+        AtomicBoolean indexShard = new AtomicBoolean(true);
+
+        TestEntity entity = new TestEntity(requestCacheStats, indexShard);
+        Loader loader = new Loader(reader, 0);
+
+        Random rand = Randomness.get();
+        int minThreads = 6;
+        int maxThreads = 8;
+        int numThreads = rand.nextInt(maxThreads - minThreads) + minThreads;
+        ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(numThreads);
+        int numRequests = 50;
+        int numRepeats = 10;
+        BytesReference[] termBytesArr = new BytesReference[numRequests];
+        ArrayList<Integer> permutation = new ArrayList<>();
+
+        // Have these threads make 50 requests, with 10 repeats, in random order, and keep track of the keys.
+        // At the end, make sure that all the keys are in the cache, there are 40 misses, and 10 hits.
+
+        for (int i = 0; i < numRequests; i++) {
+            int searchValue = i;
+            if (i > numRequests - numRepeats - 1) {
+                searchValue = i - (numRequests - numRepeats); // repeat values 0-9
+            }
+            //System.out.println("values: " + i + " " + searchValue);
+            permutation.add(searchValue);
+            if (i == searchValue) {
+                TermQueryBuilder termQuery = new TermQueryBuilder("id", String.valueOf(searchValue));
+                BytesReference termBytes = XContentHelper.toXContent(termQuery, MediaTypeRegistry.JSON, false);
+                termBytesArr[i] = termBytes;
+            }
+        }
+        java.util.Collections.shuffle(permutation);
+
+        ArrayList<Future<BytesReference>> futures = new ArrayList<>();
+
+        for (int j = 0; j < permutation.size(); j++) {
+            int keyNumber = permutation.get(j);
+            Future<BytesReference> fut = executor.submit(() -> cache.getOrCompute(entity, loader, reader, termBytesArr[keyNumber]));
+            futures.add(fut);
+        }
+
+        // now go thru and get them all
+        for (Future<BytesReference> fut : futures) {
+            BytesReference value = fut.get();
+            assertNotNull(value);
+        }
+
+        System.out.println("heap size " + cache.tieredCacheHandler.count(TierType.ON_HEAP));
+        System.out.println("disk size " + cache.tieredCacheHandler.count(TierType.DISK));
+        System.out.println("disk misses " + requestCacheStats.stats(TierType.DISK).getMissCount());
+        System.out.println("disk hits " + requestCacheStats.stats(TierType.DISK).getHitCount());
+        /*System.out.println("disk num gets " + cache.tieredCacheHandler.getDiskCachingTier().numGets);
+        System.out.println("handler num get " + cache.tieredCacheHandler.numGets.intValue());
+        System.out.println("handler num heap get " + cache.tieredCacheHandler.numHeapGets.intValue());
+        System.out.println("handler num heap hit " + cache.tieredCacheHandler.numHeapHits.intValue());
+        System.out.println("handler num disk hit " + cache.tieredCacheHandler.numDiskHits.intValue());*/
+
+        assertEquals(numRequests - numRepeats, cache.tieredCacheHandler.count(TierType.DISK)); // correct
+        assertEquals(numRequests - numRepeats, requestCacheStats.stats(TierType.DISK).getMissCount()); // usually correctly 40, sometimes 41
+        assertEquals(numRepeats, requestCacheStats.stats(TierType.DISK).getHitCount()); // should be 10, is usually 9
+
+        IOUtils.close(reader, writer, dir, cache);
+        cache.closeDiskTier();
+
     }
 
     public void testCacheDifferentReaders() throws Exception {
