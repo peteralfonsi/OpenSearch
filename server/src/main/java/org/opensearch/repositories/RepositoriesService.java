@@ -457,7 +457,6 @@ public class RepositoriesService extends AbstractLifecycleComponent implements C
                     logger.debug("unregistering repository [{}]", entry.getKey());
                     Repository repository = entry.getValue();
                     closeRepository(repository);
-                    archiveRepositoryStats(repository, state.version());
                 } else {
                     survivors.put(entry.getKey(), entry.getValue());
                 }
@@ -474,19 +473,28 @@ public class RepositoriesService extends AbstractLifecycleComponent implements C
                         if (previousMetadata.type().equals(repositoryMetadata.type()) == false
                             || previousMetadata.settings().equals(repositoryMetadata.settings()) == false) {
                             // Previous version is different from the version in settings
-                            logger.debug("updating repository [{}]", repositoryMetadata.name());
-                            closeRepository(repository);
-                            archiveRepositoryStats(repository, state.version());
-                            repository = null;
-                            try {
-                                repository = createRepository(repositoryMetadata, typesRegistry);
-                            } catch (RepositoryException ex) {
-                                // TODO: this catch is bogus, it means the old repo is already closed,
-                                // but we have nothing to replace it
-                                logger.warn(
-                                    () -> new ParameterizedMessage("failed to change repository [{}]", repositoryMetadata.name()),
-                                    ex
+                            if (repository.isSystemRepository() && repository.isReloadable()) {
+                                logger.debug(
+                                    "updating repository [{}] in-place to use new metadata [{}]",
+                                    repositoryMetadata.name(),
+                                    repositoryMetadata
                                 );
+                                repository.validateMetadata(repositoryMetadata);
+                                repository.reload(repositoryMetadata);
+                            } else {
+                                logger.debug("updating repository [{}]", repositoryMetadata.name());
+                                closeRepository(repository);
+                                repository = null;
+                                try {
+                                    repository = createRepository(repositoryMetadata, typesRegistry);
+                                } catch (RepositoryException ex) {
+                                    // TODO: this catch is bogus, it means the old repo is already closed,
+                                    // but we have nothing to replace it
+                                    logger.warn(
+                                        () -> new ParameterizedMessage("failed to change repository [{}]", repositoryMetadata.name()),
+                                        ex
+                                    );
+                                }
                             }
                         }
                     } else {
@@ -565,12 +573,12 @@ public class RepositoriesService extends AbstractLifecycleComponent implements C
     }
 
     public List<RepositoryStatsSnapshot> repositoriesStats() {
-        List<RepositoryStatsSnapshot> archivedRepoStats = repositoriesStatsArchive.getArchivedStats();
         List<RepositoryStatsSnapshot> activeRepoStats = getRepositoryStatsForActiveRepositories();
+        return activeRepoStats;
+    }
 
-        List<RepositoryStatsSnapshot> repositoriesStats = new ArrayList<>(archivedRepoStats);
-        repositoriesStats.addAll(activeRepoStats);
-        return repositoriesStats;
+    public RepositoriesStats getRepositoriesStats() {
+        return new RepositoriesStats(repositoriesStats());
     }
 
     private List<RepositoryStatsSnapshot> getRepositoryStatsForActiveRepositories() {
@@ -628,15 +636,6 @@ public class RepositoriesService extends AbstractLifecycleComponent implements C
     public void closeRepository(Repository repository) {
         logger.debug("closing repository [{}][{}]", repository.getMetadata().type(), repository.getMetadata().name());
         repository.close();
-    }
-
-    private void archiveRepositoryStats(Repository repository, long clusterStateVersion) {
-        if (repository instanceof MeteredBlobStoreRepository) {
-            RepositoryStatsSnapshot stats = ((MeteredBlobStoreRepository) repository).statsSnapshotForArchival(clusterStateVersion);
-            if (repositoriesStatsArchive.archive(stats) == false) {
-                logger.warn("Unable to archive the repository stats [{}] as the archive is full.", stats);
-            }
-        }
     }
 
     /**

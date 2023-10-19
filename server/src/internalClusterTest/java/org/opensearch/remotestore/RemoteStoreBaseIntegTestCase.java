@@ -271,7 +271,6 @@ public class RemoteStoreBaseIntegTestCase extends OpenSearchIntegTestCase {
 
         if (withRateLimiterAttributes) {
             settings.put(segmentRepoSettingsAttributeKeyPrefix + "compress", randomBoolean())
-                .put(segmentRepoSettingsAttributeKeyPrefix + "max_remote_download_bytes_per_sec", "4kb")
                 .put(segmentRepoSettingsAttributeKeyPrefix + "chunk_size", 200, ByteSizeUnit.BYTES);
         }
 
@@ -354,7 +353,13 @@ public class RemoteStoreBaseIntegTestCase extends OpenSearchIntegTestCase {
             // Validated that all the restricted settings are entact on all the nodes.
             repository.getRestrictedSystemRepositorySettings()
                 .stream()
-                .forEach(setting -> assertEquals(setting.get(actualRepository.settings()), setting.get(expectedRepository.settings())));
+                .forEach(
+                    setting -> assertEquals(
+                        String.format(Locale.ROOT, "Restricted Settings mismatch [%s]", setting.getKey()),
+                        setting.get(actualRepository.settings()),
+                        setting.get(expectedRepository.settings())
+                    )
+                );
         }
     }
 

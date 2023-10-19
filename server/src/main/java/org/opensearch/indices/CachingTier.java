@@ -13,9 +13,10 @@ import org.opensearch.common.cache.RemovalListener;
 import java.io.IOException;
 
 /**
- * asdsadssa
- * @param <K>
- * @param <V>
+ * Caching tier interface. Can be implemented/extended by concrete classes to provide different flavors of cache like
+ * onHeap, disk etc.
+ * @param <K> Type of key
+ * @param <V> Type of value
  */
 public interface CachingTier<K, V> {
 
@@ -38,4 +39,9 @@ public interface CachingTier<K, V> {
     int count();
 
     TierType getTierType();
+
+    /**
+     * Force any outstanding size-based and time-based evictions to occur
+     */
+    default void refresh() {}
 }

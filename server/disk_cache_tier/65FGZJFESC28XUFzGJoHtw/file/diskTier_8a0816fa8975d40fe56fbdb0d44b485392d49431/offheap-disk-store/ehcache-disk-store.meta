@@ -1,0 +1,4 @@
+#Key and value types
+#Wed Oct 18 18:48:12 AMT 2023
+valueType=org.opensearch.core.common.bytes.BytesReference
+keyType=org.opensearch.indices.EhcacheKey

@@ -56,7 +56,6 @@ public final class ShardRequestCache {
     }
 
     public RequestCacheStats stats() {
-        // TODO: Change RequestCacheStats to support disk tier stats.
         return stats(TierType.ON_HEAP);
     }
 
@@ -115,7 +114,6 @@ public final class ShardRequestCache {
     }
 
     static class StatsHolder implements Serializable {
-
         final CounterMetric evictionsMetric = new CounterMetric();
         final CounterMetric totalMetric = new CounterMetric();
         final CounterMetric hitCount = new CounterMetric();

@@ -14,24 +14,22 @@ import org.apache.lucene.index.SegmentInfos;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FilterDirectory;
 import org.apache.lucene.util.Version;
-import org.opensearch.action.support.PlainActionFuture;
 import org.opensearch.common.concurrent.GatedCloseable;
 import org.opensearch.core.action.ActionListener;
 import org.opensearch.index.shard.IndexShard;
 import org.opensearch.index.shard.IndexShardState;
-import org.opensearch.index.shard.ShardPath;
 import org.opensearch.index.store.RemoteSegmentStoreDirectory;
 import org.opensearch.index.store.Store;
 import org.opensearch.index.store.StoreFileMetadata;
 import org.opensearch.index.store.remote.metadata.RemoteSegmentMetadata;
 import org.opensearch.indices.replication.checkpoint.ReplicationCheckpoint;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiConsumer;
 import java.util.stream.Collectors;
 
 /**
@@ -98,6 +96,7 @@ public class RemoteStoreReplicationSource implements SegmentReplicationSource {
         ReplicationCheckpoint checkpoint,
         List<StoreFileMetadata> filesToFetch,
         IndexShard indexShard,
+        BiConsumer<String, Long> fileProgressTracker,
         ActionListener<GetSegmentFilesResponse> listener
     ) {
         try {
@@ -108,45 +107,34 @@ public class RemoteStoreReplicationSource implements SegmentReplicationSource {
             logger.debug("Downloading segment files from remote store {}", filesToFetch);
 
             RemoteSegmentMetadata remoteSegmentMetadata = remoteDirectory.readLatestMetadataFile();
-            List<StoreFileMetadata> toDownloadSegments = new ArrayList<>();
             Collection<String> directoryFiles = List.of(indexShard.store().directory().listAll());
             if (remoteSegmentMetadata != null) {
                 try {
                     indexShard.store().incRef();
                     indexShard.remoteStore().incRef();
                     final Directory storeDirectory = indexShard.store().directory();
-                    final ShardPath shardPath = indexShard.shardPath();
+                    final List<String> toDownloadSegmentNames = new ArrayList<>();
                     for (StoreFileMetadata fileMetadata : filesToFetch) {
                         String file = fileMetadata.name();
                         assert directoryFiles.contains(file) == false : "Local store already contains the file " + file;
-                        toDownloadSegments.add(fileMetadata);
+                        toDownloadSegmentNames.add(file);
                     }
-                    downloadSegments(storeDirectory, remoteDirectory, toDownloadSegments, shardPath, listener);
-                    logger.debug("Downloaded segment files from remote store {}", toDownloadSegments);
+                    indexShard.getFileDownloader()
+                        .download(
+                            remoteDirectory,
+                            new ReplicationStatsDirectoryWrapper(storeDirectory, fileProgressTracker),
+                            toDownloadSegmentNames
+                        );
+                    logger.debug("Downloaded segment files from remote store {}", filesToFetch);
                 } finally {
                     indexShard.store().decRef();
                     indexShard.remoteStore().decRef();
                 }
             }
+            listener.onResponse(new GetSegmentFilesResponse(filesToFetch));
         } catch (Exception e) {
             listener.onFailure(e);
         }
-    }
-
-    private void downloadSegments(
-        Directory storeDirectory,
-        RemoteSegmentStoreDirectory remoteStoreDirectory,
-        List<StoreFileMetadata> toDownloadSegments,
-        ShardPath shardPath,
-        ActionListener<GetSegmentFilesResponse> completionListener
-    ) {
-        final Path indexPath = shardPath == null ? null : shardPath.resolveIndex();
-        for (StoreFileMetadata storeFileMetadata : toDownloadSegments) {
-            final PlainActionFuture<String> segmentListener = PlainActionFuture.newFuture();
-            remoteStoreDirectory.copyTo(storeFileMetadata.name(), storeDirectory, indexPath, segmentListener);
-            segmentListener.actionGet();
-        }
-        completionListener.onResponse(new GetSegmentFilesResponse(toDownloadSegments));
     }
 
     @Override
