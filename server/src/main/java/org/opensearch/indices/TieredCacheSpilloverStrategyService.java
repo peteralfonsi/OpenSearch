@@ -124,6 +124,16 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
         return totalCount;
     }
 
+    @Override
+    public long count(TierType tierType) {
+        for (CachingTier<K, V> cachingTier : cachingTierList) {
+            if (cachingTier.getTierType() == tierType) {
+                return cachingTier.count();
+            }
+        }
+        return -1L;
+    }
+
     /**
      * Called whenever an item is evicted from any cache tier. If the item was evicted from onHeap cache, it is moved
      * to disk tier cache. In case it was evicted from disk tier cache, it will discarded.
@@ -162,6 +172,15 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
     private void setRemovalListeners() {
         for (CachingTier<K, V> cachingTier : cachingTierList) {
             cachingTier.setRemovalListener(this);
+        }
+    }
+
+    /**
+     * Close the ehcache disk tier, if there is one.
+     */
+    public void closeDiskTier() {
+        if (diskCachingTier.isPresent()) {
+            diskCachingTier.get().close();
         }
     }
 

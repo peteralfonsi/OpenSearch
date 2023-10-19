@@ -312,8 +312,8 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
             assertNotNull(value);
         }
 
-        //System.out.println("heap size " + cache.count(TierType.ON_HEAP));
-        //System.out.println("disk size " + cache.count(TierType.DISK));
+        System.out.println("heap size " + cache.count(TierType.ON_HEAP));
+        System.out.println("disk size " + cache.count(TierType.DISK));
         System.out.println("disk misses " + requestCacheStats.stats(TierType.DISK).getMissCount());
         System.out.println("disk hits " + requestCacheStats.stats(TierType.DISK).getHitCount());
         /*System.out.println("disk num gets " + cache.tieredCacheHandler.getDiskCachingTier().numGets);

@@ -417,11 +417,15 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         return tieredCacheService.count();
     }
 
+    long count(TierType tierType) {
+        return tieredCacheService.count(tierType);
+    }
+
     int numRegisteredCloseListeners() { // for testing
         return registeredClosedListeners.size();
     }
 
-    /*public void closeDiskTier() {
-        tieredCacheHandler.closeDiskTier();
-    }*/
+    public void closeDiskTier() {
+        tieredCacheService.closeDiskTier();
+    }
 }

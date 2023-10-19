@@ -28,7 +28,11 @@ public interface TieredCacheService<K, V> {
 
     long count();
 
+    long count(TierType tierType);
+
     OnHeapCachingTier<K, V> getOnHeapCachingTier();
 
     Optional<DiskCachingTier<K, V>> getDiskCachingTier();
+
+    void closeDiskTier();
 }
