@@ -18,6 +18,7 @@ import org.opensearch.telemetry.tracing.listener.TraceableActionListener;
 
 import java.net.InetSocketAddress;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * Tracer wrapped {@link HttpChannel}
@@ -57,6 +58,13 @@ public class TraceableHttpChannel implements HttpChannel {
     }
 
     @Override
+    public void handleException(Exception ex) {
+        span.addEvent("The HttpChannel was closed without sending the response");
+        span.setError(ex);
+        span.endSpan();
+    }
+
+    @Override
     public void close() {
         delegate.close();
     }
@@ -84,5 +92,10 @@ public class TraceableHttpChannel implements HttpChannel {
     @Override
     public InetSocketAddress getRemoteAddress() {
         return delegate.getRemoteAddress();
+    }
+
+    @Override
+    public <T> Optional<T> get(String name, Class<T> clazz) {
+        return delegate.get(name, clazz);
     }
 }
