@@ -33,11 +33,9 @@
 package org.opensearch.index.cache.request;
 
 import org.apache.lucene.util.Accountable;
-import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.indices.TierType;
 
-import java.io.Serializable;
 import java.util.EnumMap;
 
 /**
@@ -57,40 +55,11 @@ public final class ShardRequestCache {
 
     public RequestCacheStats stats() {
         // TODO: Change RequestCacheStats to support disk tier stats.
-        return stats(TierType.ON_HEAP);
+        // Changing this function to return a RequestCacheStats with stats from all tiers.
+        //return stats(TierType.ON_HEAP);
+        return new RequestCacheStats(statsHolder);
     }
 
-    public RequestCacheStats stats(TierType tierType) {
-        return new RequestCacheStats(
-            statsHolder.get(tierType).totalMetric.count(),
-            statsHolder.get(tierType).evictionsMetric.count(),
-            statsHolder.get(tierType).hitCount.count(),
-            statsHolder.get(tierType).missCount.count(),
-            statsHolder.get(tierType).entries.count()
-        );
-    }
-
-    public RequestCacheStats overallStats() {
-        long totalSize = 0;
-        long totalEvictions = 0;
-        long totalHits = 0;
-        long totalMisses = 0;
-        long totalEntries = 0;
-        for (TierType tierType : TierType.values()) {
-            totalSize += statsHolder.get(tierType).totalMetric.count();
-            totalEvictions += statsHolder.get(tierType).evictionsMetric.count();
-            totalHits += statsHolder.get(tierType).hitCount.count();
-            totalMisses += statsHolder.get(tierType).missCount.count();
-            totalEntries += statsHolder.get(tierType).entries.count();
-        }
-        return new RequestCacheStats(
-            totalSize,
-            totalEvictions,
-            totalHits,
-            totalMisses,
-            totalEntries
-        );
-    }
 
     public void onHit(TierType tierType) {
         statsHolder.get(tierType).hitCount.inc();
@@ -118,14 +87,5 @@ public final class ShardRequestCache {
         }
         statsHolder.get(tierType).totalMetric.dec(dec);
         statsHolder.get(tierType).entries.dec();
-    }
-
-    static class StatsHolder implements Serializable {
-
-        final CounterMetric evictionsMetric = new CounterMetric();
-        final CounterMetric totalMetric = new CounterMetric();
-        final CounterMetric hitCount = new CounterMetric();
-        final CounterMetric missCount = new CounterMetric();
-        final CounterMetric entries = new CounterMetric();
     }
 }

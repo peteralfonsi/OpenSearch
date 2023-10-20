@@ -196,8 +196,8 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         assertEquals(maxNumInHeap * heapKeySize, requestCacheStats.stats().getMemorySizeInBytes());
         // TODO: disk weight bytes
         assertEquals(1, requestCacheStats.stats().getEvictions());
-        assertEquals(1, requestCacheStats.stats(TierType.DISK).getHitCount());
-        assertEquals(maxNumInHeap + 1, requestCacheStats.stats(TierType.DISK).getMissCount());
+        assertEquals(1, requestCacheStats.stats().getHitCount(TierType.DISK));
+        assertEquals(maxNumInHeap + 1, requestCacheStats.stats().getMissCount(TierType.DISK));
         assertEquals(0, requestCacheStats.stats().getHitCount());
         assertEquals(maxNumInHeap + 2, requestCacheStats.stats().getMissCount());
         assertEquals(maxNumInHeap, cache.tieredCacheHandler.count(TierType.ON_HEAP));
@@ -209,8 +209,8 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         BytesReference firstValueAgain = cache.getOrCompute(entity, loader, reader, termBytesArr[0]);
 
         assertEquals(1, requestCacheStats.stats().getEvictions());
-        assertEquals(2, requestCacheStats.stats(TierType.DISK).getHitCount());
-        assertEquals(maxNumInHeap + 1, requestCacheStats.stats(TierType.DISK).getMissCount());
+        assertEquals(2, requestCacheStats.stats().getHitCount(TierType.DISK));
+        assertEquals(maxNumInHeap + 1, requestCacheStats.stats().getMissCount(TierType.DISK));
         assertEquals(1, requestCacheStats.stats().getHitCount());
         assertEquals(maxNumInHeap + 3, requestCacheStats.stats().getMissCount());
         assertEquals(maxNumInHeap, cache.tieredCacheHandler.count(TierType.ON_HEAP));
