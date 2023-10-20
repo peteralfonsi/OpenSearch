@@ -35,18 +35,25 @@ public class StatsHolder implements Serializable, Writeable, ToXContentFragment 
         this.entries = new CounterMetric();
     }
 
+    public StatsHolder(long evictions, long memorySize, long hitCount, long missCount, long entries) {
+        this.evictionsMetric = new CounterMetric();
+        this.evictionsMetric.inc(evictions);
+        this.totalMetric = new CounterMetric();
+        this.totalMetric.inc(memorySize);
+        this.hitCount = new CounterMetric();
+        this.hitCount.inc(hitCount);
+        this.missCount = new CounterMetric();
+        this.missCount.inc(missCount);
+        this.entries = new CounterMetric();
+        this.entries.inc(entries);
+    }
+
     public StatsHolder(StreamInput in) throws IOException  {
         // Read and write the values of the counter metrics. They should always be positive
-        this.evictionsMetric = new CounterMetric();
-        this.evictionsMetric.inc(in.readVLong());
-        this.totalMetric = new CounterMetric();
-        this.totalMetric.inc(in.readVLong());
-        this.hitCount = new CounterMetric();
-        this.hitCount.inc(in.readVLong());
-        this.missCount = new CounterMetric();
-        this.missCount.inc(in.readVLong());
-        this.entries = new CounterMetric();
-        this.entries.inc(in.readVLong());
+        // This object is new, so we shouldn't need version checks for different behavior
+        this(in.readVLong(), in.readVLong(), in.readVLong(), in.readVLong(), in.readVLong());
+        // java forces us to do this in one line
+        // guaranteed to be evaluated in correct order (https://docs.oracle.com/javase/specs/jls/se7/html/jls-15.html#jls-15.7.4)
     }
 
     @Override

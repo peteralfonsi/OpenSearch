@@ -54,8 +54,6 @@ public class TieredCacheSpilloverStrategyHandler<K extends Writeable, V> impleme
             V value = onHeapCachingTier.compute(key, loader);
             tieredCacheEventListener.onCached(key, value, TierType.ON_HEAP);
             return value;
-        } else {
-            //tieredCacheEventListener.onHit(key, cacheValue.value, cacheValue.source); // this double counts, see line 122
         }
         return cacheValue.value;
     }
@@ -105,6 +103,7 @@ public class TieredCacheSpilloverStrategyHandler<K extends Writeable, V> impleme
             switch (notification.getTierType()) {
                 case ON_HEAP:
                     diskCachingTier.put(notification.getKey(), notification.getValue());
+
                     break;
                 default:
                     break;
