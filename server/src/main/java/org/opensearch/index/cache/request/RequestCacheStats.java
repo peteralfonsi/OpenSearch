@@ -32,6 +32,7 @@
 
 package org.opensearch.index.cache.request;
 
+import org.opensearch.Version;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
@@ -61,14 +62,25 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
     }
 
     public RequestCacheStats(StreamInput in) throws IOException {
-        // Any RequestCacheStats written to a stream should already have a counter for each possible tier type
-        this.map = in.readMap(StreamInput::readString, StatsHolder::new); // does it know to use the right constructor? does it rly need to be registered?
-    }
-
-    public RequestCacheStats(TierType tierType, StatsHolder statsHolder) {
-        // Create a RequestCacheStats object with only one tier's statistics populated
         this();
-        map.put(tierType.getStringValue(), statsHolder);
+        if (in.getVersion().onOrAfter(Version.V_3_0_0)) {
+            this.map = in.readMap(StreamInput::readString, StatsHolder::new); // does it know to use the right constructor? does it rly need to be registered?
+        } else {
+            // objects from earlier versions only contain on-heap info, and do not have entries info
+            long memorySize = in.readVLong();
+            long evictions = in.readVLong();
+            long hitCount = in.readVLong();
+            long missCount = in.readVLong();
+            this.map.put(
+                TierType.ON_HEAP.getStringValue(),
+                new StatsHolder(
+                    memorySize,
+                    evictions,
+                    hitCount,
+                    missCount,
+                    0
+                ));
+        }
     }
 
     public RequestCacheStats(Map<TierType, StatsHolder> inputMap) {
@@ -91,7 +103,6 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
         return map.get(tierType.getStringValue());
     }
 
-    // should these take in strings bc thats whats done in the xcontent builder? seems wasteful
     public long getMemorySizeInBytes(TierType tierType) {
         return getTierStats(tierType).totalMetric.count();
     }
@@ -144,7 +155,16 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
 
     @Override
     public void writeTo(StreamOutput out) throws IOException {
-        out.writeMap(this.map, StreamOutput::writeString, (o, v) -> v.writeTo(o)); // ?
+        if (out.getVersion().onOrAfter(Version.V_3_0_0)) {
+            out.writeMap(this.map, StreamOutput::writeString, (o, v) -> v.writeTo(o)); // ?
+        } else {
+            // Write only on-heap values, and don't write entries metric
+            StatsHolder heapStats = map.get(TierType.ON_HEAP.getStringValue());
+            out.writeVLong(heapStats.getMemorySize());
+            out.writeVLong(heapStats.getEvictions());
+            out.writeVLong(heapStats.getHitCount());
+            out.writeVLong(heapStats.getMissCount());
+        }
     }
 
     @Override
