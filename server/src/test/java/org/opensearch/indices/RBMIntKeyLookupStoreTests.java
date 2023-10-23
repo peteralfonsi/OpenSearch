@@ -41,7 +41,6 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 
 public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
-    // Tests mostly based on HybridIntKeyStoreTests.java
     public void testInit() {
         long memCap = 100 * RBMSizeEstimator.BYTES_IN_MB;
         RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), memCap);
@@ -66,18 +65,12 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
         }
     }
 
-    public void testContainsAndForceRemove() throws Exception {
+    public void testContains() throws Exception {
         RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
         for (int i = 0; i < 2000; i++) {
             kls.add(i);
             assertTrue(kls.contains(i));
         }
-        assertFalse(kls.canHaveFalseNegatives());
-        for (int i = 1900; i < 2000; i++) {
-            kls.forceRemove(i);
-            assertFalse(kls.contains(i));
-        }
-        assertEquals(1900, kls.getSize());
     }
 
     public void testAddingStatsGetters() throws Exception {
@@ -145,8 +138,6 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
 
     public void testConcurrency() throws Exception {
         Random rand = Randomness.get();
-        int modulo = (int) Math.pow(2, 29);
-        long memCap = 100 * RBMSizeEstimator.BYTES_IN_MB;
         for (int j = 0; j < 5; j++) { // test with different numbers of threads
             RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore((int) Math.pow(2, 29), 0L);
             int numThreads = rand.nextInt(50) + 1;
@@ -274,8 +265,6 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
         assertFalse(kls.contains(null));
         assertEquals(0, (int) kls.getInternalRepresentation(null));
         assertFalse(kls.remove(null));
-        kls.forceRemove(null);
-        assertFalse(kls.canHaveFalseNegatives());
         assertFalse(kls.isCollision(null, null));
         assertEquals(0, kls.getTotalAdds());
         Integer[] newVals = new Integer[]{1, 17, -2, null, -4, null};
@@ -300,8 +289,6 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
             assertEquals(expectedMultipliers[i], kls.sizeEstimator.bufferMultiplier, delta);
             assertEquals(expectedSlopes[i], kls.sizeEstimator.slope, delta);
             assertEquals(expectedIntercepts[i], kls.sizeEstimator.intercept, delta);
-            System.out.println("log modulo: " + logModulos[i]);
-            System.out.println("Estimated size at 10^6: " + kls.sizeEstimator.getSizeInBytes(1000000));
         }
 
     }

@@ -57,13 +57,12 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
         protected boolean guaranteesNoFalseNegatives;
         protected int maxNumEntries;
         protected boolean atCapacity;
-        protected CounterMetric numRemovalAttempts; // used in removable classes
+        protected CounterMetric numRemovalAttempts;
         protected CounterMetric numSuccessfulRemovals;
         protected KeyStoreStats(long memSizeCapInBytes, int maxNumEntries) {
             this.size = 0;
             this.numAddAttempts = new CounterMetric();
             this.numCollisions = new CounterMetric();
-            this.guaranteesNoFalseNegatives = true;
             this.memSizeCapInBytes = memSizeCapInBytes;
             this.maxNumEntries = maxNumEntries;
             this.atCapacity = false;
@@ -179,28 +178,6 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
         } finally {
             writeLock.unlock();
         }
-    }
-
-
-    @Override
-    public void forceRemove(Integer value) throws Exception {
-        if (value == null) {
-            return;
-        }
-        writeLock.lock();
-        stats.guaranteesNoFalseNegatives = false;
-        try {
-            int transformedValue = transform(value);
-            rbm.remove(transformedValue);
-            stats.size--;
-        } finally {
-            writeLock.unlock();
-        }
-    }
-
-    @Override
-    public boolean canHaveFalseNegatives() {
-        return !stats.guaranteesNoFalseNegatives;
     }
 
     @Override

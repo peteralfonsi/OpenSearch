@@ -74,20 +74,6 @@ public interface KeyLookupStore<T> {
      */
     boolean remove(T value) throws Exception;
 
-
-    /**
-     * Remove the transformed version of this value from the store. Calling this function may cause
-     * contains() to return false negatives for future values.
-     * @param value The value to forcibly remove.
-     */
-    void forceRemove(T value) throws Exception;
-
-    /**
-     * Check if the object currently guarantees having no false negatives when running contains().
-     * @return false if there will not be false negatives, true if there could be false negatives.
-     */
-    boolean canHaveFalseNegatives();
-
     /**
      * Returns the number of distinct values stored in the internal data structure.
      * Does not count values which weren't successfully added due to collisions.
