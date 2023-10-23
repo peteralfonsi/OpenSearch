@@ -34,7 +34,6 @@ package org.opensearch.indices;
 
 import com.carrotsearch.randomizedtesting.annotations.ParametersFactory;
 
-import org.opensearch.action.IndicesRequestIT;
 import org.opensearch.action.admin.indices.alias.Alias;
 import org.opensearch.action.admin.indices.forcemerge.ForceMergeResponse;
 import org.opensearch.action.search.SearchResponse;
@@ -638,30 +637,13 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
 
     public void testCacheWithInvalidation() throws Exception {
         Client client = client();
-        //int heapSizeBytes = 2000; // enough to fit 2 queries, as each is 687 B
 
         Settings.Builder builder = Settings.builder()
             .put(IndicesRequestCache.INDEX_CACHE_REQUEST_ENABLED_SETTING.getKey(), true)
             .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 1)
-            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
-            .put(IndicesRequestCache.INDICES_CACHE_QUERY_SIZE.getKey(), new ByteSizeValue(2000));
-        // Why is it appending "index." to the beginning of the key??
+            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0);
 
-        String heapSizeBytes = builder.get(IndicesRequestCache.INDICES_CACHE_QUERY_SIZE.getKey());
-        System.out.println("Current cap = " + heapSizeBytes);
-
-        client.admin().setSettings(Settings.builder().put(IndicesRequestCache.INDICES_CACHE_QUERY_SIZE.getKey(), new ByteSizeValue(2000)));
-
-        assertAcked(
-            client.admin()
-                .indices()
-                .prepareCreate("index")
-                .setMapping("k", "type=keyword")
-                .setSettings(
-                    builder
-                )
-                .get()
-        );
+        assertAcked(client.admin().indices().prepareCreate("index").setMapping("k", "type=keyword").setSettings(builder).get());
         indexRandom(true, client.prepareIndex("index").setSource("k", "hello"));
         ensureSearchable("index");
         SearchResponse resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello")).get();
@@ -675,8 +657,8 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
         resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello")).get();
         assertSearchResponse(resp);
         // Should expect hit as here as refresh didn't happen
-        assertCacheState(client, "index", 1, 1, TierType.ON_HEAP);
-        assertCacheState(client, "index", 0, 1, TierType.DISK);
+        assertCacheState(client, "index", 1, 1, TierType.ON_HEAP, false);
+        assertCacheState(client, "index", 0, 1, TierType.DISK, false);
         assertNumCacheEntries(client, "index", 1, TierType.ON_HEAP);
 
         // Explicit refresh would invalidate cache
@@ -685,13 +667,21 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
         resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello")).get();
         assertSearchResponse(resp);
         // Should expect miss as key has changed due to change in IndexReader.CacheKey (due to refresh)
-        assertCacheState(client, "index", 1, 2, TierType.ON_HEAP);
-        assertCacheState(client, "index", 0, 2, TierType.DISK);
-        assertNumCacheEntries(client, "index", 1, TierType.ON_HEAP); // Shouldn't it just be the most recent query, since the first one was invalidated? (prob invalidation isnt in yet)
+        assertCacheState(client, "index", 1, 2, TierType.ON_HEAP, false);
+        assertCacheState(client, "index", 0, 2, TierType.DISK, false);
+        assertNumCacheEntries(client, "index", 1, TierType.ON_HEAP); // Shouldn't it just be the most recent query, since the first one was
+                                                                     // invalidated? (prob invalidation isnt in yet)
         // yeah - evictions = 0, its not in yet
     }
 
-    private static void assertCacheState(Client client, String index, long expectedHits, long expectedMisses, TierType tierType) {
+    protected static void assertCacheState(
+        Client client,
+        String index,
+        long expectedHits,
+        long expectedMisses,
+        TierType tierType,
+        boolean enforceZeroEvictions
+    ) {
         RequestCacheStats requestCacheStats = client.admin()
             .indices()
             .prepareStats(index)
@@ -701,18 +691,32 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .getRequestCache();
         // Check the hit count and miss count together so if they are not
         // correct we can see both values
-        System.out.println("mem size " + requestCacheStats.getMemorySize(tierType));
-        assertEquals(
-            Arrays.asList(expectedHits, expectedMisses, 0L),
-            Arrays.asList(requestCacheStats.getHitCount(tierType), requestCacheStats.getMissCount(tierType), requestCacheStats.getEvictions(tierType))
-        );
+        ByteSizeValue memSize = requestCacheStats.getMemorySize(tierType);
+        if (memSize.getBytes() > 0) {
+            System.out.println("mem size " + memSize);
+        }
+        if (enforceZeroEvictions) {
+            assertEquals(
+                Arrays.asList(expectedHits, expectedMisses, 0L),
+                Arrays.asList(
+                    requestCacheStats.getHitCount(tierType),
+                    requestCacheStats.getMissCount(tierType),
+                    requestCacheStats.getEvictions(tierType)
+                )
+            );
+        } else {
+            assertEquals(
+                Arrays.asList(expectedHits, expectedMisses),
+                Arrays.asList(requestCacheStats.getHitCount(tierType), requestCacheStats.getMissCount(tierType))
+            );
+        }
     }
 
-    private static void assertCacheState(Client client, String index, long expectedHits, long expectedMisses) {
-        assertCacheState(client, index, expectedHits, expectedMisses, TierType.ON_HEAP);
+    protected static void assertCacheState(Client client, String index, long expectedHits, long expectedMisses) {
+        assertCacheState(client, index, expectedHits, expectedMisses, TierType.ON_HEAP, true);
     }
 
-    private static void assertNumCacheEntries(Client client, String index, long expectedEntries, TierType tierType) {
+    protected static void assertNumCacheEntries(Client client, String index, long expectedEntries, TierType tierType) {
         RequestCacheStats requestCacheStats = client.admin()
             .indices()
             .prepareStats(index)

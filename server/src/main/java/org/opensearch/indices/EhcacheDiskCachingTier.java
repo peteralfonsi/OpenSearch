@@ -8,18 +8,8 @@
 
 package org.opensearch.indices;
 
-import org.ehcache.PersistentCacheManager;
-import org.ehcache.config.builders.CacheConfigurationBuilder;
-import org.ehcache.config.builders.CacheEventListenerConfigurationBuilder;
-import org.ehcache.config.builders.CacheManagerBuilder;
-import org.ehcache.config.builders.PooledExecutionServiceConfigurationBuilder;
-import org.ehcache.config.builders.ResourcePoolsBuilder;
-import org.ehcache.config.units.MemoryUnit;
-import org.ehcache.event.EventType;
-import org.ehcache.impl.config.executor.PooledExecutionServiceConfiguration;
 import org.opensearch.common.ExponentiallyWeightedMovingAverage;
 import org.opensearch.common.cache.RemovalListener;
-import org.ehcache.Cache;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.io.PathUtils;
 import org.opensearch.common.metrics.CounterMetric;
@@ -30,7 +20,21 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 
-public class EhcacheDiskCachingTier implements DiskCachingTier<IndicesRequestCache.Key, BytesReference>, RemovalListener<IndicesRequestCache.Key, BytesReference> {
+import org.ehcache.Cache;
+import org.ehcache.PersistentCacheManager;
+import org.ehcache.config.builders.CacheConfigurationBuilder;
+import org.ehcache.config.builders.CacheEventListenerConfigurationBuilder;
+import org.ehcache.config.builders.CacheManagerBuilder;
+import org.ehcache.config.builders.PooledExecutionServiceConfigurationBuilder;
+import org.ehcache.config.builders.ResourcePoolsBuilder;
+import org.ehcache.config.units.MemoryUnit;
+import org.ehcache.event.EventType;
+import org.ehcache.impl.config.executor.PooledExecutionServiceConfiguration;
+
+public class EhcacheDiskCachingTier
+    implements
+        DiskCachingTier<IndicesRequestCache.Key, BytesReference>,
+        RemovalListener<IndicesRequestCache.Key, BytesReference> {
 
     public static HashMap<String, PersistentCacheManager> cacheManagers = new HashMap<>();
     // Because of the way test cases are set up, each node may try to instantiate several disk caching tiers.
@@ -52,7 +56,7 @@ public class EhcacheDiskCachingTier implements DiskCachingTier<IndicesRequestCac
     private final String diskCacheFP; // the one to use for this node
     private RemovalListener<IndicesRequestCache.Key, BytesReference> removalListener;
     private ExponentiallyWeightedMovingAverage getTimeMillisEWMA;
-    private static final double GET_TIME_EWMA_ALPHA  = 0.3; // This is the value used elsewhere in OpenSearch
+    private static final double GET_TIME_EWMA_ALPHA = 0.3; // This is the value used elsewhere in OpenSearch
     private static final int MIN_WRITE_THREADS = 0;
     private static final int MAX_WRITE_THREADS = 4; // Max number of threads for the PooledExecutionService which handles writes
     private static final String cacheAlias = "diskTier";
@@ -109,39 +113,42 @@ public class EhcacheDiskCachingTier implements DiskCachingTier<IndicesRequestCac
                 // actual logging later
             }
         }
-        PooledExecutionServiceConfiguration threadConfig = PooledExecutionServiceConfigurationBuilder.newPooledExecutionServiceConfigurationBuilder()
+        PooledExecutionServiceConfiguration threadConfig = PooledExecutionServiceConfigurationBuilder
+            .newPooledExecutionServiceConfigurationBuilder()
             .defaultPool("default", MIN_WRITE_THREADS, MAX_WRITE_THREADS)
             .build();
 
-        cacheManagers.put(nodeId,
-            CacheManagerBuilder.newCacheManagerBuilder()
-            .using(threadConfig)
-            .with(CacheManagerBuilder.persistence(diskCacheFP)
-            ).build(true)
+        cacheManagers.put(
+            nodeId,
+            CacheManagerBuilder.newCacheManagerBuilder().using(threadConfig).with(CacheManagerBuilder.persistence(diskCacheFP)).build(true)
         );
         this.cacheManager = cacheManagers.get(nodeId);
     }
 
     private void createCache(long maxWeightInBytes) {
         // our EhcacheEventListener should receive events every time an entry is changed
-        CacheEventListenerConfigurationBuilder listenerConfig = CacheEventListenerConfigurationBuilder
-            .newEventListenerConfiguration(listener,
-                EventType.EVICTED,
-                EventType.EXPIRED,
-                EventType.REMOVED,
-                EventType.UPDATED,
-                EventType.CREATED)
-            .ordered().asynchronous();
+        CacheEventListenerConfigurationBuilder listenerConfig = CacheEventListenerConfigurationBuilder.newEventListenerConfiguration(
+            listener,
+            EventType.EVICTED,
+            EventType.EXPIRED,
+            EventType.REMOVED,
+            EventType.UPDATED,
+            EventType.CREATED
+        ).ordered().asynchronous();
         // ordered() has some performance penalty as compared to unordered(), we can also use synchronous()
 
-        cache = cacheManager.createCache(cacheAlias,
+        cache = cacheManager.createCache(
+            cacheAlias,
             CacheConfigurationBuilder.newCacheConfigurationBuilder(
-                    EhcacheKey.class, BytesReference.class, ResourcePoolsBuilder.newResourcePoolsBuilder().disk(maxWeightInBytes, MemoryUnit.B, false))
-                .withService(listenerConfig));
+                EhcacheKey.class,
+                BytesReference.class,
+                ResourcePoolsBuilder.newResourcePoolsBuilder().disk(maxWeightInBytes, MemoryUnit.B, false)
+            ).withService(listenerConfig)
+        );
     }
 
     @Override
-    public BytesReference get(IndicesRequestCache.Key key)  {
+    public BytesReference get(IndicesRequestCache.Key key) {
         // I don't think we need to do the future stuff as the cache is threadsafe
 
         // if (keystore.contains(key.hashCode()) {
@@ -174,7 +181,8 @@ public class EhcacheDiskCachingTier implements DiskCachingTier<IndicesRequestCac
     }
 
     @Override
-    public BytesReference computeIfAbsent(IndicesRequestCache.Key key, TieredCacheLoader<IndicesRequestCache.Key, BytesReference> loader) throws Exception {
+    public BytesReference computeIfAbsent(IndicesRequestCache.Key key, TieredCacheLoader<IndicesRequestCache.Key, BytesReference> loader)
+        throws Exception {
         return null; // should not need to fill out, Cache.computeIfAbsent is always used
     }
 
@@ -193,7 +201,8 @@ public class EhcacheDiskCachingTier implements DiskCachingTier<IndicesRequestCac
     }
 
     @Override
-    public BytesReference compute(IndicesRequestCache.Key key, TieredCacheLoader<IndicesRequestCache.Key, BytesReference> loader) throws Exception {
+    public BytesReference compute(IndicesRequestCache.Key key, TieredCacheLoader<IndicesRequestCache.Key, BytesReference> loader)
+        throws Exception {
         return null; // should not need to fill out, Cache.compute is always used
     }
 
@@ -222,6 +231,7 @@ public class EhcacheDiskCachingTier implements DiskCachingTier<IndicesRequestCac
     protected void countInc() {
         count.inc();
     }
+
     protected void countDec() {
         count.dec();
     }

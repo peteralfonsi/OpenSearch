@@ -109,8 +109,10 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     private final IndicesService indicesService;
     // private final Cache<Key, BytesReference> cache;
 
-    //private final TieredCacheHandler<Key, BytesReference> tieredCacheHandler;
-    public final TieredCacheSpilloverStrategyHandler<Key, BytesReference> tieredCacheHandler; // Change this back after done debugging serialization issues
+    // private final TieredCacheHandler<Key, BytesReference> tieredCacheHandler;
+    public final TieredCacheSpilloverStrategyHandler<Key, BytesReference> tieredCacheHandler; // Change this back after done debugging
+                                                                                              // serialization issues
+
     IndicesRequestCache(Settings settings, IndicesService indicesService) {
         this.size = INDICES_CACHE_QUERY_SIZE.get(settings);
         this.expire = INDICES_CACHE_QUERY_EXPIRE.exists(settings) ? INDICES_CACHE_QUERY_EXPIRE.get(settings) : null;
@@ -140,6 +142,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     @Override
     public void close() {
         tieredCacheHandler.invalidateAll();
+        tieredCacheHandler.closeDiskTier();
     }
 
     void clear(CacheEntity entity) {

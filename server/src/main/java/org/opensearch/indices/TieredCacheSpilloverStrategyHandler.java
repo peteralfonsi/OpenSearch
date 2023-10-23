@@ -140,6 +140,7 @@ public class TieredCacheSpilloverStrategyHandler<K extends Writeable, V> impleme
             return null;
         };
     }
+
     @Override
     public void closeDiskTier() {
         diskCachingTier.close();

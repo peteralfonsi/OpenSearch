@@ -14,6 +14,7 @@ import java.util.Objects;
 public class DummySerializableKey implements Serializable {
     private Integer i;
     private String s;
+
     public DummySerializableKey(Integer i, String s) {
         this.i = i;
         this.s = s;
@@ -22,9 +23,11 @@ public class DummySerializableKey implements Serializable {
     public int getI() {
         return i;
     }
+
     public String getS() {
         return s;
     }
+
     @Override
     public boolean equals(Object o) {
         if (o == this) {
@@ -36,6 +39,7 @@ public class DummySerializableKey implements Serializable {
         DummySerializableKey other = (DummySerializableKey) o;
         return Objects.equals(this.i, other.i) && this.s.equals(other.s);
     }
+
     @Override
     public final int hashCode() {
         int result = 11;

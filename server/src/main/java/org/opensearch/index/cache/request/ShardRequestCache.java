@@ -56,10 +56,9 @@ public final class ShardRequestCache {
     public RequestCacheStats stats() {
         // TODO: Change RequestCacheStats to support disk tier stats.
         // Changing this function to return a RequestCacheStats with stats from all tiers.
-        //return stats(TierType.ON_HEAP);
+        // return stats(TierType.ON_HEAP);
         return new RequestCacheStats(statsHolder);
     }
-
 
     public void onHit(TierType tierType) {
         statsHolder.get(tierType).hitCount.inc();

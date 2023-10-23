@@ -151,7 +151,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         String rKey = ((OpenSearchDirectoryReader) reader).getDelegatingCacheHelper().getDelegatingCacheKey().getId().toString();
         IndicesRequestCache.Key key = cache.new Key(entity, termBytes, rKey);
 
-        BytesReference value = new BytesArray(new byte[]{0});
+        BytesReference value = new BytesArray(new byte[] { 0 });
         cache.tieredCacheHandler.getDiskCachingTier().put(key, value);
 
         BytesReference res = cache.tieredCacheHandler.getDiskCachingTier().get(key);

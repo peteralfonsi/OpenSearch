@@ -10,8 +10,6 @@ package org.opensearch.indices;
 
 import org.opensearch.common.cache.RemovalListener;
 
-import java.io.IOException;
-
 /**
  * asdsadssa
  * @param <K>
