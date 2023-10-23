@@ -20,26 +20,27 @@ import java.io.IOException;
 import java.io.Serializable;
 
 public class StatsHolder implements Serializable, Writeable, ToXContentFragment {
-    final CounterMetric evictionsMetric;
     final CounterMetric totalMetric;
+    final CounterMetric evictionsMetric;
     final CounterMetric hitCount;
     final CounterMetric missCount;
     final CounterMetric entries;
 
 
     public StatsHolder() {
-        this.evictionsMetric = new CounterMetric();
         this.totalMetric = new CounterMetric();
+        this.evictionsMetric = new CounterMetric();
         this.hitCount = new CounterMetric();
         this.missCount = new CounterMetric();
         this.entries = new CounterMetric();
     }
 
-    public StatsHolder(long evictions, long memorySize, long hitCount, long missCount, long entries) {
-        this.evictionsMetric = new CounterMetric();
-        this.evictionsMetric.inc(evictions);
+    public StatsHolder(long memorySize, long evictions, long hitCount, long missCount, long entries) {
+        // Switched argument order to match RequestCacheStats
         this.totalMetric = new CounterMetric();
         this.totalMetric.inc(memorySize);
+        this.evictionsMetric = new CounterMetric();
+        this.evictionsMetric.inc(evictions);
         this.hitCount = new CounterMetric();
         this.hitCount.inc(hitCount);
         this.missCount = new CounterMetric();
@@ -58,8 +59,8 @@ public class StatsHolder implements Serializable, Writeable, ToXContentFragment 
 
     @Override
     public void writeTo(StreamOutput out) throws IOException {
-        out.writeVLong(evictionsMetric.count());
         out.writeVLong(totalMetric.count());
+        out.writeVLong(evictionsMetric.count());
         out.writeVLong(hitCount.count());
         out.writeVLong(missCount.count());
         out.writeVLong(entries.count());
@@ -67,8 +68,8 @@ public class StatsHolder implements Serializable, Writeable, ToXContentFragment 
 
     public void add(StatsHolder otherStats) {
         // Add the argument's metrics to this object's metrics.
-        evictionsMetric.inc(otherStats.evictionsMetric.count());
         totalMetric.inc(otherStats.totalMetric.count());
+        evictionsMetric.inc(otherStats.evictionsMetric.count());
         hitCount.inc(otherStats.hitCount.count());
         missCount.inc(otherStats.missCount.count());
         entries.inc(otherStats.entries.count());
