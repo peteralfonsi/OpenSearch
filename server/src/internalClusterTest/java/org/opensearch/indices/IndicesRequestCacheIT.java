@@ -692,10 +692,6 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .getRequestCache();
         // Check the hit count and miss count together so if they are not
         // correct we can see both values
-        ByteSizeValue memSize = requestCacheStats.getMemorySize(tierType);
-        if (memSize.getBytes() > 0) {
-            System.out.println("mem size " + memSize);
-        }
         if (enforceZeroEvictions) {
             assertEquals(
                 Arrays.asList(expectedHits, expectedMisses, 0L),

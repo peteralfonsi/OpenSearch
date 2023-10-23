@@ -65,8 +65,7 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
     public RequestCacheStats(StreamInput in) throws IOException {
         this();
         if (in.getVersion().onOrAfter(Version.V_3_0_0)) {
-            this.map = in.readMap(StreamInput::readString, StatsHolder::new); // does it know to use the right constructor? does it rly need
-                                                                              // to be registered?
+            this.map = in.readMap(StreamInput::readString, StatsHolder::new);
         } else {
             // objects from earlier versions only contain on-heap info, and do not have entries info
             long memorySize = in.readVLong();
@@ -84,8 +83,6 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
             map.put(tierType.getStringValue(), inputMap.get(tierType));
         }
     }
-
-    // can prob eliminate some of these constructors
 
     public void add(RequestCacheStats stats) {
         for (String tier : stats.map.keySet()) {
