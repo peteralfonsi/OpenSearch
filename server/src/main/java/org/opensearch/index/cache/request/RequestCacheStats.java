@@ -53,6 +53,7 @@ import java.util.Map;
 public class RequestCacheStats implements Writeable, ToXContentFragment {
 
     private Map<String, StatsHolder> map;
+
     public RequestCacheStats() {
         this.map = new HashMap<>();
         for (TierType tierType : TierType.values()) {
@@ -64,22 +65,15 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
     public RequestCacheStats(StreamInput in) throws IOException {
         this();
         if (in.getVersion().onOrAfter(Version.V_3_0_0)) {
-            this.map = in.readMap(StreamInput::readString, StatsHolder::new); // does it know to use the right constructor? does it rly need to be registered?
+            this.map = in.readMap(StreamInput::readString, StatsHolder::new); // does it know to use the right constructor? does it rly need
+                                                                              // to be registered?
         } else {
             // objects from earlier versions only contain on-heap info, and do not have entries info
             long memorySize = in.readVLong();
             long evictions = in.readVLong();
             long hitCount = in.readVLong();
             long missCount = in.readVLong();
-            this.map.put(
-                TierType.ON_HEAP.getStringValue(),
-                new StatsHolder(
-                    memorySize,
-                    evictions,
-                    hitCount,
-                    missCount,
-                    0
-                ));
+            this.map.put(TierType.ON_HEAP.getStringValue(), new StatsHolder(memorySize, evictions, hitCount, missCount, 0));
         }
     }
 

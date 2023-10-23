@@ -26,7 +26,6 @@ public class StatsHolder implements Serializable, Writeable, ToXContentFragment 
     final CounterMetric missCount;
     final CounterMetric entries;
 
-
     public StatsHolder() {
         this.totalMetric = new CounterMetric();
         this.evictionsMetric = new CounterMetric();
@@ -49,7 +48,7 @@ public class StatsHolder implements Serializable, Writeable, ToXContentFragment 
         this.entries.inc(entries);
     }
 
-    public StatsHolder(StreamInput in) throws IOException  {
+    public StatsHolder(StreamInput in) throws IOException {
         // Read and write the values of the counter metrics. They should always be positive
         // This object is new, so we shouldn't need version checks for different behavior
         this(in.readVLong(), in.readVLong(), in.readVLong(), in.readVLong(), in.readVLong());
@@ -97,7 +96,11 @@ public class StatsHolder implements Serializable, Writeable, ToXContentFragment 
 
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
-        builder.humanReadableField(RequestCacheStats.Fields.MEMORY_SIZE_IN_BYTES, RequestCacheStats.Fields.MEMORY_SIZE, new ByteSizeValue(getMemorySize()));
+        builder.humanReadableField(
+            RequestCacheStats.Fields.MEMORY_SIZE_IN_BYTES,
+            RequestCacheStats.Fields.MEMORY_SIZE,
+            new ByteSizeValue(getMemorySize())
+        );
         builder.field(RequestCacheStats.Fields.EVICTIONS, getEvictions());
         builder.field(RequestCacheStats.Fields.HIT_COUNT, getHitCount());
         builder.field(RequestCacheStats.Fields.MISS_COUNT, getMissCount());

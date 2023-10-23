@@ -115,7 +115,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     private final TimeValue expire;
     private final TieredCacheService<Key, BytesReference> tieredCacheService;
     private final IndicesService indicesService;
-
     IndicesRequestCache(Settings settings, IndicesService indicesService) {
         this.size = INDICES_CACHE_QUERY_SIZE.get(settings);
         this.expire = INDICES_CACHE_QUERY_EXPIRE.exists(settings) ? INDICES_CACHE_QUERY_EXPIRE.get(settings) : null;
