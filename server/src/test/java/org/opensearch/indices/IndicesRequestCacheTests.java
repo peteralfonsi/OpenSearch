@@ -754,11 +754,11 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         }
     }
 
-    private class TestEntity extends AbstractIndexShardCacheEntity implements Serializable {
+    static class TestEntity extends AbstractIndexShardCacheEntity implements Serializable {
         private final AtomicBoolean standInForIndexShard;
         private final ShardRequestCache shardRequestCache;
 
-        private TestEntity(ShardRequestCache shardRequestCache, AtomicBoolean standInForIndexShard) {
+         TestEntity(ShardRequestCache shardRequestCache, AtomicBoolean standInForIndexShard) {
             this.standInForIndexShard = standInForIndexShard;
             this.shardRequestCache = shardRequestCache;
         }

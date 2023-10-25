@@ -27,6 +27,12 @@ public class EhcacheKey implements Serializable {
         this.bytes = BytesReference.toBytes(os.bytes());
     }
 
+    public EhcacheKey(byte[] bytes) {
+        this.bytes = bytes; // adding for testing purposes
+    }
+
+    public EhcacheKey() {} // required for Kryo
+
     public byte[] getBytes() {
         return this.bytes;
     }

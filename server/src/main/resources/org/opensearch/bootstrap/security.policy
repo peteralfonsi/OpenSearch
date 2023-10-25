@@ -198,4 +198,10 @@ grant {
   permission java.io.FilePermission "disk_cache_tier/-", "read";
   permission java.io.FilePermission "disk_cache_tier/-", "write";
   permission java.io.FilePermission "disk_cache_tier/-", "delete";
+
+  // serializer testing (do not merge)
+  permission java.io.FilePermission "/Users/petealft/Desktop/serializer_performance.csv", "read";
+  permission java.io.FilePermission "/Users/petealft/Desktop/serializer_performance.csv", "write";
+  permission java.io.FilePermission "/Users/petealft/Desktop/serialized.ser", "read";
+  permission java.io.FilePermission "/Users/petealft/Desktop/serialized.ser", "write";
 };

@@ -54,6 +54,7 @@ import org.opensearch.core.common.unit.ByteSizeValue;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
