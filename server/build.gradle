@@ -171,14 +171,6 @@ dependencies {
   // fst - test only
   implementation 'de.ruedigermoeller:fst:3.0.4-jdk17'
 
-  // these versions based on https://github.com/EsotericSoftware/kryo/tree/master/lib, i dont think it's meant to be built with gradle per se
-  //api 'com.esotericsoftware.minlog:minlog:1.3.1'
-  //api 'com.esotericsoftware.reflectasm:reflectasm:1.11.9'
-  //api 'org.objenesis:objenesis:3.2'
-
-  //api 'com.esotericsoftware.minlog:minlog:1.2'
-  //api 'com.esotericsoftware.reflectasm:reflectasm:1.09'
-  //api 'org.objectweb.asm:com.springsource.org.objectweb.asm:3.2.0'
 
 
   testImplementation(project(":test:framework")) {

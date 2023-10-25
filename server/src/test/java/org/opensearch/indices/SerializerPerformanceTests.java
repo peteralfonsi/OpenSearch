@@ -13,6 +13,8 @@
 
 package org.opensearch.indices;
 
+//import io.fury.Fury;
+//import io.fury.config.Language;
 import org.nustaq.serialization.FSTObjectInput;
 import org.nustaq.serialization.FSTObjectOutput;
 import org.opensearch.common.Randomness;
@@ -51,10 +53,10 @@ import java.util.UUID;
 // Some modifications to related classes also made for ease of testing
 public class SerializerPerformanceTests extends OpenSearchSingleNodeTestCase {
 
-    private final int REPS = 5000000; // how many total times to de/serialize
-    private final int BATCH_SIZE = 50000; // how many keys to generate at once and time
+    private final int REPS = 500000; // how many total times to de/serialize
+    private final int BATCH_SIZE = 5000; // how many keys to generate at once and time
     private final int NUM_BATCHES = REPS / BATCH_SIZE;
-    private final int KEY_VALUE_LENGTH = 1000;
+    private final int KEY_VALUE_LENGTH = 10000;
     private final String SERIALIZATION_FP = "/Users/petealft/Desktop/serialized.ser";
     public SerializerPerformanceTests() {
         super();
@@ -100,6 +102,14 @@ public class SerializerPerformanceTests extends OpenSearchSingleNodeTestCase {
             eKeyBytes[i] = new EhcacheKey(getRandomIRCKey(KEY_VALUE_LENGTH, random, infra.irc, infra.tier, infra.entity)).getBytes();
         }
         return eKeyBytes;
+    }
+
+    private IndicesRequestCache.Key[] getIRCKeys(Random random, InfraHolder infra) throws Exception {
+        IndicesRequestCache.Key[] ircKeys = new IndicesRequestCache.Key[BATCH_SIZE];
+        for (int i = 0; i < BATCH_SIZE; i++) {
+            ircKeys[i] = getRandomIRCKey(KEY_VALUE_LENGTH, random, infra.irc, infra.tier, infra.entity);
+        }
+        return ircKeys;
     }
 
     // splitting these into their own fns, it got clunky and i think all the IO stuff hanging around hurts performance
@@ -166,6 +176,8 @@ public class SerializerPerformanceTests extends OpenSearchSingleNodeTestCase {
         Kryo kryo = new Kryo();
         kryo.register(EhcacheKey.class);
         kryo.register(byte[].class);
+        //Fury fury = Fury.builder().withLanguage(Language.JAVA).build();
+        //fury.register(IndicesRequestCache.Key.class); // will it work?
         String serializerName = "";
         int byteLen = new EhcacheKey(getRandomIRCKey(KEY_VALUE_LENGTH, random, infra.irc, infra.tier, infra.entity)).getBytes().length;
         switch (type) {
@@ -184,6 +196,9 @@ public class SerializerPerformanceTests extends OpenSearchSingleNodeTestCase {
             case "KryoBytes":
                 serializerName = "EhcacheKeyBytesKryo";
                 break;
+            case "FuryIRC":
+                serializerName = "IRCKeyFury";
+                break;
             /*case "FST":
                 serializerName = "EhcacheKeyFST";
                 break;*/
@@ -193,6 +208,7 @@ public class SerializerPerformanceTests extends OpenSearchSingleNodeTestCase {
             System.gc();
             EhcacheKey[] eKeys = null;
             byte[][] eKeyBytes = null;
+            IndicesRequestCache.Key[] ircKeys = null;
 
             switch (type) {
                 case "EhcacheKey":
@@ -203,6 +219,9 @@ public class SerializerPerformanceTests extends OpenSearchSingleNodeTestCase {
                 case "EhcacheBytes":
                 case "KryoBytes":
                     eKeyBytes = getEKeyBytes(random, infra);
+                    break;
+                case "FuryIRC":
+                    ircKeys = getIRCKeys(random, infra);
                     break;
             }
 
@@ -236,6 +255,11 @@ public class SerializerPerformanceTests extends OpenSearchSingleNodeTestCase {
                         kryo.writeObject(kryoOutput, eKeyBytes[i]);
                     }
                     break;
+                /*case "FuryIRC":
+                    for (int i = 0; i < BATCH_SIZE; i++) {
+                        byte[] bytes = fury.serialize(ircKeys[i]); // also add to file later if it works
+                    }
+                    break;*/
                 /*case "FST":
                     for (int i = 0; i < BATCH_SIZE; i++) {
                         fstOut.writeObject(eKeys[i], EhcacheKey.class);
@@ -321,6 +345,7 @@ public class SerializerPerformanceTests extends OpenSearchSingleNodeTestCase {
 
         //defaultSerializerHelper("IRCKey", fw, random, infra); // have to make a Bunch of stuff serializable to enable this, but just to check...
         //defaultSerializerHelper("FST", fw, random, infra);
+        //defaultSerializerHelper("FuryIRC", fw, random, infra);
         defaultSerializerHelper("Kryo", fw, random, infra);
         defaultSerializerHelper("KryoBytes", fw, random, infra);
         defaultSerializerHelper("EhcacheBytes", fw, random, infra);

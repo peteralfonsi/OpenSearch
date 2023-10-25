@@ -250,9 +250,7 @@ public class EhcacheDiskCachingTier implements DiskCachingTier<IndicesRequestCac
     }
 
     public IndicesRequestCache.Key convertEhcacheKeyToOriginal(EhcacheKey eKey) throws IOException {
-        //BytesStreamInput is = new BytesStreamInput();
         byte[] bytes = eKey.getBytes();
-        //is.readBytes(bytes, 0, bytes.length);
         BytesStreamInput is = new BytesStreamInput(bytes);
         try {
             return indicesRequestCache.new Key(is);
