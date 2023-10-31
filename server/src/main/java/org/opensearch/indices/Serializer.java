@@ -15,20 +15,20 @@ import java.io.IOException;
  * An interface for serializers, to be used in disk caching tier and elsewhere.
  * @param <T>
  */
-public interface Serializer<T> {
+public interface Serializer<T, U> {
     /**
      * Serializes an object.
      * @param object
-     * @return The byte[] serialized representation of the object.
+     * @return The serialized representation of the object.
      */
-    byte[] serialize(T object) throws IOException;
+    U serialize(T object) throws IOException;
 
     /**
      * Deserializes bytes into an object.
      * @param bytes
      * @return
      */
-    T deserialize(byte[] bytes) throws IOException;
+    T deserialize(U bytes) throws IOException;
 
     /**
      * Compares an object to a serialized representation of an object.
@@ -36,5 +36,5 @@ public interface Serializer<T> {
      * @param bytes
      * @return true if representing the same object, false if not
      */
-    boolean equals(T object, byte[] bytes) throws IOException;
+    boolean equals(T object, U bytes) throws IOException;
 }

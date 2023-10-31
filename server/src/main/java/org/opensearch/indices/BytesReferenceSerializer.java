@@ -17,11 +17,12 @@ import org.opensearch.core.common.bytes.PagedBytesReference;
 import org.opensearch.core.common.util.ByteArray;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 
 /**
- * This class will be passed to the EhCacheDiskCachingTier<Key, BytesValue> instance.
+ * This class will be passed to the EhCacheDiskCachingTier(Key, BytesValue) instance.
  * Ehcache requires the class of an object must be the same after deserialization, but
  * BytesReference is an interface, and its implementing classes don't have a constructor in common.
  * Because the disk tier is generic we can't add logic in put() to change incoming BytesReference objects
@@ -29,7 +30,7 @@ import java.util.Arrays;
  * So, we must record the class on serialization and manually put in a case for each implementing class.
  */
 
-public class BytesReferenceSerializer implements Serializer<BytesReference> {
+public class BytesReferenceSerializer implements Serializer<BytesReference, ByteBuffer> {
 
     // Supported implementations of BytesReference
     private ArrayList<Class<? extends BytesReference>> implTypes = new ArrayList<>(Arrays.asList(
@@ -40,7 +41,7 @@ public class BytesReferenceSerializer implements Serializer<BytesReference> {
     ));
 
     @Override
-    public byte[] serialize(BytesReference object) throws IOException, SerializationException {
+    public ByteBuffer serialize(BytesReference object) throws IOException, SerializationException {
         //BytesReferenceImpl bytesReferenceType;
         Class<? extends BytesReference> clazz = object.getClass();
         int index = implTypes.indexOf(clazz);
@@ -52,19 +53,24 @@ public class BytesReferenceSerializer implements Serializer<BytesReference> {
         // We don't control the creation of byte[] from the BytesReference so unfortunately we have to copy into new larger array
         serialized[0] = (byte) index;
         System.arraycopy(objectBytes, 0, serialized, 1, objectBytes.length);
-        return serialized;
+        return ByteBuffer.wrap(serialized);
     }
 
     @Override
-    public BytesReference deserialize(byte[] bytes) throws IOException {
-        Class<? extends BytesReference> clazz = implTypes.get(bytes[0]);
-        return BytesReferenceSerializer.fromByteArray(bytes, 1, bytes.length - 1, clazz);
+    public BytesReference deserialize(ByteBuffer bytes) throws IOException {
+        byte[] out = new byte[bytes.remaining()];
+        bytes.get(out);
+        Class<? extends BytesReference> clazz = implTypes.get(out[0]);
+        return BytesReferenceSerializer.fromByteArray(out, 1, out.length - 1, clazz);
     }
 
     @Override
-    public boolean equals(BytesReference object, byte[] bytes) throws IOException {
+    public boolean equals(BytesReference object, ByteBuffer bytes) throws IOException {
         return false;
     }
+
+    // compare this impl to just making BytesReference Java serializable to see how bad time hit is
+    // also check how serialization libraries do their perf testing - batching? key size?
 
     /**
      * This function is used during deserialization in BytesReferenceSerializer to ensure
