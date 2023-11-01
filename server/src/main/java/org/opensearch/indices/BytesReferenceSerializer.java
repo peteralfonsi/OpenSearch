@@ -8,6 +8,7 @@
 
 package org.opensearch.indices;
 
+import org.apache.lucene.util.BytesRef;
 import org.opensearch.common.bytes.ReleasableBytesReference;
 import org.opensearch.common.util.BigArrays;
 import org.opensearch.core.common.bytes.BytesArray;
@@ -40,6 +41,8 @@ public class BytesReferenceSerializer implements Serializer<BytesReference, Byte
         ReleasableBytesReference.class
     ));
 
+    public BytesReferenceSerializer() {}
+
     @Override
     public ByteBuffer serialize(BytesReference object) throws IOException, SerializationException {
         //BytesReferenceImpl bytesReferenceType;
@@ -49,11 +52,13 @@ public class BytesReferenceSerializer implements Serializer<BytesReference, Byte
             throw new SerializationException("BytesReference type " + clazz + " not yet supported by BytesReferenceSerializer");
         }
         byte[] objectBytes = BytesReference.toBytes(object);
-        byte[] serialized = new byte[objectBytes.length + 1];
-        // We don't control the creation of byte[] from the BytesReference so unfortunately we have to copy into new larger array
-        serialized[0] = (byte) index;
-        System.arraycopy(objectBytes, 0, serialized, 1, objectBytes.length);
-        return ByteBuffer.wrap(serialized);
+        //byte[] serialized = new byte[objectBytes.length + 1];
+        byte classByte = (byte) index;
+        //System.arraycopy(objectBytes, 0, serialized, 1, objectBytes.length);
+        ByteBuffer out = ByteBuffer.allocate(objectBytes.length + 1);
+        out.put(classByte);
+        out.put(objectBytes);
+        return out;
     }
 
     @Override
@@ -66,7 +71,9 @@ public class BytesReferenceSerializer implements Serializer<BytesReference, Byte
 
     @Override
     public boolean equals(BytesReference object, ByteBuffer bytes) throws IOException {
-        return false;
+        // To be equal we want both the byte content to be the same, and the initial class to be the same.
+        // So we can just check the serialized representation.
+        return serialize(object).equals(bytes);
     }
 
     // compare this impl to just making BytesReference Java serializable to see how bad time hit is
@@ -83,11 +90,11 @@ public class BytesReferenceSerializer implements Serializer<BytesReference, Byte
         if (clazz == BytesArray.class) {
             return new BytesArray(bytes, offset, length);
         } else if (clazz == CompositeBytesReference.class) {
-            return CompositeBytesReference.of(new BytesArray(bytes, offset, length));
+            return CompositeBytesReference.of(new BytesArray(bytes, offset, length), BytesArray.EMPTY); // Providing only one argument makes this fn return a BytesArray, not a CompositeBytesArray
         } else if (clazz == PagedBytesReference.class) {
             ByteArray arr = BigArrays.NON_RECYCLING_INSTANCE.newByteArray(length);
             arr.set(0L, bytes, offset, length);
-            assert arr.hasArray();
+            assert !arr.hasArray();
             return BytesReference.fromByteArray(arr, length);// Returns PagedByteArray if arr.hasArray()
         } else if (clazz == ReleasableBytesReference.class) {
             return ReleasableBytesReference.wrap(new BytesArray(bytes, offset, length));

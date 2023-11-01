@@ -12,6 +12,7 @@ import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -145,7 +146,11 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
             switch (notification.getTierType()) {
                 case ON_HEAP:
                     diskCachingTier.ifPresent(diskTier -> {
-                        diskTier.put(notification.getKey(), notification.getValue());
+                        try {
+                            diskTier.put(notification.getKey(), notification.getValue());
+                        } catch (IOException e) {
+                            throw new RuntimeException(e);
+                        }
                         tieredCacheEventListener.onCached(notification.getKey(), notification.getValue(), TierType.DISK);
                     });
                     break;
@@ -187,7 +192,12 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
     private Function<K, CacheValue<V>> getValueFromTierCache(boolean trackStats) {
         return key -> {
             for (CachingTier<K, V> cachingTier : cachingTierList) {
-                V value = cachingTier.get(key);
+                V value = null;
+                try {
+                    value = cachingTier.get(key);
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
                 if (value != null) {
                     if (trackStats) {
                         tieredCacheEventListener.onHit(key, value, cachingTier.getTierType());

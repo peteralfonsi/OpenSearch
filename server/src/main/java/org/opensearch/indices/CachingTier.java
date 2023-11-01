@@ -20,9 +20,9 @@ import java.io.IOException;
  */
 public interface CachingTier<K, V> {
 
-    V get(K key);
+    V get(K key) throws IOException;
 
-    void put(K key, V value);
+    void put(K key, V value) throws IOException;
 
     V computeIfAbsent(K key, TieredCacheLoader<K, V> loader) throws Exception;
 
