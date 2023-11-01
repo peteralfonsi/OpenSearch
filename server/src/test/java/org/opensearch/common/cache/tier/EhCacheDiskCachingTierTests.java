@@ -15,6 +15,8 @@ import org.opensearch.env.NodeEnvironment;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -40,6 +42,8 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setSettingPrefix(SETTING_PREFIX)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .build();
             int randomKeys = randomIntBetween(10, 100);
             Map<String, String> keyValueMap = new HashMap<>();
@@ -69,6 +73,8 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setSettingPrefix(SETTING_PREFIX)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .build();
             int randomKeys = randomIntBetween(20, 100);
             Thread[] threads = new Thread[randomKeys];
@@ -111,6 +117,8 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setSettingPrefix(SETTING_PREFIX)
                 .setIsEventListenerModeSync(true) // For accurate count
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .build();
             ehCacheDiskCachingTierNew.setRemovalListener(removalListener(new AtomicInteger()));
             int randomKeys = randomIntBetween(20, 100);
@@ -153,6 +161,8 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setSettingPrefix(SETTING_PREFIX)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .build();
 
             int randomKeys = randomIntBetween(2, 2);
@@ -187,6 +197,8 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setSettingPrefix(SETTING_PREFIX)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .build();
             // For now it is unsupported.
             assertThrows(
@@ -222,5 +234,24 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
 
     private RemovalListener<String, String> removalListener(AtomicInteger counter) {
         return notification -> counter.incrementAndGet();
+    }
+
+    private static class StringSerializer implements Serializer<String, byte[]> {
+
+        private final Charset charset = StandardCharsets.UTF_8;
+        @Override
+        public byte[] serialize(String object) {
+            return object.getBytes(charset);
+        }
+
+        @Override
+        public String deserialize(byte[] bytes) {
+            return new String(bytes, charset);
+        }
+
+        @Override
+        public boolean equals(String object, byte[] bytes) {
+            return object.equals(deserialize(bytes));
+        }
     }
 }
