@@ -8,6 +8,7 @@
 
 package org.opensearch.benchmark.time;
 
+import org.apache.lucene.util.BytesRef;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -25,6 +26,7 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.bytes.BytesReference;
+import org.opensearch.core.common.bytes.CompositeBytesReference;
 import org.opensearch.indices.BytesReferenceSerializer;
 import org.opensearch.indices.BytesReferenceSerializerOptionTwo;
 import org.opensearch.indices.EhcacheSolutionOptionOne;
@@ -43,6 +45,8 @@ import java.util.concurrent.TimeUnit;
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
 //@State(Scope.Benchmark)
 public class AdHocSerializerBenchmark {
+
+    public static boolean USE_MIXED = true;
 
     public static EhcacheSolutionOptionOne<Integer, BytesReference> getOptionOneCache() {
         EhcacheSolutionOptionOne.Builder<Integer, BytesReference> builder = new EhcacheSolutionOptionOne.Builder<>();
@@ -101,6 +105,36 @@ public class AdHocSerializerBenchmark {
         return values;
     }
 
+    public static BytesReference[] getMixedValues(int iterations, int keySize) {
+
+        BytesReference[] values = new BytesReference[iterations];
+        Random rand = Randomness.get();
+        for (int i = 0; i < iterations; i++) {
+            if (rand.nextBoolean()) {
+                byte[] valueContent = new byte[keySize];
+                rand.nextBytes(valueContent);
+                values[i] = new BytesArray(valueContent);
+            } else {
+                // add CompositeBytesReference
+                byte[] valueContent1 = new byte[keySize / 2];
+                byte[] valueContent2 = new byte[keySize - valueContent1.length];
+                rand.nextBytes(valueContent1);
+                rand.nextBytes(valueContent2);
+                values[i] = CompositeBytesReference.of(new BytesArray(valueContent1), new BytesArray(valueContent2));
+                assert values[i].getClass() == CompositeBytesReference.class;
+            }
+
+        }
+        return values;
+    }
+
+    public static BytesReference[] getValues(int iterations, int keySize) {
+        if (USE_MIXED) {
+            return getMixedValues(iterations, keySize);
+        }
+        return getBytesArrayValues(iterations, keySize);
+    }
+
     @State(Scope.Benchmark)
     public static class OptionOneState {
         public EhcacheSolutionOptionOne<Integer, BytesReference> optionOneTier;
@@ -114,7 +148,7 @@ public class AdHocSerializerBenchmark {
         @Setup
         public void setupOptionOne() {
             this.optionOneTier = getOptionOneCache();
-            this.values = getBytesArrayValues(iterations, keySize);
+            this.values = getValues(iterations, keySize);
             optionOneTier.setLatch(iterations);
             //System.out.println("setup, latch = " + optionOneTier.latch.getCount());
             // optionOneTier.close();
@@ -135,7 +169,7 @@ public class AdHocSerializerBenchmark {
         @Setup
         public void setupOptionOneGet() {
             this.optionOneTier = getOptionOneCache();
-            this.values = getBytesArrayValues(iterations, keySize);
+            this.values = getValues(iterations, keySize);
             for (int i = 0; i < iterations; i++) {
                 optionOneTier.put(i, values[i]);
             }
@@ -160,7 +194,7 @@ public class AdHocSerializerBenchmark {
         @Setup
         public void setupOptionTwo() {
             this.optionTwoTier = getOptionTwoCache();
-            this.values = getBytesArrayValues(iterations, keySize);
+            this.values = getValues(iterations, keySize);
             optionTwoTier.setLatch(iterations);
             //System.out.println("setup, latch = " + optionOneTier.latch.getCount());
 
@@ -182,7 +216,7 @@ public class AdHocSerializerBenchmark {
         @Setup
         public void setupOptionOneGet() throws IOException {
             this.optionTwoTier = getOptionTwoCache();
-            this.values = getBytesArrayValues(iterations, keySize);
+            this.values = getValues(iterations, keySize);
             for (int i = 0; i < iterations; i++) {
                 optionTwoTier.put(i, values[i]);
             }
@@ -207,7 +241,7 @@ public class AdHocSerializerBenchmark {
         @Setup
         public void setupOptionOne() {
             this.optionThreeTier = getOptionThreeCache();
-            this.values = getBytesArrayValues(iterations, keySize);
+            this.values = getValues(iterations, keySize);
             optionThreeTier.setLatch(iterations);
         }
     }
@@ -226,7 +260,7 @@ public class AdHocSerializerBenchmark {
         @Setup
         public void setupOptionOneGet() {
             this.optionThreeTier = getOptionThreeCache();
-            this.values = getBytesArrayValues(iterations, keySize);
+            this.values = getValues(iterations, keySize);
             for (int i = 0; i < iterations; i++) {
                 optionThreeTier.put(i, values[i]);
             }
