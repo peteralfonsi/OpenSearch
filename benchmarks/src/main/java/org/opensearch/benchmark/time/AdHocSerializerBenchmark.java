@@ -72,6 +72,21 @@ public class AdHocSerializerBenchmark {
         return builder.build();
     }
 
+    public static EhcacheSolutionOptionOne<Integer, BytesReference> getOptionThreeCache() {
+        // default java serialization for BytesReference
+        // can reuse same class
+        EhcacheSolutionOptionOne.Builder<Integer, BytesReference> builder = new EhcacheSolutionOptionOne.Builder<>();
+        builder.setMaximumWeightInBytes(10000000)
+            .setKeyType(Integer.class)
+            .setValueType(BytesReference.class)
+            .setExpireAfterAccess(new TimeValue(1, TimeUnit.DAYS))
+            .setStoragePath("/tmp/OptionOne")
+            .setThreadPoolAlias("ehcacheTest")
+            .setSettings(Settings.builder().build())
+            .setIsEventListenerModeSync(true);
+        return builder.build();
+    }
+
     public static BytesReference[] getBytesArrayValues(int iterations, int keySize) {
         // return an array of simple BytesArray for use in values
         byte[] valueContent = new byte[keySize];
@@ -90,7 +105,8 @@ public class AdHocSerializerBenchmark {
     public static class OptionOneState {
         public EhcacheSolutionOptionOne<Integer, BytesReference> optionOneTier;
         public BytesReference[] values;
-        @Param({"1", "100", "10000"})
+        //@Param({"1", "100", "10000"})
+        @Param({"1"})
         public int iterations;
 
         @Param({"1000", "10000", "100000"})
@@ -110,7 +126,8 @@ public class AdHocSerializerBenchmark {
         // Used for the get() benchmark
         public EhcacheSolutionOptionOne<Integer, BytesReference> optionOneTier;
         public BytesReference[] values;
-        @Param({"1", "100", "10000"})
+        //@Param({"1", "100", "10000"})
+        @Param({"1"})
         public int iterations;
 
         @Param({"1000", "10000", "100000"})
@@ -134,8 +151,8 @@ public class AdHocSerializerBenchmark {
     public static class OptionTwoState {
         public EhcacheSolutionOptionTwo<Integer, BytesReference> optionTwoTier;
         public BytesReference[] values;
-        @Param({"1", "100", "10000"})
-        //@Param({"10"})
+        //@Param({"1", "100", "10000"})
+        @Param({"1"})
         public int iterations;
 
         @Param({"1000", "10000", "100000"})
@@ -156,7 +173,8 @@ public class AdHocSerializerBenchmark {
         // Used for the get() benchmark
         public EhcacheSolutionOptionTwo<Integer, BytesReference> optionTwoTier;
         public BytesReference[] values;
-        @Param({"1", "100", "10000"})
+        //@Param({"1", "100", "10000"})
+        @Param({"1"})
         public int iterations;
 
         @Param({"1000", "10000", "100000"})
@@ -176,7 +194,44 @@ public class AdHocSerializerBenchmark {
         }
     }
 
+    @State(Scope.Benchmark)
+    public static class OptionThreeState {
+        public EhcacheSolutionOptionOne<Integer, BytesReference> optionThreeTier;
+        public BytesReference[] values;
+        //@Param({"1", "100", "10000"})
+        @Param({"1"})
+        public int iterations;
 
+        @Param({"1000", "10000", "100000"})
+        public int keySize;
+        @Setup
+        public void setupOptionOne() {
+            this.optionThreeTier = getOptionThreeCache();
+            this.values = getBytesArrayValues(iterations, keySize);
+            optionThreeTier.setLatch(iterations);
+        }
+    }
+
+    @State(Scope.Benchmark)
+    public static class OptionThreeGetState {
+        // Used for the get() benchmark
+        public EhcacheSolutionOptionOne<Integer, BytesReference> optionThreeTier;
+        public BytesReference[] values;
+        //@Param({"1", "100", "10000"})
+        @Param({"1"})
+        public int iterations;
+
+        @Param({"1000", "10000", "100000"})
+        public int keySize;
+        @Setup
+        public void setupOptionOneGet() {
+            this.optionThreeTier = getOptionThreeCache();
+            this.values = getBytesArrayValues(iterations, keySize);
+            for (int i = 0; i < iterations; i++) {
+                optionThreeTier.put(i, values[i]);
+            }
+        }
+    }
 
     /// BENCHMARKS BELOW
 
@@ -186,11 +241,6 @@ public class AdHocSerializerBenchmark {
         for (int i = 0; i < state.iterations; i++) {
             state.optionOneTier.put(i, state.values[i]);
         }
-        long count = state.optionOneTier.latch.getCount();
-        /*while (count > 0) {
-            System.out.println("Count = " + count);
-            count = optionOneTier.latch.getCount();
-        }*/
         state.optionOneTier.latch.await();
     }
 
@@ -206,11 +256,6 @@ public class AdHocSerializerBenchmark {
         for (int i = 0; i < state.iterations; i++) {
             state.optionTwoTier.put(i, state.values[i]);
         }
-        long count = state.optionTwoTier.latch.getCount();
-        /*while (count > 0) {
-            System.out.println("Count = " + count);
-            count = optionOneTier.latch.getCount();
-        }*/
         state.optionTwoTier.latch.await();
     }
 
@@ -222,9 +267,18 @@ public class AdHocSerializerBenchmark {
     }
 
     @Benchmark
-    public void testDefaultJavaBytesReferenceSerializer() {
-        // make BytesReference implement Serializable, use that instead of janky implementation, and time
+    public void testOptionThreePut(OptionThreeState state) throws Exception {
+        // Test option three, with default java serialization.
+        for (int i = 0; i < state.iterations; i++) {
+            state.optionThreeTier.put(i, state.values[i]);
+        }
+        state.optionThreeTier.latch.await();
+    }
 
-
+    @Benchmark
+    public void testOptionThreeGet(OptionThreeGetState state, Blackhole bh) throws Exception {
+        for (int i = 0; i < state.iterations; i++) {
+            bh.consume(state.optionThreeTier.get(i));
+        }
     }
 }
