@@ -8,9 +8,12 @@
 
 package org.opensearch.common.cache.tier;
 
+import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.common.bytes.BytesArray;
+import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
@@ -20,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
@@ -58,6 +62,41 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 assertEquals(entry.getValue(), value);
             }
             ehCacheDiskCachingTierNew.close();
+        }
+    }
+
+    public void testBasicGetAndPutBytesReference() throws Exception {
+        Settings settings = Settings.builder().build();
+        try (NodeEnvironment env = newNodeEnvironment(settings)) {
+            EhCacheDiskCachingTier<String, BytesReference> ehCacheDiskCachingTier = new EhCacheDiskCachingTier.Builder<String, BytesReference>()
+                .setKeyType(String.class)
+                .setValueType(BytesReference.class)
+                .setExpireAfterAccess(TimeValue.MAX_VALUE)
+                .setSettings(settings)
+                .setThreadPoolAlias("ehcacheTest")
+                .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
+                .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
+                .setSettingPrefix(SETTING_PREFIX)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new BytesReferenceSerializer())
+                .build();
+            int randomKeys = randomIntBetween(10, 100);
+            int valueLength = 1000;
+            Random rand = Randomness.get();
+            Map<String, BytesReference> keyValueMap = new HashMap<>();
+            for (int i = 0; i < randomKeys; i++) {
+                byte[] valueBytes = new byte[valueLength];
+                rand.nextBytes(valueBytes);
+                keyValueMap.put(UUID.randomUUID().toString(), new BytesArray(valueBytes));
+            }
+            for (Map.Entry<String, BytesReference> entry : keyValueMap.entrySet()) {
+                ehCacheDiskCachingTier.put(entry.getKey(), entry.getValue());
+            }
+            for (Map.Entry<String, BytesReference> entry : keyValueMap.entrySet()) {
+                BytesReference value = ehCacheDiskCachingTier.get(entry.getKey());
+                assertEquals(entry.getValue(), value);
+            }
+            ehCacheDiskCachingTier.close();
         }
     }
 
@@ -231,17 +270,6 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
             );
         }
     }
-
-    /*public void testStringSerializer() throws Exception {
-        StringSerializer ser = new StringSerializer();
-        for (int i = 0; i < 100; i++) {
-            String random = String.valueOf(UUID.randomUUID());
-            byte[] serialized = ser.serialize(random);
-            assertTrue(ser.equals(random, serialized));
-            String deserialized = ser.deserialize(serialized);
-            assertTrue(random.equals(deserialized));
-        }
-    }*/
 
     private RemovalListener<String, String> removalListener(AtomicInteger counter) {
         return notification -> counter.incrementAndGet();
