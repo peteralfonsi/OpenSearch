@@ -8,6 +8,8 @@
 
 package org.opensearch.common.cache.tier;
 
+import org.ehcache.core.spi.service.FileBasedPersistenceContext;
+import org.ehcache.spi.serialization.SerializerException;
 import org.opensearch.OpenSearchException;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
@@ -18,6 +20,7 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 
 import java.io.File;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
@@ -41,10 +44,14 @@ import org.ehcache.expiry.ExpiryPolicy;
 import org.ehcache.impl.config.store.disk.OffHeapDiskStoreConfiguration;
 
 /**
- * This ehcache disk caching tier uses its key and value serializers outside ehcache.
- * Ehcache itself receives and returns byte[] representations and uses its bundled byte[] serializer.
- * For now, we do this for BOTH key and value, but we may want to have the option for just value depending on performance.
- * This probably requires
+ * This ehcache disk caching tier uses its value serializer outside ehcache.
+ * Values are transformed to byte[] outside ehcache and then ehcache uses its bundled byte[] serializer.
+ * The key serializer you pass to this class produces a byte[]. This serializer is passed to a wrapper which
+ * implements Ehcache's serializer implementation and produces a BytesBuffer. The wrapper instance is then passed to ehcache.
+ * This is done because to get keys on a disk tier, ehcache internally checks the equals() method of the serializer,
+ * but ALSO requires newKey.equals(storedKey) (this isn't documented), which is the case for ByteBuffer but not byte[].
+ * This limitation means that the key serializer must preserve the class of the key before/after serialization,
+ * but the value serializer does not have to do this.
  * @param <K> The key type of cache entries
  * @param <V> The value type of cache entries
  */
@@ -54,7 +61,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     private final PersistentCacheManager cacheManager;
 
     // Disk cache
-    private Cache<byte[], byte[]> cache;
+    private Cache<K, byte[]> cache;
     private final long maxWeightInBytes;
     private final String storagePath;
 
@@ -101,9 +108,9 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         this.keyType = Objects.requireNonNull(builder.keyType, "Key type shouldn't be null");
         this.valueType = Objects.requireNonNull(builder.valueType, "Value type shouldn't be null");
         this.expireAfterAccess = Objects.requireNonNull(builder.expireAfterAcess, "ExpireAfterAccess value shouldn't " + "be null");
-        this.keySerializer = Objects.requireNonNull(builder.keySerializer);
-        this.valueSerializer = Objects.requireNonNull(builder.valueSerializer);
-        this.ehCacheEventListener = new EhCacheEventListener<K, V>(this.keySerializer, this.valueSerializer);
+        this.keySerializer = Objects.requireNonNull(builder.keySerializer, "Key serializer shouldn't be null");
+        this.valueSerializer = Objects.requireNonNull(builder.valueSerializer, "Value serializer shouldn't be null");
+        this.ehCacheEventListener = new EhCacheEventListener<K, V>(this.valueSerializer);
         this.maxWeightInBytes = builder.maxWeightInBytes;
         this.storagePath = Objects.requireNonNull(builder.storagePath, "Storage path shouldn't be null");
         if (builder.threadPoolAlias == null || builder.threadPoolAlias.isBlank()) {
@@ -137,37 +144,38 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
             .build(true);
     }
 
-    private Cache<byte[], byte[]> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {
+    private Cache<K, byte[]> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {
         return this.cacheManager.createCache(
             DISK_CACHE_ALIAS,
             CacheConfigurationBuilder.newCacheConfigurationBuilder(
-                byte[].class,
+                keyType,
                 byte[].class,
                 ResourcePoolsBuilder.newResourcePoolsBuilder().disk(maxWeightInBytes, MemoryUnit.B)
-            ).withExpiry(new ExpiryPolicy<byte[], byte[]>() {
+            ).withExpiry(new ExpiryPolicy<K, byte[]>() {
                 @Override
-                public Duration getExpiryForCreation(byte[] key, byte[] value) {
+                public Duration getExpiryForCreation(K key, byte[] value) {
                     return INFINITE;
                 }
 
                 @Override
-                public Duration getExpiryForAccess(byte[] key, Supplier<? extends byte[]> value) {
+                public Duration getExpiryForAccess(K key, Supplier<? extends byte[]> value) {
                     return expireAfterAccess;
                 }
 
                 @Override
-                public Duration getExpiryForUpdate(byte[] key, Supplier<? extends byte[]> oldValue, byte[] newValue) {
+                public Duration getExpiryForUpdate(K key, Supplier<? extends byte[]> oldValue, byte[] newValue) {
                     return INFINITE;
                 }
             })
                 .withService(getListenerConfiguration(builder))
                 .withService(
-                    new OffHeapDiskStoreConfiguration(
-                        this.threadPoolAlias,
-                        DISK_WRITE_CONCURRENCY.get(settings),
-                        DISK_SEGMENTS.get(settings)
-                    )
+                new OffHeapDiskStoreConfiguration(
+                    this.threadPoolAlias,
+                    DISK_WRITE_CONCURRENCY.get(settings),
+                    DISK_SEGMENTS.get(settings)
                 )
+                )
+                .withKeySerializer(new KeySerializerWrapper<K>(keySerializer))
         );
     }
 
@@ -190,12 +198,12 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     @Override
     public V get(K key) {
         // Optimize it by adding key store.
-        return valueSerializer.deserialize(cache.get(keySerializer.serialize(key)));
+        return valueSerializer.deserialize(cache.get(key));
     }
 
     @Override
     public void put(K key, V value) {
-        cache.put(keySerializer.serialize(key), valueSerializer.serialize(value));
+        cache.put(key, valueSerializer.serialize(value));
     }
 
     @Override
@@ -207,7 +215,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     @Override
     public void invalidate(K key) {
         // There seems to be a thread leak issue while calling this and then closing cache.
-        cache.remove(keySerializer.serialize(key));
+        cache.remove(key);
     }
 
     @Override
@@ -228,7 +236,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
 
     @Override
     public Iterable<K> keys() {
-        return () -> new EhCacheKeyIterator<>(cache.iterator(), keySerializer);
+        return () -> new EhCacheKeyIterator<>(cache.iterator());
     }
 
     @Override
@@ -257,16 +265,14 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
      * @param <K> Type of key
      * @param <V> Type of value
      */
-    class EhCacheEventListener<K, V> implements CacheEventListener<byte[], byte[]> {
+    class EhCacheEventListener<K, V> implements CacheEventListener<K, byte[]> {
 
         private Optional<RemovalListener<K, V>> removalListener;
-        // We need to pass the same serializers to this listener, as the removal listener is expecting
-        // values of type K, V, not byte[], byte[]
-        private Serializer<K, byte[]> keySerializer;
+        // We need to pass the value serializer to this listener, as the removal listener is expecting
+        // values of type K, V, not K, byte[]
         private Serializer<V, byte[]> valueSerializer;
 
-        EhCacheEventListener(Serializer<K, byte[]> keySerializer, Serializer<V, byte[]> valueSerializer) {
-            this.keySerializer = keySerializer;
+        EhCacheEventListener(Serializer<V, byte[]> valueSerializer) {
             this.valueSerializer = valueSerializer;
         }
 
@@ -275,7 +281,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         }
 
         @Override
-        public void onEvent(CacheEvent<? extends byte[], ? extends byte[]> event) {
+        public void onEvent(CacheEvent<? extends K, ? extends byte[]> event) {
             switch (event.getType()) {
                 case CREATED:
                     count.inc();
@@ -285,7 +291,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
                     this.removalListener.ifPresent(
                         listener -> listener.onRemoval(
                             new RemovalNotification<>(
-                                keySerializer.deserialize(event.getKey()),
+                                event.getKey(),
                                 valueSerializer.deserialize(event.getOldValue()),
                                 RemovalReason.EVICTED
                             )
@@ -302,7 +308,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
                     this.removalListener.ifPresent(
                         listener -> listener.onRemoval(
                             new RemovalNotification<>(
-                                keySerializer.deserialize(event.getKey()),
+                                event.getKey(),
                                 valueSerializer.deserialize(event.getOldValue()),
                                 RemovalReason.INVALIDATED
                             )
@@ -325,12 +331,10 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
      */
     class EhCacheKeyIterator<K> implements Iterator<K> {
 
-        Iterator<Cache.Entry<byte[], byte[]>> iterator;
-        private final Serializer<K, byte[]> keySerializer;
+        Iterator<Cache.Entry<K, byte[]>> iterator;
 
-        EhCacheKeyIterator(Iterator<Cache.Entry<byte[], byte[]>> iterator, Serializer<K, byte[]> keySerializer) {
+        EhCacheKeyIterator(Iterator<Cache.Entry<K, byte[]>> iterator) {
             this.iterator = iterator;
-            this.keySerializer = keySerializer;
         }
 
         @Override
@@ -343,7 +347,41 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
             if (!hasNext()) {
                 throw new NoSuchElementException();
             }
-            return keySerializer.deserialize(iterator.next().getKey());
+            return iterator.next().getKey();
+        }
+    }
+
+    /**
+     * The wrapper for the key serializer which is passed directly to Ehcache.
+     */
+    private class KeySerializerWrapper<K> implements org.ehcache.spi.serialization.Serializer<K> {
+        public Serializer<K, byte[]> serializer;
+        public KeySerializerWrapper(Serializer<K, byte[]> serializer) {
+            this.serializer = serializer;
+        }
+
+        // This constructor must be present, but does not have to work as we are not actually persisting the disk
+        // cache after a restart.
+        // See https://www.ehcache.org/documentation/3.0/serializers-copiers.html#persistent-vs-transient-caches
+        public KeySerializerWrapper(ClassLoader classLoader, FileBasedPersistenceContext persistenceContext) {}
+
+        @Override
+        public ByteBuffer serialize(K object) throws SerializerException {
+            return ByteBuffer.wrap(serializer.serialize(object));
+        }
+
+        @Override
+        public K read(ByteBuffer binary) throws ClassNotFoundException, SerializerException {
+            byte[] arr = new byte[binary.remaining()];
+            binary.get(arr);
+            return serializer.deserialize(arr);
+        }
+
+        @Override
+        public boolean equals(K object, ByteBuffer binary) throws ClassNotFoundException, SerializerException {
+            byte[] arr = new byte[binary.remaining()];
+            binary.get(arr);
+            return serializer.equals(object, arr);
         }
     }
 

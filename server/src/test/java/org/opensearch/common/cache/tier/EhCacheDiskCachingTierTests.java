@@ -232,6 +232,17 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
         }
     }
 
+    /*public void testStringSerializer() throws Exception {
+        StringSerializer ser = new StringSerializer();
+        for (int i = 0; i < 100; i++) {
+            String random = String.valueOf(UUID.randomUUID());
+            byte[] serialized = ser.serialize(random);
+            assertTrue(ser.equals(random, serialized));
+            String deserialized = ser.deserialize(serialized);
+            assertTrue(random.equals(deserialized));
+        }
+    }*/
+
     private RemovalListener<String, String> removalListener(AtomicInteger counter) {
         return notification -> counter.incrementAndGet();
     }
