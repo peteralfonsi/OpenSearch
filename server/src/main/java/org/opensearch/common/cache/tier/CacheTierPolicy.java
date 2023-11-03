@@ -44,5 +44,13 @@ public interface CacheTierPolicy<T> {
      * @return A CheckDataResult object containing whether the data is admitted, and if it isn't, the reason.
      * @throws IOException if the input can't be deserialized to the right class.
      */
-    CheckDataResult checkData(BytesReference data) throws IOException;
+    boolean checkData(BytesReference data) throws IOException;
+
+    /**
+     * Convert the BytesReference into the type T that is used to check entry into the cache.
+     * @param data The BytesReference
+     * @return The BytesReference converted to type T
+     * @throws IOException if the input can't be deserialized to the right class.
+     */
+    T convertFromBytesReference(BytesReference data) throws IOException;
 }

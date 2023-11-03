@@ -46,7 +46,7 @@ import java.io.IOException;
  * which is specified as a dynamic cluster-level setting. The threshold should be set to approximately
  * the time it takes to get a result from the cache tier.
  */
-public class IndicesRequestCacheTookTimePolicy implements CacheTierPolicy<QuerySearchResult> {
+public class DiskTierTookTimePolicy implements CacheTierPolicy<QuerySearchResult> {
     public static final Setting<TimeValue> INDICES_REQUEST_CACHE_DISK_TOOKTIME_THRESHOLD_SETTING = Setting.positiveTimeSetting(
         "index.requests.cache.disk.tooktime.threshold",
         new TimeValue(10),
@@ -56,35 +56,36 @@ public class IndicesRequestCacheTookTimePolicy implements CacheTierPolicy<QueryS
 
     private TimeValue threshold;
 
-    public IndicesRequestCacheTookTimePolicy(Settings settings, ClusterSettings clusterSettings) {
+    public DiskTierTookTimePolicy(Settings settings, ClusterSettings clusterSettings) {
         this.threshold = INDICES_REQUEST_CACHE_DISK_TOOKTIME_THRESHOLD_SETTING.get(settings);
         clusterSettings.addSettingsUpdateConsumer(INDICES_REQUEST_CACHE_DISK_TOOKTIME_THRESHOLD_SETTING, this::setThreshold);
     }
 
-    public void setThreshold(TimeValue threshold) { // public so that we can manually set value in unit test
+    protected void setThreshold(TimeValue threshold) { // public so that we can manually set value in unit test
         this.threshold = threshold;
     }
 
-    protected String buildDeniedString(TimeValue tookTime, TimeValue threshold) {
-        // separating out for use in testing
-        return "Query took time " + tookTime.getMillis() + " ms is less than threshold value " + threshold.getMillis() + " ms";
-    }
-
     @Override
-    public CheckDataResult checkData(BytesReference data) throws IOException {
-        QuerySearchResult qsr;
+    public QuerySearchResult convertFromBytesReference(BytesReference data) throws IOException {
         try {
-            qsr = new QuerySearchResult(data.streamInput());
+            return new QuerySearchResult(data.streamInput());
         } catch (IllegalStateException ise) {
             throw new IOException(ise);
         }
-        TimeValue tookTime = TimeValue.timeValueNanos(qsr.getTookTimeNanos());
-        boolean isAccepted = true;
-        String deniedReason = null;
-        if (tookTime.compareTo(threshold) < 0) { // negative -> tookTime is shorter than threshold
-            isAccepted = false;
-            deniedReason = buildDeniedString(tookTime, threshold);
+    }
+
+    @Override
+    public boolean checkData(BytesReference data) throws IOException {
+        QuerySearchResult qsr = convertFromBytesReference(data);
+        Long tookTimeNanos = qsr.getTookTimeNanos();
+        if (tookTimeNanos == null) {
+            return true;
+            // Received a null took time -> this QSR is from an old version which does not have took time, we should accept it
         }
-        return new CheckDataResult(isAccepted, deniedReason);
+        TimeValue tookTime = TimeValue.timeValueNanos(qsr.getTookTimeNanos());
+        if (tookTime.compareTo(threshold) < 0) { // negative -> tookTime is shorter than threshold
+            return false;
+        }
+        return true;
     }
 }
