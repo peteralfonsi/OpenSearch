@@ -56,13 +56,13 @@ abstract class AbstractIndexShardCacheEntity implements IndicesRequestCache.Cach
     }
 
     @Override
-    public final void onHit(TierType tierType) {
-        stats().onHit(tierType);
+    public final void onHit(TierType tierType, double getTimeEWMA) {
+        stats().onHit(tierType, getTimeEWMA);
     }
 
     @Override
-    public final void onMiss(TierType tierType) {
-        stats().onMiss(tierType);
+    public final void onMiss(TierType tierType, double getTimeEWMA) {
+        stats().onMiss(tierType, getTimeEWMA);
     }
 
     @Override

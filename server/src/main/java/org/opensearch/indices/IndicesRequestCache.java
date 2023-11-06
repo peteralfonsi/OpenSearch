@@ -151,8 +151,8 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     @Override
-    public void onMiss(Key key, TierType tierType) {
-        key.entity.onMiss(tierType);
+    public void onMiss(Key key, TierType tierType, double getTimeEWMA) {
+        key.entity.onMiss(tierType, getTimeEWMA);
     }
 
     @Override
@@ -161,8 +161,8 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     @Override
-    public void onHit(Key key, BytesReference value, TierType tierType) {
-        key.entity.onHit(tierType);
+    public void onHit(Key key, BytesReference value, TierType tierType, double getTimeEWMA) {
+        key.entity.onHit(tierType, getTimeEWMA);
     }
 
     @Override
@@ -275,12 +275,12 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         /**
          * Called each time this entity has a cache hit.
          */
-        void onHit(TierType tierType);
+        void onHit(TierType tierType, double getTimeEWMA);
 
         /**
          * Called each time this entity has a cache miss.
          */
-        void onMiss(TierType tierType);
+        void onMiss(TierType tierType, double getTimeEWMA);
 
         /**
          * Called when this entity instance is removed

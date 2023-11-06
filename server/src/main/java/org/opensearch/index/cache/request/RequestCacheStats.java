@@ -52,12 +52,13 @@ import java.util.Map;
  */
 public class RequestCacheStats implements Writeable, ToXContentFragment {
 
-    private Map<String, StatsHolder> map = new HashMap<>(){{
-        for (TierType tierType : TierType.values())
+    private Map<String, StatsHolder> map = new HashMap<>() {
         {
-            put(tierType.getStringValue(), new StatsHolder());
-            // Every possible tier type must have counters, even if they are disabled. Then the counters report 0
-        }}
+            for (TierType tierType : TierType.values()) {
+                put(tierType.getStringValue(), new StatsHolder());
+                // Every possible tier type must have counters, even if they are disabled. Then the counters report 0
+            }
+        }
     };
 
     public RequestCacheStats() {}
@@ -66,12 +67,12 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
         if (in.getVersion().onOrAfter(Version.V_3_0_0)) {
             this.map = in.readMap(StreamInput::readString, StatsHolder::new);
         } else {
-            // objects from earlier versions only contain on-heap info, and do not have entries info
+            // objects from earlier versions only contain on-heap info, and do not have entries or getTime info
             long memorySize = in.readVLong();
             long evictions = in.readVLong();
             long hitCount = in.readVLong();
             long missCount = in.readVLong();
-            this.map.put(TierType.ON_HEAP.getStringValue(), new StatsHolder(memorySize, evictions, hitCount, missCount, 0));
+            this.map.put(TierType.ON_HEAP.getStringValue(), new StatsHolder(memorySize, evictions, hitCount, missCount, 0, 0.0));
         }
     }
 
@@ -116,6 +117,10 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
         return getTierStats(tierType).entries.count();
     }
 
+    public double getTimeEWMA(TierType tierType) {
+        return getTierStats(tierType).getTimeEWMA;
+    }
+
     // By default, return on-heap stats if no tier is specified
 
     public long getMemorySizeInBytes() {
@@ -142,12 +147,14 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
         return getEntries(TierType.ON_HEAP);
     }
 
+    // no getTimeEWMA default as it'll always return 0 for on-heap
+
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         if (out.getVersion().onOrAfter(Version.V_3_0_0)) {
             out.writeMap(this.map, StreamOutput::writeString, (o, v) -> v.writeTo(o)); // ?
         } else {
-            // Write only on-heap values, and don't write entries metric
+            // Write only on-heap values, and don't write entries metric or getTimeEWMA
             StatsHolder heapStats = map.get(TierType.ON_HEAP.getStringValue());
             out.writeVLong(heapStats.getMemorySize());
             out.writeVLong(heapStats.getEvictions());
@@ -160,13 +167,13 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         builder.startObject(Fields.REQUEST_CACHE_STATS);
         // write on-heap stats outside of tiers object
-        getTierStats(TierType.ON_HEAP).toXContent(builder, params);
+        getTierStats(TierType.ON_HEAP).toXContent(builder, params, false); // Heap tier doesn't write a getTime
         builder.startObject(Fields.TIERS);
         for (TierType tierType : TierType.values()) { // fixed order
             if (tierType != TierType.ON_HEAP) {
                 String tier = tierType.getStringValue();
                 builder.startObject(tier);
-                map.get(tier).toXContent(builder, params);
+                map.get(tier).toXContent(builder, params, true); // Non-heap tiers write a getTime
                 builder.endObject();
             }
         }
@@ -189,5 +196,6 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
         static final String HIT_COUNT = "hit_count";
         static final String MISS_COUNT = "miss_count";
         static final String ENTRIES = "entries";
+        static final String GET_TIME_EWMA = "get_time_ewma_millis";
     }
 }

@@ -25,6 +25,7 @@ public class StatsHolder implements Serializable, Writeable, ToXContentFragment 
     final CounterMetric hitCount;
     final CounterMetric missCount;
     final CounterMetric entries;
+    double getTimeEWMA; // CounterMetric is long, we need a double
 
     public StatsHolder() {
         this.totalMetric = new CounterMetric();
@@ -32,9 +33,10 @@ public class StatsHolder implements Serializable, Writeable, ToXContentFragment 
         this.hitCount = new CounterMetric();
         this.missCount = new CounterMetric();
         this.entries = new CounterMetric();
+        this.getTimeEWMA = 0.0;
     }
 
-    public StatsHolder(long memorySize, long evictions, long hitCount, long missCount, long entries) {
+    public StatsHolder(long memorySize, long evictions, long hitCount, long missCount, long entries, double getTimeEWMA) {
         // Switched argument order to match RequestCacheStats
         this.totalMetric = new CounterMetric();
         this.totalMetric.inc(memorySize);
@@ -46,12 +48,13 @@ public class StatsHolder implements Serializable, Writeable, ToXContentFragment 
         this.missCount.inc(missCount);
         this.entries = new CounterMetric();
         this.entries.inc(entries);
+        this.getTimeEWMA = getTimeEWMA;
     }
 
     public StatsHolder(StreamInput in) throws IOException {
         // Read and write the values of the counter metrics. They should always be positive
         // This object is new, so we shouldn't need version checks for different behavior
-        this(in.readVLong(), in.readVLong(), in.readVLong(), in.readVLong(), in.readVLong());
+        this(in.readVLong(), in.readVLong(), in.readVLong(), in.readVLong(), in.readVLong(), in.readDouble());
         // java forces us to do this in one line
         // guaranteed to be evaluated in correct order (https://docs.oracle.com/javase/specs/jls/se7/html/jls-15.html#jls-15.7.4)
     }
@@ -63,6 +66,7 @@ public class StatsHolder implements Serializable, Writeable, ToXContentFragment 
         out.writeVLong(hitCount.count());
         out.writeVLong(missCount.count());
         out.writeVLong(entries.count());
+        out.writeDouble(getTimeEWMA);
     }
 
     public void add(StatsHolder otherStats) {
@@ -72,6 +76,18 @@ public class StatsHolder implements Serializable, Writeable, ToXContentFragment 
         hitCount.inc(otherStats.hitCount.count());
         missCount.inc(otherStats.missCount.count());
         entries.inc(otherStats.entries.count());
+        if (!otherStats.isEmpty()) {
+            getTimeEWMA = otherStats.getTimeEWMA;
+        }
+
+        /* Adding two EWMAs is a bit tricky. If both stats are non-empty we can assume the newer one dominates.
+        add() is only called in CommonStats.java in two places:
+        1) it's used to either add otherStats to a new (empty) RequestCacheStats
+        2) it's used to add new stats to an existing RequestCacheStats
+        In both cases, the existing object is older, so we can assume otherStats's EWMA dominates.
+        It doesn't make sense to use the existing EWMA in case 1, and in case 2 the actual value
+        will be updated from the disk tier on the next hit/miss, so it's probably ok to use otherStats.getTimeEWMA.
+        */
     }
 
     public long getEvictions() {
@@ -94,8 +110,16 @@ public class StatsHolder implements Serializable, Writeable, ToXContentFragment 
         return entries.count();
     }
 
+    public double getTimeEWMA() {
+        return getTimeEWMA;
+    }
+
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
+        return toXContent(builder, params, false); // By default do not write the getTime field
+    }
+
+    public XContentBuilder toXContent(XContentBuilder builder, Params params, boolean includeGetTime) throws IOException {
         builder.humanReadableField(
             RequestCacheStats.Fields.MEMORY_SIZE_IN_BYTES,
             RequestCacheStats.Fields.MEMORY_SIZE,
@@ -105,6 +129,18 @@ public class StatsHolder implements Serializable, Writeable, ToXContentFragment 
         builder.field(RequestCacheStats.Fields.HIT_COUNT, getHitCount());
         builder.field(RequestCacheStats.Fields.MISS_COUNT, getMissCount());
         builder.field(RequestCacheStats.Fields.ENTRIES, getEntries());
+        if (includeGetTime) {
+            builder.field(RequestCacheStats.Fields.GET_TIME_EWMA, getTimeEWMA());
+        }
         return builder;
+    }
+
+    private boolean isEmpty() {
+        return (getEvictions() == 0)
+            && (getMemorySize() == 0)
+            && (getHitCount() == 0)
+            && (getMissCount() == 0)
+            && (getEntries() == 0)
+            && (getTimeEWMA() == 0.0);
     }
 }

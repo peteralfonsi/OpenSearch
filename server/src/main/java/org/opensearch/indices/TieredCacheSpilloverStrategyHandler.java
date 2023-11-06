@@ -131,14 +131,22 @@ public class TieredCacheSpilloverStrategyHandler<K extends Writeable, V> impleme
         return key -> {
             for (CachingTier<K, V> cachingTier : cachingTierList) {
                 V value = cachingTier.get(key);
+                double getTimeEWMA = getTimeEWMAIfDisk(cachingTier);
                 if (value != null) {
-                    tieredCacheEventListener.onHit(key, value, cachingTier.getTierType());
+                    tieredCacheEventListener.onHit(key, value, cachingTier.getTierType(), getTimeEWMA);
                     return new CacheValue<>(value, cachingTier.getTierType());
                 }
-                tieredCacheEventListener.onMiss(key, cachingTier.getTierType());
+                tieredCacheEventListener.onMiss(key, cachingTier.getTierType(), getTimeEWMA);
             }
             return null;
         };
+    }
+
+    private double getTimeEWMAIfDisk(CachingTier<K, V> cachingTier) {
+        if (cachingTier.getTierType() == TierType.DISK) {
+            return ((DiskCachingTier<K, V>) cachingTier).getTimeMillisEWMA();
+        }
+        return 0.0;
     }
 
     @Override

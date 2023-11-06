@@ -21,29 +21,38 @@ public class RequestCacheStatsTests extends OpenSearchTestCase {
     public void testConstructorsAndAdd() throws Exception {
         RequestCacheStats emptyStats = new RequestCacheStats();
         for (TierType tierType : TierType.values()) {
-            assertTierState(emptyStats, tierType, 0, 0, 0, 0, 0);
+            assertTierState(emptyStats, tierType, 0, 0, 0, 0, 0, 0.0);
         }
         Map<TierType, StatsHolder> testHeapMap = new HashMap<>();
-        testHeapMap.put(TierType.ON_HEAP, new StatsHolder(1, 2, 3, 4, 5));
+        testHeapMap.put(TierType.ON_HEAP, new StatsHolder(1, 2, 3, 4, 5, 0.0));
         RequestCacheStats heapOnlyStats = new RequestCacheStats(testHeapMap);
         for (TierType tierType : TierType.values()) {
             if (tierType == TierType.ON_HEAP) {
-                assertTierState(heapOnlyStats, tierType, 1, 2, 3, 4, 5);
+                assertTierState(heapOnlyStats, tierType, 1, 2, 3, 4, 5, 0.0);
             } else {
-                assertTierState(heapOnlyStats, tierType, 0, 0, 0, 0, 0);
+                assertTierState(heapOnlyStats, tierType, 0, 0, 0, 0, 0, 0.0);
             }
         }
 
         Map<TierType, StatsHolder> testBothTiersMap = new HashMap<>();
-        testBothTiersMap.put(TierType.ON_HEAP, new StatsHolder(11, 12, 13, 14, 15));
-        testBothTiersMap.put(TierType.DISK, new StatsHolder(6, 7, 8, 9, 10));
+        testBothTiersMap.put(TierType.ON_HEAP, new StatsHolder(11, 12, 13, 14, 15, 0.0));
+        testBothTiersMap.put(TierType.DISK, new StatsHolder(6, 7, 8, 9, 10, 25.0));
         RequestCacheStats bothTiersStats = new RequestCacheStats(testBothTiersMap);
-        assertTierState(bothTiersStats, TierType.ON_HEAP, 11, 12, 13, 14, 15);
-        assertTierState(bothTiersStats, TierType.DISK, 6, 7, 8, 9, 10);
+        assertTierState(bothTiersStats, TierType.ON_HEAP, 11, 12, 13, 14, 15, 0.0);
+        assertTierState(bothTiersStats, TierType.DISK, 6, 7, 8, 9, 10, 25.0);
 
         bothTiersStats.add(heapOnlyStats);
-        assertTierState(bothTiersStats, TierType.ON_HEAP, 12, 14, 16, 18, 20);
-        assertTierState(bothTiersStats, TierType.DISK, 6, 7, 8, 9, 10);
+        assertTierState(bothTiersStats, TierType.ON_HEAP, 12, 14, 16, 18, 20, 0.0);
+        assertTierState(bothTiersStats, TierType.DISK, 6, 7, 8, 9, 10, 25.0);
+
+        Map<TierType, StatsHolder> addEWMAMap = new HashMap<>();
+        addEWMAMap.put(TierType.DISK, new StatsHolder(1, 1, 1, 1, 1, 16.0));
+        RequestCacheStats addEWMAStats = new RequestCacheStats(addEWMAMap);
+        bothTiersStats.add(addEWMAStats);
+        assertTierState(bothTiersStats, TierType.ON_HEAP, 12, 14, 16, 18, 20, 0.0);
+        assertTierState(bothTiersStats, TierType.DISK, 7, 8, 9, 10, 11, 16.0);
+        // The new EWMA should be selected
+
     }
 
     public void testSerialization() throws Exception {
@@ -51,15 +60,15 @@ public class RequestCacheStatsTests extends OpenSearchTestCase {
         BytesStreamOutput os = new BytesStreamOutput();
 
         Map<TierType, StatsHolder> testMap = new HashMap<>();
-        testMap.put(TierType.ON_HEAP, new StatsHolder(11, 12, 13, 14, 15));
-        testMap.put(TierType.DISK, new StatsHolder(6, 7, 8, 9, 10));
+        testMap.put(TierType.ON_HEAP, new StatsHolder(11, 12, 13, 14, 15, 0.0));
+        testMap.put(TierType.DISK, new StatsHolder(6, 7, 8, 9, 10, 25.0));
         RequestCacheStats stats = new RequestCacheStats(testMap);
         stats.writeTo(os);
         BytesStreamInput is = new BytesStreamInput(BytesReference.toBytes(os.bytes()));
         RequestCacheStats deserialized = new RequestCacheStats(is);
 
-        assertTierState(deserialized, TierType.ON_HEAP, 11, 12, 13, 14, 15);
-        assertTierState(deserialized, TierType.DISK, 6, 7, 8, 9, 10);
+        assertTierState(deserialized, TierType.ON_HEAP, 11, 12, 13, 14, 15, 0.0);
+        assertTierState(deserialized, TierType.DISK, 6, 7, 8, 9, 10, 25.0);
     }
 
     private void assertTierState(
@@ -69,12 +78,14 @@ public class RequestCacheStatsTests extends OpenSearchTestCase {
         long evictions,
         long hitCount,
         long missCount,
-        long entries
+        long entries,
+        double getTimeEWMA
     ) {
         assertEquals(memSize, stats.getMemorySizeInBytes(tierType));
         assertEquals(evictions, stats.getEvictions(tierType));
         assertEquals(hitCount, stats.getHitCount(tierType));
         assertEquals(missCount, stats.getMissCount(tierType));
         assertEquals(entries, stats.getEntries(tierType));
+        assertEquals(getTimeEWMA, stats.getTimeEWMA(tierType), 0.01);
     }
 }

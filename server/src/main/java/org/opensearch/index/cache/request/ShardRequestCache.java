@@ -57,12 +57,19 @@ public final class ShardRequestCache {
         return new RequestCacheStats(statsHolder);
     }
 
-    public void onHit(TierType tierType) {
+    public void onHit(TierType tierType, double getTimeEWMA) {
         statsHolder.get(tierType).hitCount.inc();
+        if (tierType == TierType.DISK) {
+            statsHolder.get(tierType).getTimeEWMA = getTimeEWMA;
+        }
+
     }
 
-    public void onMiss(TierType tierType) {
+    public void onMiss(TierType tierType, double getTimeEWMA) {
         statsHolder.get(tierType).missCount.inc();
+        if (tierType == TierType.DISK) {
+            statsHolder.get(tierType).getTimeEWMA = getTimeEWMA;
+        }
     }
 
     public void onCached(Accountable key, BytesReference value, TierType tierType) {

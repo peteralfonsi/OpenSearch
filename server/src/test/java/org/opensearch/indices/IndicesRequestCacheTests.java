@@ -180,7 +180,6 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
 
         TestEntity entity = new TestEntity(requestCacheStats, indexShard);
         Loader loader = new Loader(reader, 0);
-        System.out.println("On-heap cache size at start = " + requestCacheStats.stats().getMemorySizeInBytes());
         BytesReference[] termBytesArr = new BytesReference[maxNumInHeap + 1];
 
         for (int i = 0; i < maxNumInHeap + 1; i++) {

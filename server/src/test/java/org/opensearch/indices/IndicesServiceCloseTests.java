@@ -341,10 +341,10 @@ public class IndicesServiceCloseTests extends OpenSearchTestCase {
             }
 
             @Override
-            public void onHit(TierType tierType) {}
+            public void onHit(TierType tierType, double getTimeEWMA) {}
 
             @Override
-            public void onMiss(TierType tierType) {}
+            public void onMiss(TierType tierType, double getTimeEWMA) {}
 
             @Override
             public void onRemoval(RemovalNotification<Key, BytesReference> notification) {}

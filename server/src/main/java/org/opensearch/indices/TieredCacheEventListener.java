@@ -12,11 +12,11 @@ import org.opensearch.common.cache.RemovalNotification;
 
 public interface TieredCacheEventListener<K, V> {
 
-    void onMiss(K key, TierType tierType);
+    void onMiss(K key, TierType tierType, double getTimeEWMA);
 
     void onRemoval(RemovalNotification<K, V> notification);
 
-    void onHit(K key, V value, TierType tierType);
+    void onHit(K key, V value, TierType tierType, double getTimeEWMA);
 
     void onCached(K key, V value, TierType tierType);
 }

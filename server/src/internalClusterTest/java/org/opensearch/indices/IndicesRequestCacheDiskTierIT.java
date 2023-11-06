@@ -70,7 +70,6 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
 
         resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + 0)).get();
         int requestSize = (int) getCacheSizeBytes(client, "index", TierType.ON_HEAP);
-        System.out.println(requestSize);
         assertTrue(heapSizeBytes > requestSize);
         // If this fails, increase heapSizeBytes! We can't adjust it after getting the size of one query
         // as the cache size setting is not dynamic
@@ -82,6 +81,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
             assertSearchResponse(resp);
             IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.ON_HEAP, false);
             IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.DISK, false);
+            assertPositiveEWMAForDisk(client, "index");
         }
         // the first request, for "hello0", should have been evicted to the disk tier
         resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello0")).get();
@@ -98,5 +98,16 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
             .getTotal()
             .getRequestCache();
         return requestCacheStats.getMemorySizeInBytes(tierType);
+    }
+
+    private void assertPositiveEWMAForDisk(Client client, String index) {
+        RequestCacheStats requestCacheStats = client.admin()
+            .indices()
+            .prepareStats(index)
+            .setRequestCache(true)
+            .get()
+            .getTotal()
+            .getRequestCache();
+        assertTrue(requestCacheStats.getTimeEWMA(TierType.DISK) > 0);
     }
 }
