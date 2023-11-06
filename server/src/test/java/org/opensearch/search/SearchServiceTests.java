@@ -121,6 +121,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
@@ -823,6 +824,118 @@ public class SearchServiceTests extends OpenSearchSingleNodeTestCase {
         }
     }
 
+    public void testQuerySearchResultTookTime() throws Exception {
+        // I wasn't able to introduce a delay in these tests as everything between creation and usage of the QuerySearchResult object
+        // happen in a single line - we would have to modify QueryPhase.execute() to take a delay parameter
+        // However this was tested manually
+        createIndex("index");
+        final SearchService service = getInstanceFromNode(SearchService.class);
+        final IndicesService indicesService = getInstanceFromNode(IndicesService.class);
+        final IndexService indexService = indicesService.indexServiceSafe(resolveIndex("index"));
+        final IndexShard indexShard = indexService.getShard(0);
+        SearchRequest searchRequest = new SearchRequest().allowPartialSearchResults(true);
+        searchRequest.source(new SearchSourceBuilder().query(new MatchAllQueryBuilder()));
+
+        ShardSearchRequest request = new ShardSearchRequest(
+            OriginalIndices.NONE,
+            searchRequest,
+            indexShard.shardId(),
+            2, // must have >1 shards for executeQueryPhase to return the QuerySearchResult
+            new AliasFilter(null, Strings.EMPTY_ARRAY),
+            1.0f,
+            -1,
+            null,
+            null
+        );
+
+        SearchShardTask task = new SearchShardTask(123L, "", "", "", null, Collections.emptyMap());
+        service.executeQueryPhase(request, randomBoolean(), task, new ActionListener<SearchPhaseResult>() {
+            @Override
+            public void onResponse(SearchPhaseResult searchPhaseResult) {
+                assertEquals(QuerySearchResult.class, searchPhaseResult.getClass()); // 2+ shards -> QuerySearchResult returned
+                QuerySearchResult qsr = (QuerySearchResult) searchPhaseResult;
+                assertTrue(qsr.getTookTimeNanos() > 0); // Above zero means it's been set at some point
+            }
+
+            @Override
+            public void onFailure(Exception e) {
+                throw new AssertionError(e);
+            }
+        });
+    }
+
+    public void testQuerySearchResultTookTimeCacheableRequest() throws Exception {
+        // Test 2 identical cacheable requests and assert both have the same tookTime
+        // Similarly, no delay could be added
+        createIndex("index");
+        final SearchService service = getInstanceFromNode(SearchService.class);
+        final IndicesService indicesService = getInstanceFromNode(IndicesService.class);
+        final IndexService indexService = indicesService.indexServiceSafe(resolveIndex("index"));
+        final IndexShard indexShard = indexService.getShard(0);
+        SearchRequest searchRequest = new SearchRequest().allowPartialSearchResults(true);
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+
+        searchRequest.source(searchSourceBuilder);
+        searchSourceBuilder.scriptField(
+            "field" + 0,
+            new Script(ScriptType.INLINE, MockScriptEngine.NAME, CustomScriptPlugin.DUMMY_SCRIPT, Collections.emptyMap())
+        );
+        searchSourceBuilder.size(0); // from testIgnoreScriptfieldIfSizeZero
+
+        String[] dummyRoutings = new String[] {};
+        OriginalIndices dummyOriginalIndices = new OriginalIndices(new String[] { "index'" }, IndicesOptions.LENIENT_EXPAND_OPEN);
+
+        ShardSearchRequest request = new ShardSearchRequest(
+            dummyOriginalIndices,
+            searchRequest,
+            indexShard.shardId(),
+            2, // must have >1 shards for executeQueryPhase to return the QuerySearchResult
+            new AliasFilter(null, Strings.EMPTY_ARRAY),
+            1.0f,
+            0L,
+            // if nowInMillis is negative, it fails when trying to write the shardSearchRequest to cache as it uses WriteVLong which only
+            // takes positive longs
+            null,
+            dummyRoutings // similar for routings
+        );
+
+        final CompletableFuture<Long> firstResult = new CompletableFuture<>();
+        final CompletableFuture<Long> secondResult = new CompletableFuture<>();
+        SearchShardTask task = new SearchShardTask(123L, "", "", "", null, Collections.emptyMap());
+        service.executeQueryPhase(request, randomBoolean(), task, new ActionListener<SearchPhaseResult>() {
+            @Override
+            public void onResponse(SearchPhaseResult searchPhaseResult) {
+                assertEquals(QuerySearchResult.class, searchPhaseResult.getClass()); // 2+ shards -> QuerySearchResult returned
+                QuerySearchResult qsr = (QuerySearchResult) searchPhaseResult;
+                firstResult.complete(qsr.getTookTimeNanos());
+            }
+
+            @Override
+            public void onFailure(Exception e) {
+                throw new AssertionError(e);
+            }
+        });
+
+        service.executeQueryPhase(request, randomBoolean(), task, new ActionListener<SearchPhaseResult>() {
+            @Override
+            public void onResponse(SearchPhaseResult searchPhaseResult) {
+                assertEquals(QuerySearchResult.class, searchPhaseResult.getClass()); // 2+ shards -> QuerySearchResult returned
+                QuerySearchResult qsr = (QuerySearchResult) searchPhaseResult;
+                secondResult.complete(qsr.getTookTimeNanos());
+            }
+
+            @Override
+            public void onFailure(Exception e) {
+                throw new AssertionError(e);
+            }
+        });
+
+        long firstResultVal = firstResult.get();
+        long secondResultVal = secondResult.get();
+        assertEquals(firstResultVal, secondResultVal);
+        assertTrue(firstResultVal > 0);
+    }
+
     public void testCanMatch() throws Exception {
         createIndex("index");
         final SearchService service = getInstanceFromNode(SearchService.class);
@@ -1010,6 +1123,7 @@ public class SearchServiceTests extends OpenSearchSingleNodeTestCase {
                 }
             }
         });
+
         latch.await();
     }
 
