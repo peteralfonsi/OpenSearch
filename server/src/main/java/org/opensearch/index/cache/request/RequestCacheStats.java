@@ -52,18 +52,17 @@ import java.util.Map;
  */
 public class RequestCacheStats implements Writeable, ToXContentFragment {
 
-    private Map<String, StatsHolder> map;
-
-    public RequestCacheStats() {
-        this.map = new HashMap<>();
-        for (TierType tierType : TierType.values()) {
-            map.put(tierType.getStringValue(), new StatsHolder());
+    private Map<String, StatsHolder> map = new HashMap<>(){{
+        for (TierType tierType : TierType.values())
+        {
+            put(tierType.getStringValue(), new StatsHolder());
             // Every possible tier type must have counters, even if they are disabled. Then the counters report 0
-        }
-    }
+        }}
+    };
+
+    public RequestCacheStats() {}
 
     public RequestCacheStats(StreamInput in) throws IOException {
-        this();
         if (in.getVersion().onOrAfter(Version.V_3_0_0)) {
             this.map = in.readMap(StreamInput::readString, StatsHolder::new);
         } else {
@@ -78,7 +77,6 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
 
     public RequestCacheStats(Map<TierType, StatsHolder> inputMap) {
         // Create a RequestCacheStats with multiple tiers' statistics
-        this();
         for (TierType tierType : inputMap.keySet()) {
             map.put(tierType.getStringValue(), inputMap.get(tierType));
         }

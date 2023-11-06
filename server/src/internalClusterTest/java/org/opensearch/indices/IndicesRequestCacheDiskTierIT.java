@@ -37,6 +37,7 @@ import org.opensearch.client.Client;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.core.common.unit.ByteSizeValue;
+import org.opensearch.index.cache.request.RequestCacheStats;
 import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.test.OpenSearchIntegTestCase;
 
@@ -49,8 +50,7 @@ import static org.opensearch.test.hamcrest.OpenSearchAssertions.assertSearchResp
 @OpenSearchIntegTestCase.ClusterScope(scope = OpenSearchIntegTestCase.Scope.TEST, numDataNodes = 0)
 public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
     public void testDiskTierStats() throws Exception {
-        int heapSizeBytes = 1800; // enough to fit 2 queries, as each is 687 B
-        int requestSize = 687; // each request is 687 B
+        int heapSizeBytes = 4729;
         String node = internalCluster().startNode(
             Settings.builder().put(IndicesRequestCache.INDICES_CACHE_QUERY_SIZE.getKey(), new ByteSizeValue(heapSizeBytes))
         );
@@ -68,21 +68,35 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         ensureSearchable("index");
         SearchResponse resp;
 
+        resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + 0)).get();
+        int requestSize = (int) getCacheSizeBytes(client, "index", TierType.ON_HEAP);
+        System.out.println(requestSize);
+        assertTrue(heapSizeBytes > requestSize);
+        // If this fails, increase heapSizeBytes! We can't adjust it after getting the size of one query
+        // as the cache size setting is not dynamic
+
         int numOnDisk = 5;
         int numRequests = heapSizeBytes / requestSize + numOnDisk;
-        for (int i = 0; i < numRequests; i++) {
+        for (int i = 1; i < numRequests; i++) {
             resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + i)).get();
             assertSearchResponse(resp);
             IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.ON_HEAP, false);
             IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.DISK, false);
-            System.out.println("request number " + i);
         }
-
-        System.out.println("Num requests = " + numRequests);
-
         // the first request, for "hello0", should have been evicted to the disk tier
         resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello0")).get();
         IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + 1, TierType.ON_HEAP, false);
         IndicesRequestCacheIT.assertCacheState(client, "index", 1, numRequests, TierType.DISK, false);
+    }
+
+    private long getCacheSizeBytes(Client client, String index, TierType tierType) {
+        RequestCacheStats requestCacheStats = client.admin()
+            .indices()
+            .prepareStats(index)
+            .setRequestCache(true)
+            .get()
+            .getTotal()
+            .getRequestCache();
+        return requestCacheStats.getMemorySizeInBytes(tierType);
     }
 }
