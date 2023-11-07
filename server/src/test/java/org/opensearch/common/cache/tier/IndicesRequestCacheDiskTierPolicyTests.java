@@ -96,7 +96,8 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
         assertTrue(longResult);
     }
 
-    private BytesReference getQSRBytesReference(long tookTimeNanos) throws IOException {
+     static BytesReference getQSRBytesReference(long tookTimeNanos) throws IOException {
+        // package-private, also used by EhCacheDiskCachingTierTests.java
         // setup from QuerySearchResultTests.java
         ShardId shardId = new ShardId("index", "uuid", randomInt());
         SearchRequest searchRequest = new SearchRequest().allowPartialSearchResults(randomBoolean());
