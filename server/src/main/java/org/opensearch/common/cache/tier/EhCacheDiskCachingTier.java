@@ -19,8 +19,11 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 
 import java.io.File;
+import java.io.IOException;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Iterator;
+import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
@@ -40,7 +43,9 @@ import org.ehcache.event.CacheEventListener;
 import org.ehcache.event.EventType;
 import org.ehcache.expiry.ExpiryPolicy;
 import org.ehcache.impl.config.store.disk.OffHeapDiskStoreConfiguration;
+import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.unit.ByteSizeValue;
+import org.opensearch.search.query.QuerySearchResult;
 
 public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
 
@@ -88,6 +93,8 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     // will hold that many file pointers.
     public final Setting<Integer> DISK_SEGMENTS;
     private final RBMIntKeyLookupStore keystore;
+    private final List<CacheTierPolicy<QuerySearchResult>> policies;
+    // TODO: Generics? Might just remove <T> from CacheTierPolicy, but we do want to enforce it otherwise there will be errors
 
     private EhCacheDiskCachingTier(Builder<K, V> builder) {
         this.keyType = Objects.requireNonNull(builder.keyType, "Key type shouldn't be null");
@@ -116,6 +123,8 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         // TODO: how do we change this automatically based on INDICES_CACHE_QUERY_SIZE setting?
         Setting<ByteSizeValue> keystoreSizeSetting = Setting.memorySizeSetting(builder.settingPrefix + ".tiered.disk.keystore_size", "0.05%");
         this.keystore = new RBMIntKeyLookupStore(keystoreSizeSetting.get(this.settings).getBytes());
+
+        this.policies = Objects.requireNonNull(builder.policies);
     }
 
     private PersistentCacheManager buildCacheManager() {
@@ -192,8 +201,14 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
 
     @Override
     public void put(K key, V value) {
-        cache.put(key, value);
-        keystore.add(key.hashCode());
+        try {
+            if (checkPolicies(value)) {
+                cache.put(key, value);
+                keystore.add(key.hashCode());
+            }
+        } catch (IOException e) {
+            // Ignore for now, figure out what to do here
+        }
     }
 
     @Override
@@ -250,6 +265,19 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         } catch (CachePersistenceException e) {
             throw new OpenSearchException("Exception occurred while destroying ehcache and associated data", e);
         }
+    }
+
+    private boolean checkPolicies(V value) throws IOException {
+        for (CacheTierPolicy<QuerySearchResult> policy : policies) {
+            if (!policy.checkData((BytesReference) value)) {
+                // TODO: Change caching policy to take generic input
+                // (This will most likely have to happen after serializer is merged, by using the byte[] the value serializer
+                // produces to create a stream which we can pass to the caching policy, thereby avoiding having to make two diff streams
+                // in checking caching policy and also putting into the disk tier)
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -355,6 +383,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
 
         // Provides capability to make ehCache event listener to run in sync mode. Used for testing too.
         private boolean isEventListenerModeSync;
+        private final ArrayList<CacheTierPolicy<QuerySearchResult>> policies = new ArrayList<>();
 
         public Builder() {}
 
@@ -409,6 +438,11 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
 
         public EhCacheDiskCachingTier.Builder<K, V> setIsEventListenerModeSync(boolean isEventListenerModeSync) {
             this.isEventListenerModeSync = isEventListenerModeSync;
+            return this;
+        }
+
+        public EhCacheDiskCachingTier.Builder<K, V> withPolicy(CacheTierPolicy<QuerySearchResult> policy) {
+            policies.add(policy);
             return this;
         }
 
