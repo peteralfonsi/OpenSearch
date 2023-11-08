@@ -8,10 +8,15 @@
 
 package org.opensearch.common.cache.tier;
 
+import org.opensearch.common.cache.Cache;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
+import org.opensearch.core.common.bytes.BytesReference;
+import org.opensearch.indices.IndicesRequestCache;
+import org.opensearch.search.query.QuerySearchResult;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -23,8 +28,9 @@ import java.util.function.Function;
  * cache items to disk tier cache.
  * @param <K> Type of key
  * @param <V> Type of value
+ * @param <W> Type that V can be unpacked into for inspection by policies. Can be the same as V.
  */
-public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheService<K, V>, RemovalListener<K, V> {
+public class TieredCacheSpilloverStrategyService<K, V, W> implements TieredCacheService<K, V, W>, RemovalListener<K, V> {
 
     private final OnHeapCachingTier<K, V> onHeapCachingTier;
 
@@ -38,13 +44,17 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
      * Maintains caching tiers in order of get calls.
      */
     private final List<CachingTier<K, V>> cachingTierList;
+    private final List<CacheTierPolicy<W>> policies;
+    private final Function<V, W> transformationFunction;
 
-    private TieredCacheSpilloverStrategyService(Builder<K, V> builder) {
+    private TieredCacheSpilloverStrategyService(Builder<K, V, W> builder) {
         this.onHeapCachingTier = Objects.requireNonNull(builder.onHeapCachingTier);
         this.diskCachingTier = Optional.ofNullable(builder.diskCachingTier);
         this.tieredCacheEventListener = Objects.requireNonNull(builder.tieredCacheEventListener);
         this.cachingTierList = this.diskCachingTier.map(diskTier -> Arrays.asList(onHeapCachingTier, diskTier))
             .orElse(List.of(onHeapCachingTier));
+        this.policies = Objects.requireNonNull(builder.policies);
+        this.transformationFunction = Objects.requireNonNull(builder.transformationFunction);
         setRemovalListeners();
     }
 
@@ -130,10 +140,12 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
         if (RemovalReason.EVICTED.equals(notification.getRemovalReason())) {
             switch (notification.getTierType()) {
                 case ON_HEAP:
-                    diskCachingTier.ifPresent(diskTier -> {
-                        diskTier.put(notification.getKey(), notification.getValue());
-                        tieredCacheEventListener.onCached(notification.getKey(), notification.getValue(), TierType.DISK);
-                    });
+                    if (checkPolicies(notification.getValue())) {
+                        diskCachingTier.ifPresent(diskTier -> {
+                            diskTier.put(notification.getKey(), notification.getValue());
+                            tieredCacheEventListener.onCached(notification.getKey(), notification.getValue(), TierType.DISK);
+                        });
+                    }
                     break;
                 default:
                     break;
@@ -150,6 +162,21 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
     @Override
     public Optional<DiskCachingTier<K, V>> getDiskCachingTier() {
         return this.diskCachingTier;
+    }
+
+    @Override
+    public W preDiskCachingPolicyFunction(V value) {
+        return transformationFunction.apply(value);
+    }
+
+    boolean checkPolicies(V value) {
+        W unpacked = preDiskCachingPolicyFunction(value);
+        for (CacheTierPolicy<W> policy : policies) {
+            if (!policy.checkData(unpacked)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -197,31 +224,50 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
      * Builder object
      * @param <K> Type of key
      * @param <V> Type of value
+     * @param <W> Type that V can be unpacked into for inspection by policies. Can be the same as V.
      */
-    public static class Builder<K, V> {
+    public static class Builder<K, V, W> {
         private OnHeapCachingTier<K, V> onHeapCachingTier;
         private DiskCachingTier<K, V> diskCachingTier;
         private TieredCacheEventListener<K, V> tieredCacheEventListener;
+        private ArrayList<CacheTierPolicy<W>> policies = new ArrayList<>();
+        private Function<V, W> transformationFunction;
 
         public Builder() {}
 
-        public Builder<K, V> setOnHeapCachingTier(OnHeapCachingTier<K, V> onHeapCachingTier) {
+        public Builder<K, V, W> setOnHeapCachingTier(OnHeapCachingTier<K, V> onHeapCachingTier) {
             this.onHeapCachingTier = onHeapCachingTier;
             return this;
         }
 
-        public Builder<K, V> setOnDiskCachingTier(DiskCachingTier<K, V> diskCachingTier) {
+        public Builder<K, V, W> setOnDiskCachingTier(DiskCachingTier<K, V> diskCachingTier) {
             this.diskCachingTier = diskCachingTier;
             return this;
         }
 
-        public Builder<K, V> setTieredCacheEventListener(TieredCacheEventListener<K, V> tieredCacheEventListener) {
+        public Builder<K, V, W> setTieredCacheEventListener(TieredCacheEventListener<K, V> tieredCacheEventListener) {
             this.tieredCacheEventListener = tieredCacheEventListener;
             return this;
         }
 
-        public TieredCacheSpilloverStrategyService<K, V> build() {
-            return new TieredCacheSpilloverStrategyService<K, V>(this);
+        public Builder<K, V, W> withPolicy(CacheTierPolicy<W> policy) {
+            this.policies.add(policy);
+            return this;
+        }
+
+        // Add multiple policies at once
+        public Builder<K, V, W> withPolicies(List<CacheTierPolicy<W>> policiesList) {
+            this.policies.addAll(policiesList);
+            return this;
+        }
+
+        public Builder<K, V, W> withPreDiskCachingPolicyFunction(Function<V, W> function) {
+            this.transformationFunction = function;
+            return this;
+        }
+
+        public TieredCacheSpilloverStrategyService<K, V, W> build() {
+            return new TieredCacheSpilloverStrategyService<K, V, W>(this);
         }
     }
 

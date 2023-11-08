@@ -41,16 +41,28 @@ import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.Query;
+import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.BytesRef;
+import org.opensearch.action.OriginalIndices;
+import org.opensearch.action.OriginalIndicesTests;
+import org.opensearch.action.search.SearchRequest;
 import org.opensearch.common.CheckedSupplier;
+import org.opensearch.common.UUIDs;
+import org.opensearch.common.cache.tier.DiskTierTookTimePolicyTests;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
+import org.opensearch.common.lucene.search.TopDocsAndMaxScore;
+import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.io.IOUtils;
+import org.opensearch.core.common.Strings;
 import org.opensearch.core.common.bytes.AbstractBytesReference;
+import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -62,6 +74,12 @@ import org.opensearch.index.IndexService;
 import org.opensearch.index.cache.request.ShardRequestCache;
 import org.opensearch.index.query.TermQueryBuilder;
 import org.opensearch.index.shard.IndexShard;
+import org.opensearch.search.DocValueFormat;
+import org.opensearch.search.SearchShardTarget;
+import org.opensearch.search.internal.AliasFilter;
+import org.opensearch.search.internal.ShardSearchContextId;
+import org.opensearch.search.internal.ShardSearchRequest;
+import org.opensearch.search.query.QuerySearchResult;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
 import java.io.IOException;
@@ -73,7 +91,8 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
 
     public void testBasicOperationsCache() throws Exception {
         ShardRequestCache requestCacheStats = new ShardRequestCache();
-        IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class));
+        ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
+        IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class), dummyClusterSettings);
         Directory dir = newDirectory();
         IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig());
 
@@ -127,7 +146,8 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
     }
 
     public void testCacheDifferentReaders() throws Exception {
-        IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class));
+        ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
+        IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class), dummyClusterSettings);
         AtomicBoolean indexShard = new AtomicBoolean(true);
         ShardRequestCache requestCacheStats = new ShardRequestCache();
         Directory dir = newDirectory();
@@ -222,8 +242,9 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
 
     public void testEviction() throws Exception {
         final ByteSizeValue size;
+        ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         {
-            IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class));
+            IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class), dummyClusterSettings);
             AtomicBoolean indexShard = new AtomicBoolean(true);
             ShardRequestCache requestCacheStats = new ShardRequestCache();
             Directory dir = newDirectory();
@@ -250,7 +271,8 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         }
         IndicesRequestCache cache = new IndicesRequestCache(
             Settings.builder().put(IndicesRequestCache.INDICES_CACHE_QUERY_SIZE.getKey(), size.getBytes() + 1 + "b").build(),
-            null
+            null,
+            dummyClusterSettings
         );
         AtomicBoolean indexShard = new AtomicBoolean(true);
         ShardRequestCache requestCacheStats = new ShardRequestCache();
@@ -287,7 +309,8 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
     }
 
     public void testClearAllEntityIdentity() throws Exception {
-        IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class));
+        ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
+        IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class), dummyClusterSettings);
         AtomicBoolean indexShard = new AtomicBoolean(true);
 
         ShardRequestCache requestCacheStats = new ShardRequestCache();
@@ -372,7 +395,8 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
 
     public void testInvalidate() throws Exception {
         ShardRequestCache requestCacheStats = new ShardRequestCache();
-        IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class));
+        ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
+        IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class), dummyClusterSettings);
         Directory dir = newDirectory();
         IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig());
 
@@ -492,6 +516,49 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         assertEquals(shardCacheEntity.getCacheIdentity(), key2.entity.getCacheIdentity());
         assertEquals(termBytes, key2.value);
 
+    }
+
+    private static BytesReference getQSRBytesReference(long tookTimeNanos) throws IOException {
+        // unfortunately no good way to separate this out from DiskTierTookTimePolicyTests.getQSR() :(
+        ShardId shardId = new ShardId("index", "uuid", randomInt());
+        SearchRequest searchRequest = new SearchRequest().allowPartialSearchResults(randomBoolean());
+        ShardSearchRequest shardSearchRequest = new ShardSearchRequest(
+            OriginalIndicesTests.randomOriginalIndices(),
+            searchRequest,
+            shardId,
+            1,
+            new AliasFilter(null, Strings.EMPTY_ARRAY),
+            1.0f,
+            randomNonNegativeLong(),
+            null,
+            new String[0]
+        );
+        ShardSearchContextId id = new ShardSearchContextId(UUIDs.base64UUID(), randomLong());
+        QuerySearchResult result = new QuerySearchResult(
+            id,
+            new SearchShardTarget("node", shardId, null, OriginalIndices.NONE),
+            shardSearchRequest
+        );
+        TopDocs topDocs = new TopDocs(new TotalHits(randomLongBetween(0, Long.MAX_VALUE), TotalHits.Relation.EQUAL_TO), new ScoreDoc[0]);
+        result.topDocs(new TopDocsAndMaxScore(topDocs, randomBoolean() ? Float.NaN : randomFloat()), new DocValueFormat[0]);
+
+        result.setTookTimeNanos(tookTimeNanos);
+
+        BytesStreamOutput out = new BytesStreamOutput();
+        // it appears to need a boolean and then a ShardSearchContextId written to the stream before the QSR in order to deserialize?
+        out.writeBoolean(false);
+        id.writeTo(out);
+        result.writeToNoId(out);
+        return out.bytes();
+    }
+
+    public void testBytesReferenceToQSRFunction() throws Exception {
+        BytesReference badQSR = new BytesArray("I love bytes!!!");
+        long ttn = 1000L;
+        BytesReference goodQSR = getQSRBytesReference(ttn);
+        assertThrows(IOException.class, () -> IndicesRequestCache.convertBytesReferenceToQSR(badQSR));
+        QuerySearchResult unpackedQSR = IndicesRequestCache.convertBytesReferenceToQSR(goodQSR);
+        assertEquals(ttn, (long) unpackedQSR.getTookTimeNanos());
     }
 
     private class TestBytesReference extends AbstractBytesReference {

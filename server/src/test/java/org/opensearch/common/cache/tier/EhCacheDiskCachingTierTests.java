@@ -222,7 +222,7 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
         }
     }
 
-    public void testThresholdPolicy() throws Exception {
+    /*public void testThresholdPolicy() throws Exception {
         long slowTookTimeNanos = 10000000000L; // 10 seconds
         BytesReference slowResult = DiskTierTookTimePolicyTests.getQSRBytesReference(slowTookTimeNanos);
 
@@ -255,7 +255,7 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
             assertNull(tier.get("fast")); // key "fast" -> null because the policy rejected it
             tier.close();
         }
-    }
+    }*/
 
     private RemovalListener<String, String> removalListener(AtomicInteger counter) {
         return notification -> counter.incrementAndGet();

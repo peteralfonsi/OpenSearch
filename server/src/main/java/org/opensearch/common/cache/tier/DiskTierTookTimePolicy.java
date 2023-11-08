@@ -55,10 +55,12 @@ public class DiskTierTookTimePolicy implements CacheTierPolicy<QuerySearchResult
     );
 
     private TimeValue threshold;
+    boolean isActive;
 
     public DiskTierTookTimePolicy(Settings settings, ClusterSettings clusterSettings) {
         this.threshold = DISK_TOOKTIME_THRESHOLD_SETTING.get(settings);
         clusterSettings.addSettingsUpdateConsumer(DISK_TOOKTIME_THRESHOLD_SETTING, this::setThreshold);
+        isActive = true;
     }
 
     protected void setThreshold(TimeValue threshold) { // public so that we can manually set value in unit test
@@ -66,17 +68,10 @@ public class DiskTierTookTimePolicy implements CacheTierPolicy<QuerySearchResult
     }
 
     @Override
-    public QuerySearchResult convertFromBytesReference(BytesReference data) throws IOException {
-        try {
-            return new QuerySearchResult(data.streamInput());
-        } catch (IllegalStateException ise) {
-            throw new IOException(ise);
+    public boolean checkData(QuerySearchResult qsr) {
+        if (!isActive) {
+            return true;
         }
-    }
-
-    @Override
-    public boolean checkData(BytesReference data) throws IOException {
-        QuerySearchResult qsr = convertFromBytesReference(data);
         Long tookTimeNanos = qsr.getTookTimeNanos();
         if (tookTimeNanos == null) {
             return true;
@@ -87,5 +82,21 @@ public class DiskTierTookTimePolicy implements CacheTierPolicy<QuerySearchResult
             return false;
         }
         return true;
+    }
+
+    @Override
+    public boolean isActive() {
+        return isActive;
+    }
+
+    @Override
+    public void activate() {
+        isActive = true;
+
+    }
+
+    @Override
+    public void deactivate() {
+        isActive = false;
     }
 }

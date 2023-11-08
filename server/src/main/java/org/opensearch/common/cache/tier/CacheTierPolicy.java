@@ -38,19 +38,24 @@ import java.io.IOException;
 
 public interface CacheTierPolicy<T> {
     /**
-     * Determines whether this policy allows the data into its cache tier, based on the contents of the BytesReference
-     * which can be deserialized into class T.
-     * @param data A BytesReference which can be deserialized into class T
-     * @return A CheckDataResult object containing whether the data is admitted, and if it isn't, the reason.
-     * @throws IOException if the input can't be deserialized to the right class.
+     * Determines whether this policy allows the data into its cache tier.
+     * @param data The data to check
+     * @return true if accepted, otherwise false
      */
-    boolean checkData(BytesReference data) throws IOException;
+    boolean checkData(T data);
 
     /**
-     * Convert the BytesReference into the type T that is used to check entry into the cache.
-     * @param data The BytesReference
-     * @return The BytesReference converted to type T
-     * @throws IOException if the input can't be deserialized to the right class.
+     * Checks whether the policy is currently being enforced.
      */
-    T convertFromBytesReference(BytesReference data) throws IOException;
+    boolean isActive();
+
+    /**
+     * Starts enforcing the policy if it is not already being enforced.
+     */
+    void activate();
+
+    /**
+     * Stops enforcing the policy. The policy will allow all input.
+     */
+    void deactivate();
 }
