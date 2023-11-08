@@ -32,14 +32,19 @@
 
 package org.opensearch.index.cache.request;
 
+import org.opensearch.Version;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.core.xcontent.ToXContentFragment;
 import org.opensearch.core.xcontent.XContentBuilder;
+import org.opensearch.indices.TierType;
 
 import java.io.IOException;
+import java.util.EnumMap;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Request for the query cache statistics
@@ -48,69 +53,125 @@ import java.io.IOException;
  */
 public class RequestCacheStats implements Writeable, ToXContentFragment {
 
-    private long memorySize;
-    private long evictions;
-    private long hitCount;
-    private long missCount;
+    private Map<String, StatsHolder> map = new HashMap<>(){{
+        for (TierType tierType : TierType.values())
+        {
+            put(tierType.getStringValue(), new StatsHolder());
+            // Every possible tier type must have counters, even if they are disabled. Then the counters report 0
+        }}
+    };
 
     public RequestCacheStats() {}
 
     public RequestCacheStats(StreamInput in) throws IOException {
-        memorySize = in.readVLong();
-        evictions = in.readVLong();
-        hitCount = in.readVLong();
-        missCount = in.readVLong();
+        if (in.getVersion().onOrAfter(Version.V_3_0_0)) {
+            this.map = in.readMap(StreamInput::readString, StatsHolder::new);
+        } else {
+            // objects from earlier versions only contain on-heap info, and do not have entries info
+            long memorySize = in.readVLong();
+            long evictions = in.readVLong();
+            long hitCount = in.readVLong();
+            long missCount = in.readVLong();
+            this.map.put(TierType.ON_HEAP.getStringValue(), new StatsHolder(memorySize, evictions, hitCount, missCount, 0));
+        }
     }
 
-    public RequestCacheStats(long memorySize, long evictions, long hitCount, long missCount) {
-        this.memorySize = memorySize;
-        this.evictions = evictions;
-        this.hitCount = hitCount;
-        this.missCount = missCount;
+    public RequestCacheStats(Map<TierType, StatsHolder> inputMap) {
+        // Create a RequestCacheStats with multiple tiers' statistics
+        for (TierType tierType : inputMap.keySet()) {
+            map.put(tierType.getStringValue(), inputMap.get(tierType));
+        }
     }
 
     public void add(RequestCacheStats stats) {
-        this.memorySize += stats.memorySize;
-        this.evictions += stats.evictions;
-        this.hitCount += stats.hitCount;
-        this.missCount += stats.missCount;
+        for (String tier : stats.map.keySet()) {
+            map.get(tier).add(stats.map.get(tier));
+        }
     }
 
+    private StatsHolder getTierStats(TierType tierType) {
+        return map.get(tierType.getStringValue());
+    }
+
+    public long getMemorySizeInBytes(TierType tierType) {
+        return getTierStats(tierType).totalMetric.count();
+    }
+
+    public ByteSizeValue getMemorySize(TierType tierType) {
+        return new ByteSizeValue(getMemorySizeInBytes(tierType));
+    }
+
+    public long getEvictions(TierType tierType) {
+        return getTierStats(tierType).evictionsMetric.count();
+    }
+
+    public long getHitCount(TierType tierType) {
+        return getTierStats(tierType).hitCount.count();
+    }
+
+    public long getMissCount(TierType tierType) {
+        return getTierStats(tierType).missCount.count();
+    }
+
+    public long getEntries(TierType tierType) {
+        return getTierStats(tierType).entries.count();
+    }
+
+    // By default, return on-heap stats if no tier is specified
+
     public long getMemorySizeInBytes() {
-        return this.memorySize;
+        return getMemorySizeInBytes(TierType.ON_HEAP);
     }
 
     public ByteSizeValue getMemorySize() {
-        return new ByteSizeValue(memorySize);
+        return getMemorySize(TierType.ON_HEAP);
     }
 
     public long getEvictions() {
-        return this.evictions;
+        return getEvictions(TierType.ON_HEAP);
     }
 
     public long getHitCount() {
-        return this.hitCount;
+        return getHitCount(TierType.ON_HEAP);
     }
 
     public long getMissCount() {
-        return this.missCount;
+        return getMissCount(TierType.ON_HEAP);
+    }
+
+    public long getEntries() {
+        return getEntries(TierType.ON_HEAP);
     }
 
     @Override
     public void writeTo(StreamOutput out) throws IOException {
-        out.writeVLong(memorySize);
-        out.writeVLong(evictions);
-        out.writeVLong(hitCount);
-        out.writeVLong(missCount);
+        if (out.getVersion().onOrAfter(Version.V_3_0_0)) {
+            out.writeMap(this.map, StreamOutput::writeString, (o, v) -> v.writeTo(o)); // ?
+        } else {
+            // Write only on-heap values, and don't write entries metric
+            StatsHolder heapStats = map.get(TierType.ON_HEAP.getStringValue());
+            out.writeVLong(heapStats.getMemorySize());
+            out.writeVLong(heapStats.getEvictions());
+            out.writeVLong(heapStats.getHitCount());
+            out.writeVLong(heapStats.getMissCount());
+        }
     }
 
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         builder.startObject(Fields.REQUEST_CACHE_STATS);
-        builder.humanReadableField(Fields.MEMORY_SIZE_IN_BYTES, Fields.MEMORY_SIZE, getMemorySize());
-        builder.field(Fields.EVICTIONS, getEvictions());
-        builder.field(Fields.HIT_COUNT, getHitCount());
-        builder.field(Fields.MISS_COUNT, getMissCount());
+        // write on-heap stats outside of tiers object
+        getTierStats(TierType.ON_HEAP).toXContent(builder, params);
+        builder.startObject(Fields.TIERS);
+        for (TierType tierType : TierType.values()) { // fixed order
+            if (tierType != TierType.ON_HEAP) {
+                String tier = tierType.getStringValue();
+                builder.startObject(tier);
+                map.get(tier).toXContent(builder, params);
+                builder.endObject();
+            }
+        }
+        builder.endObject();
         builder.endObject();
         return builder;
     }
@@ -122,10 +183,12 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
      */
     static final class Fields {
         static final String REQUEST_CACHE_STATS = "request_cache";
+        static final String TIERS = "tiers";
         static final String MEMORY_SIZE = "memory_size";
         static final String MEMORY_SIZE_IN_BYTES = "memory_size_in_bytes";
         static final String EVICTIONS = "evictions";
         static final String HIT_COUNT = "hit_count";
         static final String MISS_COUNT = "miss_count";
+        static final String ENTRIES = "entries";
     }
 }

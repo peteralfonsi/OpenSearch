@@ -191,5 +191,4 @@ grant {
   // For ehcache
   permission java.lang.RuntimePermission "createClassLoader";
   permission java.lang.RuntimePermission "accessClassInPackage.sun.misc";
-
 };

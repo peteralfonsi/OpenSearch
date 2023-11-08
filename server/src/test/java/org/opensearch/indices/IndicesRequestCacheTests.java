@@ -51,6 +51,7 @@ import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.common.bytes.AbstractBytesReference;
+import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -65,6 +66,7 @@ import org.opensearch.index.shard.IndexShard;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
 import java.io.IOException;
+import java.io.Serializable;
 import java.util.Arrays;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -124,6 +126,126 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
 
         IOUtils.close(reader, writer, dir, cache);
         assertEquals(0, cache.numRegisteredCloseListeners());
+        cache.closeDiskTier();
+    }
+
+    public void testAddDirectToEhcache() throws Exception {
+        // this test is for debugging serialization issues and can eventually be removed
+        // Put breakpoints at line 260 of AbstractOffHeapStore to catch serialization errors
+        // that would otherwise fail silently
+        ShardRequestCache requestCacheStats = new ShardRequestCache();
+        Settings.Builder settingsBuilder = Settings.builder();
+        long heapSizeBytes = 1000;
+        settingsBuilder.put("indices.requests.cache.size", new ByteSizeValue(heapSizeBytes));
+        IndicesRequestCache cache = new IndicesRequestCache(settingsBuilder.build(), getInstanceFromNode(IndicesService.class));
+
+        // set up a key
+        Directory dir = newDirectory();
+        IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig());
+        writer.addDocument(newDoc(0, "foo"));
+        DirectoryReader reader = OpenSearchDirectoryReader.wrap(DirectoryReader.open(writer), new ShardId("foo", "bar", 1));
+        AtomicBoolean indexShard = new AtomicBoolean(true);
+        TestEntity entity = new TestEntity(requestCacheStats, indexShard);
+        TermQueryBuilder termQuery = new TermQueryBuilder("id", "0");
+        BytesReference termBytes = XContentHelper.toXContent(termQuery, MediaTypeRegistry.JSON, false);
+        String rKey = ((OpenSearchDirectoryReader) reader).getDelegatingCacheHelper().getDelegatingCacheKey().getId().toString();
+        IndicesRequestCache.Key key = cache.new Key(entity, termBytes, rKey);
+
+        BytesReference value = new BytesArray(new byte[] { 0 });
+        cache.tieredCacheHandler.getDiskCachingTier().put(key, value);
+
+        BytesReference res = cache.tieredCacheHandler.getDiskCachingTier().get(key);
+        assertEquals(value, res);
+        assertEquals(1, cache.tieredCacheHandler.count(TierType.DISK));
+
+        IOUtils.close(reader, writer, dir, cache);
+        cache.closeDiskTier();
+    }
+
+    public void testSpillover() throws Exception {
+        // fill the on-heap cache until we spill over
+        ShardRequestCache requestCacheStats = new ShardRequestCache();
+        Settings.Builder settingsBuilder = Settings.builder();
+        long heapSizeBytes = 1000; // each of these queries is 131 bytes, so we can fit 7 in the heap cache
+        int heapKeySize = 131;
+        int maxNumInHeap = 1000 / heapKeySize;
+        settingsBuilder.put("indices.requests.cache.size", new ByteSizeValue(heapSizeBytes));
+        IndicesRequestCache cache = new IndicesRequestCache(settingsBuilder.build(), getInstanceFromNode(IndicesService.class));
+
+        Directory dir = newDirectory();
+        IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig());
+        writer.addDocument(newDoc(0, "foo"));
+        DirectoryReader reader = OpenSearchDirectoryReader.wrap(DirectoryReader.open(writer), new ShardId("foo", "bar", 1));
+        AtomicBoolean indexShard = new AtomicBoolean(true);
+
+        TestEntity entity = new TestEntity(requestCacheStats, indexShard);
+        Loader loader = new Loader(reader, 0);
+        System.out.println("On-heap cache size at start = " + requestCacheStats.stats().getMemorySizeInBytes());
+        BytesReference[] termBytesArr = new BytesReference[maxNumInHeap + 1];
+
+        for (int i = 0; i < maxNumInHeap + 1; i++) {
+            TermQueryBuilder termQuery = new TermQueryBuilder("id", String.valueOf(i));
+            BytesReference termBytes = XContentHelper.toXContent(termQuery, MediaTypeRegistry.JSON, false);
+            String rKey = ((OpenSearchDirectoryReader) reader).getDelegatingCacheHelper().getDelegatingCacheKey().getId().toString();
+            termBytesArr[i] = termBytes;
+            BytesReference value = cache.getOrCompute(entity, loader, reader, termBytes);
+        }
+        // get value from disk cache, the first key should have been evicted
+        BytesReference firstValue = cache.getOrCompute(entity, loader, reader, termBytesArr[0]);
+
+        assertEquals(maxNumInHeap * heapKeySize, requestCacheStats.stats().getMemorySizeInBytes());
+        // TODO: disk weight bytes
+        assertEquals(1, requestCacheStats.stats().getEvictions());
+        assertEquals(1, requestCacheStats.stats().getHitCount(TierType.DISK));
+        assertEquals(maxNumInHeap + 1, requestCacheStats.stats().getMissCount(TierType.DISK));
+        assertEquals(0, requestCacheStats.stats().getHitCount());
+        assertEquals(maxNumInHeap + 2, requestCacheStats.stats().getMissCount());
+        assertEquals(maxNumInHeap, cache.tieredCacheHandler.count(TierType.ON_HEAP));
+        assertEquals(1, cache.tieredCacheHandler.count(TierType.DISK));
+
+        // get a value from heap cache, second key should still be there
+        BytesReference secondValue = cache.getOrCompute(entity, loader, reader, termBytesArr[1]);
+        // get the value on disk cache again
+        BytesReference firstValueAgain = cache.getOrCompute(entity, loader, reader, termBytesArr[0]);
+
+        assertEquals(1, requestCacheStats.stats().getEvictions());
+        assertEquals(2, requestCacheStats.stats().getHitCount(TierType.DISK));
+        assertEquals(maxNumInHeap + 1, requestCacheStats.stats().getMissCount(TierType.DISK));
+        assertEquals(1, requestCacheStats.stats().getHitCount());
+        assertEquals(maxNumInHeap + 3, requestCacheStats.stats().getMissCount());
+        assertEquals(maxNumInHeap, cache.tieredCacheHandler.count(TierType.ON_HEAP));
+        assertEquals(1, cache.tieredCacheHandler.count(TierType.DISK));
+
+        IOUtils.close(reader, writer, dir, cache);
+        cache.closeDiskTier();
+    }
+
+    public void testDiskGetTimeEWMA() throws Exception {
+        ShardRequestCache requestCacheStats = new ShardRequestCache();
+        Settings.Builder settingsBuilder = Settings.builder();
+        long heapSizeBytes = 0; // skip directly to disk cache
+        settingsBuilder.put("indices.requests.cache.size", new ByteSizeValue(heapSizeBytes));
+        IndicesRequestCache cache = new IndicesRequestCache(settingsBuilder.build(), getInstanceFromNode(IndicesService.class));
+
+        Directory dir = newDirectory();
+        IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig());
+        writer.addDocument(newDoc(0, "foo"));
+        DirectoryReader reader = OpenSearchDirectoryReader.wrap(DirectoryReader.open(writer), new ShardId("foo", "bar", 1));
+        AtomicBoolean indexShard = new AtomicBoolean(true);
+
+        TestEntity entity = new TestEntity(requestCacheStats, indexShard);
+        Loader loader = new Loader(reader, 0);
+
+        for (int i = 0; i < 50; i++) {
+            TermQueryBuilder termQuery = new TermQueryBuilder("id", String.valueOf(i));
+            BytesReference termBytes = XContentHelper.toXContent(termQuery, MediaTypeRegistry.JSON, false);
+            BytesReference value = cache.getOrCompute(entity, loader, reader, termBytes);
+            // on my machine get time EWMA converges to ~0.025 ms, but it does have an SSD
+            assertTrue(cache.tieredCacheHandler.diskGetTimeMillisEWMA() > 0);
+        }
+
+        IOUtils.close(reader, writer, dir, cache);
+        cache.closeDiskTier();
     }
 
     public void testCacheDifferentReaders() throws Exception {
@@ -218,6 +340,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
 
         IOUtils.close(secondReader, writer, dir, cache);
         assertEquals(0, cache.numRegisteredCloseListeners());
+        cache.closeDiskTier();
     }
 
     public void testEviction() throws Exception {
@@ -247,6 +370,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
             assertEquals("bar", value2.streamInput().readString());
             size = requestCacheStats.stats().getMemorySize();
             IOUtils.close(reader, secondReader, writer, dir, cache);
+            cache.closeDiskTier();
         }
         IndicesRequestCache cache = new IndicesRequestCache(
             Settings.builder().put(IndicesRequestCache.INDICES_CACHE_QUERY_SIZE.getKey(), size.getBytes() + 1 + "b").build(),
@@ -284,6 +408,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         assertEquals(2, cache.count());
         assertEquals(1, requestCacheStats.stats().getEvictions());
         IOUtils.close(reader, secondReader, thirdReader, writer, dir, cache);
+        cache.closeDiskTier();
     }
 
     public void testClearAllEntityIdentity() throws Exception {
@@ -331,6 +456,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         assertEquals("baz", value3.streamInput().readString());
 
         IOUtils.close(reader, secondReader, thirdReader, writer, dir, cache);
+        cache.closeDiskTier();
 
     }
 
@@ -436,6 +562,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
 
         IOUtils.close(reader, writer, dir, cache);
         assertEquals(0, cache.numRegisteredCloseListeners());
+        cache.closeDiskTier();
     }
 
     public void testEqualsKey() throws IOException {
@@ -495,7 +622,6 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
     }
 
     private class TestBytesReference extends AbstractBytesReference {
-
         int dummyValue;
 
         TestBytesReference(int dummyValue) {
@@ -545,7 +671,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         }
     }
 
-    private class TestEntity extends AbstractIndexShardCacheEntity {
+    private class TestEntity extends AbstractIndexShardCacheEntity implements Serializable {
         private final AtomicBoolean standInForIndexShard;
         private final ShardRequestCache shardRequestCache;
 

@@ -55,13 +55,7 @@ public final class ShardRequestCache {
     }
 
     public RequestCacheStats stats() {
-        // TODO: Change RequestCacheStats to support disk tier stats.
-        return new RequestCacheStats(
-            statsHolder.get(TierType.ON_HEAP).totalMetric.count(),
-            statsHolder.get(TierType.ON_HEAP).evictionsMetric.count(),
-            statsHolder.get(TierType.ON_HEAP).hitCount.count(),
-            statsHolder.get(TierType.ON_HEAP).missCount.count()
-        );
+        return new RequestCacheStats(statsHolder);
     }
 
     public void onHit(TierType tierType) {
@@ -74,6 +68,7 @@ public final class ShardRequestCache {
 
     public void onCached(Accountable key, BytesReference value, TierType tierType) {
         statsHolder.get(tierType).totalMetric.inc(key.ramBytesUsed() + value.ramBytesUsed());
+        statsHolder.get(tierType).entries.inc();
     }
 
     public void onRemoval(Accountable key, BytesReference value, boolean evicted, TierType tierType) {
@@ -88,13 +83,6 @@ public final class ShardRequestCache {
             dec += value.ramBytesUsed();
         }
         statsHolder.get(tierType).totalMetric.dec(dec);
-    }
-
-    static class StatsHolder {
-
-        final CounterMetric evictionsMetric = new CounterMetric();
-        final CounterMetric totalMetric = new CounterMetric();
-        final CounterMetric hitCount = new CounterMetric();
-        final CounterMetric missCount = new CounterMetric();
+        statsHolder.get(tierType).entries.dec();
     }
 }

@@ -114,7 +114,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     private final ByteSizeValue size;
     private final TimeValue expire;
     private final TieredCacheService<Key, BytesReference> tieredCacheService;
-
     private final IndicesService indicesService;
 
     IndicesRequestCache(Settings settings, IndicesService indicesService) {
@@ -215,7 +214,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      * @opensearch.internal
      */
     private static class Loader implements TieredCacheLoader<Key, BytesReference> {
-
         private final CacheEntity entity;
         private final CheckedSupplier<BytesReference, IOException> loader;
         private boolean loaded;
