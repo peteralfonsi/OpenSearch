@@ -170,7 +170,14 @@ public class TieredCacheSpilloverStrategyService<K, V, W> implements TieredCache
     }
 
     boolean checkPolicies(V value) {
-        W unpacked = preDiskCachingPolicyFunction(value);
+        W unpacked;
+        try {
+            unpacked = preDiskCachingPolicyFunction(value);
+        } catch (Exception e) {
+            // Bandaid solution: Accept any values that can't be unpacked into type W.
+            // TODO: Decide if this is reasonable, or if we should require the IRC to only accept BytesReferences which can be turned into QSRs.
+            return true;
+        }
         for (CacheTierPolicy<W> policy : policies) {
             if (!policy.checkData(unpacked)) {
                 return false;

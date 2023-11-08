@@ -227,12 +227,8 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     // Passed to TieredCacheService as its V -> W transformation function for inspecting BytesReferences in policies
-    public static QuerySearchResult convertBytesReferenceToQSR(BytesReference data) throws IOException {
-        try {
-            return new QuerySearchResult(data.streamInput());
-        } catch (IllegalStateException ise) {
-            throw new IOException(ise);
-        }
+    public static QuerySearchResult convertBytesReferenceToQSR(BytesReference data) throws IOException, IllegalStateException {
+        return new QuerySearchResult(data.streamInput());
     }
 
     /**
