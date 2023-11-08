@@ -30,7 +30,7 @@
  * GitHub history for details.
  */
 
-package org.opensearch.indices;
+package org.opensearch.common.cache.tier;
 
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
@@ -67,18 +67,10 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
     }
 
     public void testQSRSetupFunction() throws IOException {
-        long ttn = 100000000000L;
-        BytesReference qsrBytes = getQSRBytesReference(ttn);
-        QuerySearchResult qsr = new QuerySearchResult(qsrBytes.streamInput());
+        Long ttn = 100000000000L;
+        QuerySearchResult qsr = getQSR(ttn);
         assertEquals(ttn, qsr.getTookTimeNanos());
     }
-
-    public void testBadBytesReference() throws Exception {
-        BytesReference badQSR = new BytesArray("I love bytes!!!");
-        DiskTierTookTimePolicy tookTimePolicy = getTookTimePolicy();
-        assertThrows(IOException.class, () -> tookTimePolicy.checkData(badQSR));
-    }
-
     public void testTookTimePolicy() throws Exception {
         DiskTierTookTimePolicy tookTimePolicy = getTookTimePolicy();
 
@@ -87,8 +79,8 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
         long shortMillis = (long) (0.9 * threshMillis);
         long longMillis = (long) (1.5 * threshMillis);
         tookTimePolicy.setThreshold(new TimeValue((long) threshMillis));
-        BytesReference shortQSR = getQSRBytesReference(shortMillis * 1000000);
-        BytesReference longQSR = getQSRBytesReference(longMillis * 1000000);
+        QuerySearchResult shortQSR = getQSR(shortMillis * 1000000);
+        QuerySearchResult longQSR = getQSR(longMillis * 1000000);
 
         boolean shortResult = tookTimePolicy.checkData(shortQSR);
         assertFalse(shortResult);
@@ -96,8 +88,8 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
         assertTrue(longResult);
     }
 
-     static BytesReference getQSRBytesReference(long tookTimeNanos) throws IOException {
-        // package-private, also used by EhCacheDiskCachingTierTests.java
+     public static QuerySearchResult getQSR(long tookTimeNanos) {
+        // package-private, also used by IndicesRequestCacheTests.java
         // setup from QuerySearchResultTests.java
         ShardId shardId = new ShardId("index", "uuid", randomInt());
         SearchRequest searchRequest = new SearchRequest().allowPartialSearchResults(randomBoolean());
@@ -122,12 +114,6 @@ public class IndicesRequestCacheDiskTierPolicyTests extends OpenSearchTestCase {
         result.topDocs(new TopDocsAndMaxScore(topDocs, randomBoolean() ? Float.NaN : randomFloat()), new DocValueFormat[0]);
 
         result.setTookTimeNanos(tookTimeNanos);
-        BytesStreamOutput out = new BytesStreamOutput();
-        // it appears to need a boolean and then a ShardSearchContextId written to the stream before the QSR in order to deserialize?
-        out.writeBoolean(false);
-        id.writeTo(out);
-
-        result.writeToNoId(out);
-        return out.bytes();
+        return result;
     }
 }

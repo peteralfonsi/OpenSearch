@@ -40,6 +40,7 @@ import org.apache.lucene.util.Accountable;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
 import org.opensearch.common.cache.tier.OnHeapCachingTier;
 import org.opensearch.common.cache.tier.OpenSearchOnHeapCache;
 import org.opensearch.common.cache.tier.TierType;
@@ -48,6 +49,7 @@ import org.opensearch.common.cache.tier.TieredCacheLoader;
 import org.opensearch.common.cache.tier.TieredCacheService;
 import org.opensearch.common.cache.tier.TieredCacheSpilloverStrategyService;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
+import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
 import org.opensearch.common.settings.Settings;
@@ -58,6 +60,7 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.common.unit.ByteSizeValue;
+import org.opensearch.search.query.QuerySearchResult;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -68,6 +71,7 @@ import java.util.Iterator;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Function;
 
 /**
  * The indices request cache allows to cache a shard level request stage responses, helping with improving
@@ -116,7 +120,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     private final TieredCacheService<Key, BytesReference> tieredCacheService;
     private final IndicesService indicesService;
 
-    IndicesRequestCache(Settings settings, IndicesService indicesService) {
+    IndicesRequestCache(Settings settings, IndicesService indicesService, ClusterSettings clusterSettings) {
         this.size = INDICES_CACHE_QUERY_SIZE.get(settings);
         this.expire = INDICES_CACHE_QUERY_EXPIRE.exists(settings) ? INDICES_CACHE_QUERY_EXPIRE.get(settings) : null;
         long sizeInBytes = size.getBytes();
@@ -127,10 +131,21 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             (k, v) -> k.ramBytesUsed() + v.ramBytesUsed()
         ).setMaximumWeight(sizeInBytes).setExpireAfterAccess(expire).build();
 
+        Function<BytesReference, QuerySearchResult> transformationFunction = (data) -> {
+            try {
+                return convertBytesReferenceToQSR(data);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        };
+
         // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
-        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>().setOnHeapCachingTier(
+        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference, QuerySearchResult>().setOnHeapCachingTier(
             openSearchOnHeapCache
-        ).setTieredCacheEventListener(this).build();
+        ).setTieredCacheEventListener(this)
+            .withPreDiskCachingPolicyFunction(transformationFunction)
+            .withPolicy(new DiskTierTookTimePolicy(settings, clusterSettings))
+            .build();
     }
 
     @Override
@@ -209,6 +224,15 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             readerCacheKeyId = ((OpenSearchDirectoryReader.DelegatingCacheHelper) cacheHelper).getDelegatingCacheKey().getId();
         }
         tieredCacheService.invalidate(new Key(cacheEntity, cacheKey, readerCacheKeyId));
+    }
+
+    // Passed to TieredCacheService as its V -> W transformation function for inspecting BytesReferences in policies
+    public static QuerySearchResult convertBytesReferenceToQSR(BytesReference data) throws IOException {
+        try {
+            return new QuerySearchResult(data.streamInput());
+        } catch (IllegalStateException ise) {
+            throw new IOException(ise);
+        }
     }
 
     /**

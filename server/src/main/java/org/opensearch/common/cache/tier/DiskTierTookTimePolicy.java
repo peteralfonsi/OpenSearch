@@ -30,13 +30,14 @@
  * GitHub history for details.
  */
 
-package org.opensearch.indices;
+package org.opensearch.common.cache.tier;
 
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.common.bytes.BytesReference;
+import org.opensearch.indices.CacheTierPolicy;
 import org.opensearch.search.query.QuerySearchResult;
 
 import java.io.IOException;
@@ -47,7 +48,7 @@ import java.io.IOException;
  * the time it takes to get a result from the cache tier.
  */
 public class DiskTierTookTimePolicy implements CacheTierPolicy<QuerySearchResult> {
-    public static final Setting<TimeValue> INDICES_REQUEST_CACHE_DISK_TOOKTIME_THRESHOLD_SETTING = Setting.positiveTimeSetting(
+    public static final Setting<TimeValue> DISK_TOOKTIME_THRESHOLD_SETTING = Setting.positiveTimeSetting(
         "index.requests.cache.disk.tooktime.threshold",
         new TimeValue(10),
         Setting.Property.Dynamic,
@@ -55,10 +56,12 @@ public class DiskTierTookTimePolicy implements CacheTierPolicy<QuerySearchResult
     );
 
     private TimeValue threshold;
+    boolean isActive;
 
     public DiskTierTookTimePolicy(Settings settings, ClusterSettings clusterSettings) {
-        this.threshold = INDICES_REQUEST_CACHE_DISK_TOOKTIME_THRESHOLD_SETTING.get(settings);
-        clusterSettings.addSettingsUpdateConsumer(INDICES_REQUEST_CACHE_DISK_TOOKTIME_THRESHOLD_SETTING, this::setThreshold);
+        this.threshold = DISK_TOOKTIME_THRESHOLD_SETTING.get(settings);
+        clusterSettings.addSettingsUpdateConsumer(DISK_TOOKTIME_THRESHOLD_SETTING, this::setThreshold);
+        isActive = true;
     }
 
     protected void setThreshold(TimeValue threshold) { // public so that we can manually set value in unit test
@@ -66,17 +69,10 @@ public class DiskTierTookTimePolicy implements CacheTierPolicy<QuerySearchResult
     }
 
     @Override
-    public QuerySearchResult convertFromBytesReference(BytesReference data) throws IOException {
-        try {
-            return new QuerySearchResult(data.streamInput());
-        } catch (IllegalStateException ise) {
-            throw new IOException(ise);
+    public boolean checkData(QuerySearchResult qsr) {
+        if (!isActive) {
+            return true;
         }
-    }
-
-    @Override
-    public boolean checkData(BytesReference data) throws IOException {
-        QuerySearchResult qsr = convertFromBytesReference(data);
         Long tookTimeNanos = qsr.getTookTimeNanos();
         if (tookTimeNanos == null) {
             return true;
@@ -87,5 +83,21 @@ public class DiskTierTookTimePolicy implements CacheTierPolicy<QuerySearchResult
             return false;
         }
         return true;
+    }
+
+    @Override
+    public boolean isActive() {
+        return isActive;
+    }
+
+    @Override
+    public void activate() {
+        isActive = true;
+
+    }
+
+    @Override
+    public void deactivate() {
+        isActive = false;
     }
 }
