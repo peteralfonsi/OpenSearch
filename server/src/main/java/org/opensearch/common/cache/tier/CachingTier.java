@@ -18,7 +18,7 @@ import org.opensearch.common.cache.RemovalListener;
  */
 public interface CachingTier<K, V> {
 
-    V get(K key);
+    CacheValue<V> get(K key);
 
     void put(K key, V value);
 
