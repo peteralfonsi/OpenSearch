@@ -179,19 +179,7 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
         };
     }
 
-    /**
-     * Represents a cache value along with its associated tier type where it is stored.
-     * @param <V> Type of value.
-     */
-    public static class CacheValue<V> {
-        V value;
-        TierType source;
 
-        CacheValue(V value, TierType source) {
-            this.value = value;
-            this.source = source;
-        }
-    }
 
     /**
      * Builder object
