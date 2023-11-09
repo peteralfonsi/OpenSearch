@@ -20,11 +20,23 @@ import java.util.Map;
 public class CacheValue<V> {
     V value;
     TierType source;
-    Map<String, Object> stats;
+    TierRequestStats stats;
 
-    CacheValue(V value, TierType source, Map<String, Object> stats) {
+    CacheValue(V value, TierType source, TierRequestStats stats) {
         this.value = value;
         this.source = source;
         this.stats = stats;
+    }
+
+    public V getValue() {
+        return value;
+    }
+
+    public TierType getSource() {
+        return source;
+    }
+
+    public TierRequestStats getStats() {
+        return stats;
     }
 }
