@@ -164,15 +164,15 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
     private Function<K, CacheValue<V>> getValueFromTierCache(boolean trackStats) {
         return key -> {
             for (CachingTier<K, V> cachingTier : cachingTierList) {
-                V value = cachingTier.get(key);
-                if (value != null) {
+                CacheValue<V> cacheValue = cachingTier.get(key);
+                if (cacheValue.value != null) {
                     if (trackStats) {
-                        tieredCacheEventListener.onHit(key, value, cachingTier.getTierType());
+                        tieredCacheEventListener.onHit(key, cacheValue);
                     }
-                    return new CacheValue<>(value, cachingTier.getTierType());
+                    return cacheValue; //new CacheValue<>(value, cachingTier.getTierType());
                 }
                 if (trackStats) {
-                    tieredCacheEventListener.onMiss(key, cachingTier.getTierType());
+                    tieredCacheEventListener.onMiss(key, cacheValue);
                 }
             }
             return null;

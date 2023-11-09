@@ -340,8 +340,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-        public void onMiss(K key, TierType tierType) {
-            enumMap.get(tierType).missCount.inc();
+        public void onMiss(K key, CacheValue<V> cacheValue) {
+            enumMap.get(cacheValue.getSource()).missCount.inc();
         }
 
         @Override
@@ -352,8 +352,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-        public void onHit(K key, V value, TierType tierType) {
-            enumMap.get(tierType).hitCount.inc();
+        public void onHit(K key, CacheValue<V> cacheValue) {
+            enumMap.get(cacheValue.getSource()).hitCount.inc();
         }
 
         @Override

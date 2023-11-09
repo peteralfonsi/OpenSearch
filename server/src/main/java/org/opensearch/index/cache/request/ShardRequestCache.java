@@ -33,6 +33,7 @@
 package org.opensearch.index.cache.request;
 
 import org.apache.lucene.util.Accountable;
+import org.opensearch.common.cache.tier.CacheValue;
 import org.opensearch.common.cache.tier.TierType;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.core.common.bytes.BytesReference;
@@ -59,12 +60,12 @@ public final class ShardRequestCache {
         return new RequestCacheStats(statsHolder);
     }
 
-    public void onHit(TierType tierType) {
-        statsHolder.get(tierType).hitCount.inc();
+    public void onHit(CacheValue<BytesReference> cacheValue) {
+        statsHolder.get(cacheValue.getSource()).hitCount.inc();
     }
 
-    public void onMiss(TierType tierType) {
-        statsHolder.get(tierType).missCount.inc();
+    public void onMiss(CacheValue<BytesReference> cacheValue) {
+        statsHolder.get(cacheValue.getSource()).missCount.inc();
     }
 
     public void onCached(Accountable key, BytesReference value, TierType tierType) {
