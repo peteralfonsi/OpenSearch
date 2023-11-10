@@ -20,19 +20,19 @@ import org.opensearch.core.xcontent.XContentBuilder;
 
 import java.io.IOException;
 import java.io.Serializable;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * The basic StatsHolder class, which accumulates shard-level stats that are common across all tiers.
  * Used in ShardRequestCache. Extending classes also handle tier-specific stats for each tier.
  */
-public abstract class StatsHolder implements Serializable, Writeable, ToXContentFragment {
+public class StatsHolder implements Serializable, Writeable, ToXContentFragment {
     final CounterMetric totalMetric;
     final CounterMetric evictionsMetric;
     final CounterMetric hitCount;
     final CounterMetric missCount;
     final CounterMetric entries;
-
-    public static final Map<TierType, >
 
     public StatsHolder() {
         this.totalMetric = new CounterMetric();
@@ -115,10 +115,4 @@ public abstract class StatsHolder implements Serializable, Writeable, ToXContent
         builder.field(RequestCacheStats.Fields.ENTRIES, getEntries());
         return builder;
     }
-
-    /**
-     * Used to add stats for a single request (get call) to existing stats
-     * @param stats Stats for a single request
-     */
-    public abstract void addRequestStats(TierRequestStats stats);
 }
