@@ -32,7 +32,9 @@
 
 package org.opensearch.index.cache.request;
 
+import org.opensearch.OpenSearchException;
 import org.opensearch.Version;
+import org.opensearch.common.cache.tier.TierRequestStats;
 import org.opensearch.common.cache.tier.TierType;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -43,6 +45,7 @@ import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.common.cache.tier.TierType;
 
 import java.io.IOException;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -53,44 +56,64 @@ import java.util.Map;
  */
 public class RequestCacheStats implements Writeable, ToXContentFragment {
 
-    private Map<String, StatsHolder> map = new HashMap<>(){{
-        for (TierType tierType : TierType.values())
-        {
+    private Map<String, StatsHolder> defaultStatsMap = new HashMap<>(){{
+        for (TierType tierType : TierType.values()) {
             put(tierType.getStringValue(), new StatsHolder());
             // Every possible tier type must have counters, even if they are disabled. Then the counters report 0
         }}
     };
 
+     private Map<String, ShardRequestCache.TierStatsAccumulator> tierSpecificStatsMap = new HashMap<>(){{
+        put(TierType.ON_HEAP.getStringValue(), new ShardRequestCache.OnHeapStatsAccumulator());
+        put(TierType.DISK.getStringValue(), new ShardRequestCache.DiskStatsAccumulator());
+        //checkTierSpecificMap(); // might yell, idk if the map is done until the block ends
+     }};
+
     public RequestCacheStats() {}
 
     public RequestCacheStats(StreamInput in) throws IOException {
         if (in.getVersion().onOrAfter(Version.V_3_0_0)) {
-            this.map = in.readMap(StreamInput::readString, StatsHolder::new);
+            this.defaultStatsMap = in.readMap(StreamInput::readString, StatsHolder::new);
+            // Manually fill the tier-specific stats map
+            this.tierSpecificStatsMap = new HashMap<>();
+            tierSpecificStatsMap.put(TierType.ON_HEAP.getStringValue(), new ShardRequestCache.OnHeapStatsAccumulator(in));
+            tierSpecificStatsMap.put(TierType.DISK.getStringValue(), new ShardRequestCache.DiskStatsAccumulator(in));
         } else {
             // objects from earlier versions only contain on-heap info, and do not have entries info
             long memorySize = in.readVLong();
             long evictions = in.readVLong();
             long hitCount = in.readVLong();
             long missCount = in.readVLong();
-            this.map.put(TierType.ON_HEAP.getStringValue(), new StatsHolder(memorySize, evictions, hitCount, missCount, 0));
+            this.defaultStatsMap.put(TierType.ON_HEAP.getStringValue(), new StatsHolder(memorySize, evictions, hitCount, missCount, 0));
         }
+        checkTierSpecificMap();
     }
 
-    public RequestCacheStats(Map<TierType, StatsHolder> inputMap) {
+    public RequestCacheStats(Map<TierType, StatsHolder> defaultMap, Map<TierType, ShardRequestCache.TierStatsAccumulator> tierSpecificMap) {
         // Create a RequestCacheStats with multiple tiers' statistics
-        for (TierType tierType : inputMap.keySet()) {
-            map.put(tierType.getStringValue(), inputMap.get(tierType));
+        // The input maps don't have to have all tiers statistics available
+        for (TierType tierType : defaultMap.keySet()) {
+            defaultStatsMap.put(tierType.getStringValue(), defaultMap.get(tierType));
         }
+        for (TierType tierType : tierSpecificMap.keySet()) {
+            tierSpecificStatsMap.put(tierType.getStringValue(), tierSpecificMap.get(tierType));
+        }
+        checkTierSpecificMap();
     }
 
     public void add(RequestCacheStats stats) {
-        for (String tier : stats.map.keySet()) {
-            map.get(tier).add(stats.map.get(tier));
+        for (TierType tierType : TierType.values()) {
+            defaultStatsMap.get(tierType.getStringValue()).add(stats.defaultStatsMap.get(tierType.getStringValue()));
+            tierSpecificStatsMap.get(tierType.getStringValue()).add(stats.tierSpecificStatsMap.get(tierType.getStringValue()));
         }
     }
 
     private StatsHolder getTierStats(TierType tierType) {
-        return map.get(tierType.getStringValue());
+        return defaultStatsMap.get(tierType.getStringValue());
+    }
+
+    ShardRequestCache.TierStatsAccumulator getTierSpecificStats(TierType tierType) { // pkg-private for testing
+        return tierSpecificStatsMap.get(tierType.getStringValue());
     }
 
     public long getMemorySizeInBytes(TierType tierType) {
@@ -146,10 +169,13 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         if (out.getVersion().onOrAfter(Version.V_3_0_0)) {
-            out.writeMap(this.map, StreamOutput::writeString, (o, v) -> v.writeTo(o)); // ?
+            out.writeMap(this.defaultStatsMap, StreamOutput::writeString, (o, v) -> v.writeTo(o)); // ?
+            // Manually write tier-specific stats map
+            tierSpecificStatsMap.get(TierType.ON_HEAP.getStringValue()).writeTo(out);
+            tierSpecificStatsMap.get(TierType.DISK.getStringValue()).writeTo(out);
         } else {
             // Write only on-heap values, and don't write entries metric
-            StatsHolder heapStats = map.get(TierType.ON_HEAP.getStringValue());
+            StatsHolder heapStats = defaultStatsMap.get(TierType.ON_HEAP.getStringValue());
             out.writeVLong(heapStats.getMemorySize());
             out.writeVLong(heapStats.getEvictions());
             out.writeVLong(heapStats.getHitCount());
@@ -162,18 +188,28 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
         builder.startObject(Fields.REQUEST_CACHE_STATS);
         // write on-heap stats outside of tiers object
         getTierStats(TierType.ON_HEAP).toXContent(builder, params);
+        getTierSpecificStats(TierType.ON_HEAP).toXContent(builder, params);
         builder.startObject(Fields.TIERS);
         for (TierType tierType : TierType.values()) { // fixed order
             if (tierType != TierType.ON_HEAP) {
                 String tier = tierType.getStringValue();
                 builder.startObject(tier);
-                map.get(tier).toXContent(builder, params);
+                defaultStatsMap.get(tier).toXContent(builder, params);
+                tierSpecificStatsMap.get(tier).toXContent(builder, params);
                 builder.endObject();
             }
         }
         builder.endObject();
         builder.endObject();
         return builder;
+    }
+
+    private void checkTierSpecificMap() {
+        for (TierType tierType : TierType.values()) {
+            if (tierSpecificStatsMap.get(tierType.getStringValue()) == null) {
+                throw new OpenSearchException("Missing TierStatsAccumulator for TierType " + tierType.getStringValue());
+            }
+        }
     }
 
     /**

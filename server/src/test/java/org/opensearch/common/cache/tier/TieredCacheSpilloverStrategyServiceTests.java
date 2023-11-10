@@ -254,8 +254,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-        public V get(K key) {
-            return this.onHeapCacheTier.get(key);
+        public CacheValue<V> get(K key) {
+            return new CacheValue(this.onHeapCacheTier.get(key), TierType.ON_HEAP, new OnHeapTierRequestStats());
         }
 
         @Override
@@ -381,8 +381,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-        public V get(K key) {
-            return this.diskTier.get(key);
+        public CacheValue<V> get(K key) {
+            return new CacheValue<>(this.diskTier.get(key), TierType.DISK, new DiskTierRequestStats(0L, true));
         }
 
         @Override

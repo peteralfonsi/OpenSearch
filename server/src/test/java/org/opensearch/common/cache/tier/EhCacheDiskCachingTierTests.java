@@ -58,7 +58,11 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 ehCacheDiskCachingTierNew.put(entry.getKey(), entry.getValue());
             }
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
-                String value = ehCacheDiskCachingTierNew.get(entry.getKey());
+                CacheValue<String> value = ehCacheDiskCachingTierNew.get(entry.getKey());
+                assertEquals(entry.getValue(), value.value);
+                assertEquals(TierType.DISK, value.getSource());
+                assertTrue(((DiskTierRequestStats) value.getStats()).getRequestReachedDisk());
+                assertTrue(((DiskTierRequestStats) value.getStats()).getRequestGetTimeNanos() > 0);
             }
             ehCacheDiskCachingTierNew.close();
         }
@@ -92,7 +96,7 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 ehCacheDiskCachingTier.put(entry.getKey(), entry.getValue());
             }
             for (Map.Entry<String, BytesReference> entry : keyValueMap.entrySet()) {
-                BytesReference value = ehCacheDiskCachingTier.get(entry.getKey());
+                BytesReference value = ehCacheDiskCachingTier.get(entry.getKey()).value;
                 assertEquals(entry.getValue(), value);
             }
             ehCacheDiskCachingTier.close();
@@ -135,8 +139,8 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
             phaser.arriveAndAwaitAdvance(); // Will trigger parallel puts above.
             countDownLatch.await(); // Wait for all threads to finish
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
-                String value = ehCacheDiskCachingTierNew.get(entry.getKey());
-                assertEquals(entry.getValue(), value);
+                CacheValue<String> value = ehCacheDiskCachingTierNew.get(entry.getKey());
+                assertEquals(entry.getValue(), value.value);
             }
             ehCacheDiskCachingTierNew.close();
         }
@@ -175,7 +179,7 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
                 threads[j] = new Thread(() -> {
                     phaser.arriveAndAwaitAdvance();
-                    assertEquals(entry.getValue(), ehCacheDiskCachingTierNew.get(entry.getKey()));
+                    assertEquals(entry.getValue(), ehCacheDiskCachingTierNew.get(entry.getKey()).value);
                     countDownLatch.countDown();
                 });
                 threads[j].start();

@@ -41,6 +41,7 @@ import org.apache.lucene.util.RamUsageEstimator;
 import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.tier.CacheValue;
+import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
 import org.opensearch.common.cache.tier.OnHeapCachingTier;
 import org.opensearch.common.cache.tier.OpenSearchOnHeapCache;
 import org.opensearch.common.cache.tier.TierType;
@@ -127,12 +128,28 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             (k, v) -> k.ramBytesUsed() + v.ramBytesUsed()
         ).setMaximumWeight(sizeInBytes).setExpireAfterAccess(expire).build();
 
+        // enabling this for testing purposes. Remove/tweak!!
+        //long CACHE_SIZE_IN_BYTES = 1000000L;
+        //String SETTING_PREFIX = "indices.request.cache";
+
+        /*EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>()
+            .setKeyType(Key.class)
+            .setValueType(BytesReference.class)
+            .setExpireAfterAccess(TimeValue.MAX_VALUE)
+            .setSettings(settings)
+            .setThreadPoolAlias("ehcacheTest")
+            .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
+            .setStoragePath("/tmp")
+            .setSettingPrefix(SETTING_PREFIX)
+            .build();*/
+
         // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
 
-        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>()
-            .setOnHeapCachingTier(openSearchOnHeapCache)
-            .setTieredCacheEventListener(this)
-            .build();
+        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>().setOnHeapCachingTier(
+            openSearchOnHeapCache
+        )
+            //.setOnDiskCachingTier(ehcacheDiskTier)
+            .setTieredCacheEventListener(this).build();
     }
 
     @Override
