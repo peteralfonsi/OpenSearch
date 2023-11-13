@@ -201,11 +201,22 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     }
 
     @Override
-    public V get(K key) {
+    public CacheValue<V> get(K key) {
+        boolean reachedDisk = false;
+        long now = System.nanoTime(); // Nanoseconds required; milliseconds might be too slow on an SSD
+
+        V value = null;
         if (keystore.contains(key.hashCode()) || keystore.isFull()) { // Check in-memory store of key hashes to avoid unnecessary disk seek
-            return valueSerializer.deserialize(cache.get(key));
+            value = valueSerializer.deserialize(cache.get(key));
+            reachedDisk = true;
         }
-        return null;
+
+        long tookTime = -1L; // This value will be ignored by stats accumulator if reachedDisk is false anyway
+        if (reachedDisk) {
+            tookTime = System.nanoTime() - now;
+        }
+        DiskTierRequestStats stats = new DiskTierRequestStats(tookTime, reachedDisk);
+        return new CacheValue<>(value, TierType.DISK, stats);
     }
 
     @Override

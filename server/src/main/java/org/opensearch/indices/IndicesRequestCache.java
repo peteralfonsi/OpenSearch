@@ -41,6 +41,8 @@ import org.apache.lucene.util.RamUsageEstimator;
 import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
+import org.opensearch.common.cache.tier.CacheValue;
+import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
 import org.opensearch.common.cache.tier.OnHeapCachingTier;
 import org.opensearch.common.cache.tier.OpenSearchOnHeapCache;
 import org.opensearch.common.cache.tier.TierType;
@@ -118,7 +120,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     private final ByteSizeValue size;
     private final TimeValue expire;
     private final TieredCacheService<Key, BytesReference, QuerySearchResult> tieredCacheService;
-
     private final IndicesService indicesService;
 
     IndicesRequestCache(Settings settings, IndicesService indicesService, ClusterSettings clusterSettings) {
@@ -138,11 +139,26 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
                 throw new RuntimeException(e);
             }
         };
+        // enabling this for testing purposes. Remove/tweak!!
+        //long CACHE_SIZE_IN_BYTES = 1000000L;
+        //String SETTING_PREFIX = "indices.request.cache";
+
+        /*EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>()
+            .setKeyType(Key.class)
+            .setValueType(BytesReference.class)
+            .setExpireAfterAccess(TimeValue.MAX_VALUE)
+            .setSettings(settings)
+            .setThreadPoolAlias("ehcacheTest")
+            .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
+            .setStoragePath("/tmp")
+            .setSettingPrefix(SETTING_PREFIX)
+            .build();*/
 
         // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
-        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference, QuerySearchResult>().setOnHeapCachingTier(
-            openSearchOnHeapCache
-        ).setTieredCacheEventListener(this)
+        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference, QuerySearchResult>()
+            .setOnHeapCachingTier(openSearchOnHeapCache)
+            //.setOnDiskCachingTier(ehcacheDiskTier)
+            .setTieredCacheEventListener(this)
             .withPreDiskCachingPolicyFunction(transformationFunction)
             .withPolicy(new DiskTierTookTimePolicy(settings, clusterSettings))
             .build();
@@ -160,8 +176,8 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     @Override
-    public void onMiss(Key key, TierType tierType) {
-        key.entity.onMiss(tierType);
+    public void onMiss(Key key, CacheValue<BytesReference> cacheValue) {
+        key.entity.onMiss(cacheValue);
     }
 
     @Override
@@ -170,8 +186,8 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     @Override
-    public void onHit(Key key, BytesReference value, TierType tierType) {
-        key.entity.onHit(tierType);
+    public void onHit(Key key, CacheValue<BytesReference> cacheValue) {
+        key.entity.onHit(cacheValue);
     }
 
     @Override
@@ -235,7 +251,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      * @opensearch.internal
      */
     private static class Loader implements TieredCacheLoader<Key, BytesReference> {
-
         private final CacheEntity entity;
         private final CheckedSupplier<BytesReference, IOException> loader;
         private boolean loaded;
@@ -282,12 +297,12 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         /**
          * Called each time this entity has a cache hit.
          */
-        void onHit(TierType tierType);
+        void onHit(CacheValue<BytesReference> cacheValue);
 
         /**
          * Called each time this entity has a cache miss.
          */
-        void onMiss(TierType tierType);
+        void onMiss(CacheValue<BytesReference> cacheValue);
 
         /**
          * Called when this entity instance is removed

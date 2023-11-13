@@ -66,8 +66,8 @@ public class OpenSearchOnHeapCache<K, V> implements OnHeapCachingTier<K, V>, Rem
     }
 
     @Override
-    public V get(K key) {
-        return cache.get(key);
+    public CacheValue<V> get(K key) {
+        return new CacheValue<V>(cache.get(key), TierType.ON_HEAP, new OnHeapTierRequestStats());
     }
 
     @Override

@@ -37,6 +37,7 @@ import org.apache.lucene.search.Query;
 import org.opensearch.cluster.ClusterName;
 import org.opensearch.cluster.routing.allocation.DiskThresholdSettings;
 import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.tier.CacheValue;
 import org.opensearch.common.cache.tier.TierType;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.concurrent.OpenSearchExecutors;
@@ -342,10 +343,10 @@ public class IndicesServiceCloseTests extends OpenSearchTestCase {
             }
 
             @Override
-            public void onHit(TierType tierType) {}
+            public void onHit(CacheValue<BytesReference> cacheValue) {}
 
             @Override
-            public void onMiss(TierType tierType) {}
+            public void onMiss(CacheValue<BytesReference> cacheValue) {}
 
             @Override
             public void onRemoval(RemovalNotification<Key, BytesReference> notification) {}

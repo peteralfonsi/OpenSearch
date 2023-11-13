@@ -17,11 +17,12 @@ import org.opensearch.common.cache.RemovalNotification;
  */
 public interface TieredCacheEventListener<K, V> {
 
-    void onMiss(K key, TierType tierType);
+    void onMiss(K key, CacheValue<V> cacheValue);
 
     void onRemoval(RemovalNotification<K, V> notification);
 
-    void onHit(K key, V value, TierType tierType);
+    void onHit(K key, CacheValue<V> cacheValue);
 
     void onCached(K key, V value, TierType tierType);
+    // Since only get() produces a CacheValue with stats, no need to modify onCached or onRemoval to have the CacheValue.
 }
