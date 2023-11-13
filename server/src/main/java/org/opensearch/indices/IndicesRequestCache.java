@@ -40,6 +40,7 @@ import org.apache.lucene.util.Accountable;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.tier.BytesReferenceSerializer;
 import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
 import org.opensearch.common.cache.tier.CacheValue;
 import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
@@ -140,8 +141,8 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             }
         };
         // enabling this for testing purposes. Remove/tweak!!
-        //long CACHE_SIZE_IN_BYTES = 1000000L;
-        //String SETTING_PREFIX = "indices.request.cache";
+        long CACHE_SIZE_IN_BYTES = 1000000L;
+        String SETTING_PREFIX = "indices.request.cache";
 
         /*EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>()
             .setKeyType(Key.class)
@@ -152,6 +153,8 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
             .setStoragePath("/tmp")
             .setSettingPrefix(SETTING_PREFIX)
+            .setKeySerializer(new IRCKeyWriteableSerializer(this))
+            .setValueSerializer(new BytesReferenceSerializer())
             .build();*/
 
         // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
@@ -316,7 +319,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      *
      * @opensearch.internal
      */
-    class Key implements Accountable, Writeable {
+     class Key implements Accountable, Writeable {
         private final long BASE_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(Key.class);
 
         public final CacheEntity entity; // use as identity equality

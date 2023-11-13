@@ -97,7 +97,7 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 ehCacheDiskCachingTier.put(entry.getKey(), entry.getValue());
             }
             for (Map.Entry<String, BytesReference> entry : keyValueMap.entrySet()) {
-                BytesReference value = ehCacheDiskCachingTier.get(entry.getKey());
+                BytesReference value = ehCacheDiskCachingTier.get(entry.getKey()).value;
                 assertEquals(entry.getValue(), value);
             }
             ehCacheDiskCachingTier.close();
