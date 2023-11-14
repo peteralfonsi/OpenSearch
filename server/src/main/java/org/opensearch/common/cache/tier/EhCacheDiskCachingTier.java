@@ -126,10 +126,12 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         this.DISK_WRITE_CONCURRENCY = Setting.intSetting(builder.settingPrefix + ".tiered.disk.ehcache.concurrency", 2, 1, 3);
         // Default value is 16 within Ehcache.
         this.DISK_SEGMENTS = Setting.intSetting(builder.settingPrefix + ".ehcache.disk.segments", 16, 1, 32);
-        if (cacheManager == null) {
-            cacheManager = buildCacheManager();
-            this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
-        }
+
+        // In test cases, there might be leftover cache managers and caches hanging around, from nodes created in the test case setup
+        // Destroy them before recreating them
+        close();
+        cacheManager = buildCacheManager();
+        this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
 
         // IndicesRequestCache gets 1%, of which we allocate 5% to the keystore = 0.05%
         // TODO: how do we change this automatically based on INDICES_CACHE_QUERY_SIZE setting?
@@ -274,13 +276,13 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
 
     @Override
     public void close() {
-        cacheManager.removeCache(DISK_CACHE_ALIAS);
-        cacheManager.close();
         try {
             cacheManager.destroyCache(DISK_CACHE_ALIAS);
+            cacheManager.close();
+            cacheManager = null;
         } catch (CachePersistenceException e) {
             throw new OpenSearchException("Exception occurred while destroying ehcache and associated data", e);
-        }
+        } catch (NullPointerException ignored) {} // Another test node has already destroyed the cache manager
     }
 
     /**
