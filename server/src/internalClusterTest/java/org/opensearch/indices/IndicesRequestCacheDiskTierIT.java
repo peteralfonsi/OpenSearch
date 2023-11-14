@@ -71,7 +71,6 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
 
         resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + 0)).get();
         int requestSize = (int) getCacheSizeBytes(client, "index", TierType.ON_HEAP);
-        System.out.println(requestSize);
         assertTrue(heapSizeBytes > requestSize);
         // If this fails, increase heapSizeBytes! We can't adjust it after getting the size of one query
         // as the cache size setting is not dynamic
