@@ -25,6 +25,9 @@ public class BytesReferenceSerializer implements Serializer<BytesReference, byte
 
     @Override
     public BytesReference deserialize(byte[] bytes) {
+        if (bytes == null) {
+            return null;
+        }
         return new BytesArray(bytes);
     }
 

@@ -42,7 +42,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.roaringbitmap.RoaringBitmap;
 
 /**
- * This class implements KeyLookupStore<Integer> using a roaring bitmap with a modulo applied to values.
+ * This class implements KeyLookupStore using a roaring bitmap with a modulo applied to values.
  * The modulo increases the density of values, which makes RBMs more memory-efficient. The recommended modulo is ~2^28.
  * It also maintains a hash set of values which have had collisions. Values which haven't had collisions can be
  * safely removed from the store. The fraction of collided values should be low,
