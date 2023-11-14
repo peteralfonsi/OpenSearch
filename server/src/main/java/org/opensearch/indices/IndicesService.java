@@ -1955,8 +1955,8 @@ public class IndicesService extends AbstractLifecycleComponent
             || (danglingIndicesToWrite.isEmpty() && danglingIndicesThreadPoolExecutor.getActiveCount() == 0);
     }
 
-    public String getNodeId() {
-        return nodeEnv.nodeId();
+    public NodeEnvironment.NodePath[] getNodePaths() {
+        return nodeEnv.nodePaths();
     }
 
     /**

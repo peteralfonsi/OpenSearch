@@ -86,7 +86,7 @@ public final class ShardRequestCache {
 
     public void onMiss(CacheValue<BytesReference> cacheValue) {
         TierType source = cacheValue.getSource();
-        defaultStatsHolder.get(cacheValue.getSource()).missCount.inc();
+        defaultStatsHolder.get(source).missCount.inc();
         tierSpecificStatsHolder.get(source).addRequestStats(cacheValue.getStats());
     }
 

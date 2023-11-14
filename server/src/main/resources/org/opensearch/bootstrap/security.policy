@@ -191,12 +191,6 @@ grant {
   // For ehcache
   permission java.lang.RuntimePermission "createClassLoader";
   permission java.lang.RuntimePermission "accessClassInPackage.sun.misc";
-
-  // Testing, remove later
-  //permission java.io.FilePermission "/tmp", "read";
-  //permission java.io.FilePermission "/tmp", "write";
-  //permission java.io.FilePermission "/tmp", "delete";
-  //permission java.io.FilePermission "/tmp/-", "read";
-  //permission java.io.FilePermission "/tmp/-", "write";
-  //permission java.io.FilePermission "/tmp/-", "delete";
+  permission java.lang.RuntimePermission "accessDeclaredMembers";
+  permission java.lang.reflect.ReflectPermission "suppressAccessChecks";
 };
