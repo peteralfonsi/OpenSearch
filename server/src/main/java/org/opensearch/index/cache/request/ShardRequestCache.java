@@ -136,7 +136,7 @@ public final class ShardRequestCache {
      * This class accumulates on-heap-tier-specific stats for a single shard.
      * For now, on-heap tier has no unique stats, but future stats would be added here.
      */
-    static class OnHeapStatsAccumulator extends TierStatsAccumulator<OnHeapTierRequestStats> {
+    public static class OnHeapStatsAccumulator extends TierStatsAccumulator<OnHeapTierRequestStats> {
         OnHeapStatsAccumulator() {}
         OnHeapStatsAccumulator(StreamInput in) {}
         @Override
@@ -157,7 +157,7 @@ public final class ShardRequestCache {
     /**
      * This class accumulates disk-tier-specific stats for a single shard.
      */
-    static class DiskStatsAccumulator extends TierStatsAccumulator<DiskTierRequestStats> {
+    public static class DiskStatsAccumulator extends TierStatsAccumulator<DiskTierRequestStats> {
         final CounterMetric totalGetTime;
         final CounterMetric totalDiskReaches; // Number of times a get() has actually reached the disk
         public DiskStatsAccumulator() {

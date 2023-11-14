@@ -66,7 +66,6 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
      private Map<String, ShardRequestCache.TierStatsAccumulator> tierSpecificStatsMap = new HashMap<>(){{
         put(TierType.ON_HEAP.getStringValue(), new ShardRequestCache.OnHeapStatsAccumulator());
         put(TierType.DISK.getStringValue(), new ShardRequestCache.DiskStatsAccumulator());
-        //checkTierSpecificMap(); // might yell, idk if the map is done until the block ends
      }};
 
     public RequestCacheStats() {}
@@ -114,6 +113,10 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
 
     ShardRequestCache.TierStatsAccumulator getTierSpecificStats(TierType tierType) { // pkg-private for testing
         return tierSpecificStatsMap.get(tierType.getStringValue());
+    }
+
+    public ShardRequestCache.DiskStatsAccumulator getDiskSpecificStats() {
+        return (ShardRequestCache.DiskStatsAccumulator) tierSpecificStatsMap.get(TierType.DISK.getStringValue());
     }
 
     public long getMemorySizeInBytes(TierType tierType) {

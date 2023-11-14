@@ -155,6 +155,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     @Override
     public void close() {
         tieredCacheService.invalidateAll();
+        if (tieredCacheService.getDiskCachingTier().isPresent()) {
+            tieredCacheService.getDiskCachingTier().get().close();
+        }
     }
 
     void clear(CacheEntity entity) {
