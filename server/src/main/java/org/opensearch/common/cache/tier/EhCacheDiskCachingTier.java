@@ -51,6 +51,7 @@ import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.search.query.QuerySearchResult;
 
 /**
+ * An ehcache-based disk tier implementation.
  * @param <K> The key type of cache entries
  * @param <V> The value type of cache entries
  */

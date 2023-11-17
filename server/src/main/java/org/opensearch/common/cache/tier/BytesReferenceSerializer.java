@@ -14,6 +14,10 @@ import org.opensearch.core.common.bytes.BytesReference;
 import java.io.IOException;
 import java.util.Arrays;
 
+/**
+ * A serializer which transforms BytesReference to byte[].
+ * The type of BytesReference is NOT preserved after deserialization, but nothing in opensearch should care.
+ */
 public class BytesReferenceSerializer implements Serializer<BytesReference, byte[]> {
     // This class does not get passed to ehcache itself, so it's not required that classes match after deserialization.
 
