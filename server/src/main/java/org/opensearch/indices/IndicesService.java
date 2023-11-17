@@ -214,17 +214,55 @@ public class IndicesService extends AbstractLifecycleComponent
     private static final Logger logger = LogManager.getLogger(IndicesService.class);
 
     public static final String INDICES_SHARDS_CLOSED_TIMEOUT = "indices.shards_closed_timeout";
+    public static final String INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING_KEY = "cluster.request_cache.disk.cleanup_threshold_percentage";
+    public static final String INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING_DEFAULT_VALUE = "50%";
+
+    public static final String INDICES_REQUEST_CACHE_DISK_CLEAN_INTERVAL_SETTING_KEY = "indices.request_cache.disk.cleanup_interval";
+
+
     public static final Setting<TimeValue> INDICES_CACHE_CLEAN_INTERVAL_SETTING = Setting.positiveTimeSetting(
         "indices.cache.cleanup_interval",
         TimeValue.timeValueMinutes(1),
         Property.NodeScope
     );
+
+    public static final Setting<TimeValue> INDICES_REQUEST_CACHE_DISK_CLEAN_INTERVAL_SETTING = Setting.positiveTimeSetting(
+        INDICES_REQUEST_CACHE_DISK_CLEAN_INTERVAL_SETTING_KEY,
+        TimeValue.timeValueMinutes(1),
+        Property.NodeScope
+    );
+
     public static final Setting<Boolean> INDICES_ID_FIELD_DATA_ENABLED_SETTING = Setting.boolSetting(
         "indices.id_field_data.enabled",
         true,
         Property.Dynamic,
         Property.NodeScope
     );
+
+    public static final Setting<String> INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING =
+        Setting.simpleString(
+            INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING_KEY,
+            INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING_DEFAULT_VALUE,
+            value -> {
+                String errorLogBase = "The value of the setting " +
+                    INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING_KEY +
+                    " must be ";
+                if (!value.endsWith("%")) {
+                    throw new IllegalArgumentException(errorLogBase + "a percentage");
+                }
+                String rawValue = value.substring(0, value.length() - 1);
+                try {
+                    double doubleValue = Double.parseDouble(rawValue);
+                    if (doubleValue < 0 || doubleValue > 100) {
+                        throw new IllegalArgumentException(errorLogBase + "between 0% and 100%");
+                    }
+                } catch (NumberFormatException e) {
+                    throw new IllegalArgumentException(errorLogBase + "a valid percentage", e);
+                }
+            },
+            Property.Dynamic,
+            Property.NodeScope
+        );
 
     public static final Setting<Boolean> WRITE_DANGLING_INDICES_INFO_SETTING = Setting.boolSetting(
         "gateway.write_dangling_indices_info",
@@ -323,6 +361,7 @@ public class IndicesService extends AbstractLifecycleComponent
     private final IndexScopedSettings indexScopedSettings;
     private final IndicesFieldDataCache indicesFieldDataCache;
     private final CacheCleaner cacheCleaner;
+    private final DiskCacheCleaner diskCacheCleaner;
     private final ThreadPool threadPool;
     private final CircuitBreakerService circuitBreakerService;
     private final BigArrays bigArrays;
@@ -336,7 +375,9 @@ public class IndicesService extends AbstractLifecycleComponent
     private final MapperRegistry mapperRegistry;
     private final NamedWriteableRegistry namedWriteableRegistry;
     private final IndexingMemoryController indexingMemoryController;
-    private final TimeValue cleanInterval;
+    private final TimeValue onHeapCachesCleanInterval;
+    private final TimeValue diskCachesCleanInterval;
+    private final double diskCachesCleanThreshold;
     final IndicesRequestCache indicesRequestCache; // pkg-private for testing
     private final IndicesQueryCache indicesQueryCache;
     private final MetaStateService metaStateService;
@@ -364,8 +405,9 @@ public class IndicesService extends AbstractLifecycleComponent
 
     @Override
     protected void doStart() {
-        // Start thread that will manage cleaning the field data cache periodically
-        threadPool.schedule(this.cacheCleaner, this.cleanInterval, ThreadPool.Names.SAME);
+        // Start threads that will manage cleaning the field data and request caches periodically
+        threadPool.schedule(this.cacheCleaner, this.onHeapCachesCleanInterval, ThreadPool.Names.SAME);
+        threadPool.schedule(this.diskCacheCleaner, this.diskCachesCleanInterval, ThreadPool.Names.SAME);
     }
 
     public IndicesService(
@@ -433,8 +475,11 @@ public class IndicesService extends AbstractLifecycleComponent
                 circuitBreakerService.getBreaker(CircuitBreaker.FIELDDATA).addWithoutBreaking(-sizeInBytes);
             }
         });
-        this.cleanInterval = INDICES_CACHE_CLEAN_INTERVAL_SETTING.get(settings);
-        this.cacheCleaner = new CacheCleaner(indicesFieldDataCache, indicesRequestCache, logger, threadPool, this.cleanInterval);
+        this.onHeapCachesCleanInterval = INDICES_CACHE_CLEAN_INTERVAL_SETTING.get(settings);
+        this.diskCachesCleanInterval = INDICES_REQUEST_CACHE_DISK_CLEAN_INTERVAL_SETTING.get(settings);
+        this.diskCachesCleanThreshold = getCleanupKeysThresholdPercentage(settings);;
+        this.cacheCleaner = new CacheCleaner(indicesFieldDataCache, indicesRequestCache, logger, threadPool, this.onHeapCachesCleanInterval);
+        this.diskCacheCleaner = new DiskCacheCleaner(indicesRequestCache, logger, threadPool, this.diskCachesCleanInterval, this.diskCachesCleanThreshold);
         this.metaStateService = metaStateService;
         this.engineFactoryProviders = engineFactoryProviders;
 
@@ -492,6 +537,12 @@ public class IndicesService extends AbstractLifecycleComponent
         clusterService.getClusterSettings()
             .addSettingsUpdateConsumer(CLUSTER_REMOTE_TRANSLOG_BUFFER_INTERVAL_SETTING, this::setClusterRemoteTranslogBufferInterval);
         this.recoverySettings = recoverySettings;
+    }
+
+    private double getCleanupKeysThresholdPercentage(Settings settings) {
+        String threshold = INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING.get(settings);
+        String rawValue = threshold.substring(0, threshold.length() - 1);
+        return Double.parseDouble(rawValue) / 100;
     }
 
     /**
@@ -1562,21 +1613,37 @@ public class IndicesService extends AbstractLifecycleComponent
         return analysisRegistry;
     }
 
+    private static abstract class AbstractCacheCleaner implements Runnable, Releasable {
+
+        protected final Logger logger;
+        protected final ThreadPool threadPool;
+        protected final TimeValue interval;
+        protected final AtomicBoolean closed = new AtomicBoolean(false);
+
+        AbstractCacheCleaner(
+            Logger logger,
+            ThreadPool threadPool,
+            TimeValue interval
+        ) {
+            this.logger = logger;
+            this.threadPool = threadPool;
+            this.interval = interval;
+        }
+
+        @Override
+        public void close() {
+            closed.compareAndSet(false, true);
+        }
+    }
+
     /**
-     * FieldDataCacheCleaner is a scheduled Runnable used to clean a Guava cache
-     * periodically. In this case it is the field data cache, because a cache that
-     * has an entry invalidated may not clean up the entry if it is not read from
-     * or written to after invalidation.
+     * CacheCleaner is a scheduled Runnable used to clean Field Data Caches and/or request caches periodically.
      *
      * @opensearch.internal
      */
-    private static final class CacheCleaner implements Runnable, Releasable {
+    private static final class CacheCleaner extends AbstractCacheCleaner implements Runnable, Releasable {
 
         private final IndicesFieldDataCache cache;
-        private final Logger logger;
-        private final ThreadPool threadPool;
-        private final TimeValue interval;
-        private final AtomicBoolean closed = new AtomicBoolean(false);
         private final IndicesRequestCache requestCache;
 
         CacheCleaner(
@@ -1586,11 +1653,9 @@ public class IndicesService extends AbstractLifecycleComponent
             ThreadPool threadPool,
             TimeValue interval
         ) {
+            super(logger, threadPool, interval);
             this.cache = cache;
             this.requestCache = requestCache;
-            this.logger = logger;
-            this.threadPool = threadPool;
-            this.interval = interval;
         }
 
         @Override
@@ -1618,13 +1683,43 @@ public class IndicesService extends AbstractLifecycleComponent
             }
             // Reschedule itself to run again if not closed
             if (closed.get() == false) {
-                threadPool.scheduleUnlessShuttingDown(interval, ThreadPool.Names.SAME, this);
+                this.threadPool.scheduleUnlessShuttingDown(interval, ThreadPool.Names.SAME, this);
             }
+        }
+    }
+
+    private static final class DiskCacheCleaner extends AbstractCacheCleaner implements Runnable, Releasable {
+
+        private final IndicesRequestCache requestCache;
+        private final double diskCachesCleanThresholdPercent;
+
+        DiskCacheCleaner(
+            IndicesRequestCache requestCache,
+            Logger logger,
+            ThreadPool threadPool,
+            TimeValue interval,
+            double diskCachesCleanThresholdPercent
+        ) {
+            super(logger, threadPool, interval);
+            this.diskCachesCleanThresholdPercent = diskCachesCleanThresholdPercent;
+            this.requestCache = requestCache;
         }
 
         @Override
-        public void close() {
-            closed.compareAndSet(false, true);
+        public void run() {
+            long startTimeNS = System.nanoTime();
+            if (logger.isTraceEnabled()) {
+                logger.trace("running periodic disk based request cache cleanup");
+            }
+            try {
+                this.requestCache.cleanDiskCache(diskCachesCleanThresholdPercent);
+            } catch (Exception e) {
+                logger.warn("Exception during periodic request cache cleanup:", e);
+            }
+            // Reschedule itself to run again if not closed
+            if (closed.get() == false) {
+                threadPool.scheduleUnlessShuttingDown(interval, ThreadPool.Names.SAME, this);
+            }
         }
     }
 
