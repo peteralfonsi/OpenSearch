@@ -170,11 +170,12 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         this.indicesService = indicesService;
     }
 
-    // added for testing
+    // added for testing only
     IndicesRequestCache(
         Settings settings,
         IndicesService indicesService,
-        TieredCacheService<Key, BytesReference, QuerySearchResult> tieredCacheService
+        TieredCacheService<Key, BytesReference, QuerySearchResult> tieredCacheService,
+        boolean testMode
     ) {
         this.size = INDICES_CACHE_QUERY_SIZE.get(settings);
         this.expire = INDICES_CACHE_QUERY_EXPIRE.exists(settings) ? INDICES_CACHE_QUERY_EXPIRE.get(settings) : null;
