@@ -32,6 +32,10 @@
 
 package org.opensearch.index.cache.request;
 
+import org.opensearch.OpenSearchException;
+import org.opensearch.Version;
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
+import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
@@ -48,71 +52,169 @@ import java.io.IOException;
  */
 public class RequestCacheStats implements Writeable, ToXContentFragment {
 
-    private long memorySize;
-    private long evictions;
-    private long hitCount;
-    private long missCount;
+    private Map<String, StatsHolder> defaultStatsMap = new HashMap<>() {
+        {
+            for (CacheStoreType cacheStoreType : CacheStoreType.values()) {
+                put(cacheStoreType.getStringValue(), new StatsHolder());
+                // Every possible tier type must have counters, even if they are disabled. Then the counters report 0
+            }
+        }
+    };
+
+    private Map<String, ShardRequestCache.TierStatsAccumulator> tierSpecificStatsMap = new HashMap<>() {
+        {
+            put(CacheStoreType.ON_HEAP.getStringValue(), new ShardRequestCache.OnHeapStatsAccumulator());
+            put(CacheStoreType.DISK.getStringValue(), new ShardRequestCache.DiskStatsAccumulator());
+        }
+    };
 
     public RequestCacheStats() {}
 
     public RequestCacheStats(StreamInput in) throws IOException {
-        memorySize = in.readVLong();
-        evictions = in.readVLong();
-        hitCount = in.readVLong();
-        missCount = in.readVLong();
+        if (in.getVersion().onOrAfter(Version.V_3_0_0)) {
+            this.defaultStatsMap = in.readMap(StreamInput::readString, StatsHolder::new);
+            // Manually fill the tier-specific stats map
+            this.tierSpecificStatsMap = new HashMap<>();
+            tierSpecificStatsMap.put(CacheStoreType.ON_HEAP.getStringValue(), new ShardRequestCache.OnHeapStatsAccumulator(in));
+            tierSpecificStatsMap.put(CacheStoreType.DISK.getStringValue(), new ShardRequestCache.DiskStatsAccumulator(in));
+        } else {
+            // objects from earlier versions only contain on-heap info, and do not have entries info
+            long memorySize = in.readVLong();
+            long evictions = in.readVLong();
+            long hitCount = in.readVLong();
+            long missCount = in.readVLong();
+            this.defaultStatsMap.put(CacheStoreType.ON_HEAP.getStringValue(), new StatsHolder(memorySize, evictions, hitCount, missCount, 0));
+        }
+        checkTierSpecificMap();
     }
 
-    public RequestCacheStats(long memorySize, long evictions, long hitCount, long missCount) {
-        this.memorySize = memorySize;
-        this.evictions = evictions;
-        this.hitCount = hitCount;
-        this.missCount = missCount;
+    public RequestCacheStats(Map<CacheStoreType, StatsHolder> defaultMap, Map<CacheStoreType, ShardRequestCache.TierStatsAccumulator> tierSpecificMap) {
+        // Create a RequestCacheStats with multiple tiers' statistics
+        // The input maps don't have to have all tiers statistics available
+        for (CacheStoreType cacheStoreType : defaultMap.keySet()) {
+            defaultStatsMap.put(cacheStoreType.getStringValue(), defaultMap.get(cacheStoreType));
+        }
+        for (CacheStoreType cacheStoreType : tierSpecificMap.keySet()) {
+            tierSpecificStatsMap.put(cacheStoreType.getStringValue(), tierSpecificMap.get(cacheStoreType));
+        }
+        checkTierSpecificMap();
     }
 
     public void add(RequestCacheStats stats) {
-        this.memorySize += stats.memorySize;
-        this.evictions += stats.evictions;
-        this.hitCount += stats.hitCount;
-        this.missCount += stats.missCount;
+        for (CacheStoreType cacheStoreType : CacheStoreType.values()) {
+            defaultStatsMap.get(cacheStoreType.getStringValue()).add(stats.defaultStatsMap.get(cacheStoreType.getStringValue()));
+            tierSpecificStatsMap.get(cacheStoreType.getStringValue()).add(stats.tierSpecificStatsMap.get(cacheStoreType.getStringValue()));
+        }
     }
 
+    private StatsHolder getTierStats(CacheStoreType cacheStoreType) {
+        return defaultStatsMap.get(cacheStoreType.getStringValue());
+    }
+
+    ShardRequestCache.TierStatsAccumulator getTierSpecificStats(CacheStoreType cacheStoreType) { // pkg-private for testing
+        return tierSpecificStatsMap.get(cacheStoreType.getStringValue());
+    }
+
+    public ShardRequestCache.DiskStatsAccumulator getDiskSpecificStats() {
+        return (ShardRequestCache.DiskStatsAccumulator) tierSpecificStatsMap.get(CacheStoreType.DISK.getStringValue());
+    }
+
+    public long getMemorySizeInBytes(CacheStoreType cacheStoreType) {
+        return getTierStats(cacheStoreType).totalMetric.count();
+    }
+
+    public ByteSizeValue getMemorySize(CacheStoreType cacheStoreType) {
+        return new ByteSizeValue(getMemorySizeInBytes(cacheStoreType));
+    }
+
+    public long getEvictions(CacheStoreType cacheStoreType) {
+        return getTierStats(cacheStoreType).evictionsMetric.count();
+    }
+
+    public long getHitCount(CacheStoreType cacheStoreType) {
+        return getTierStats(cacheStoreType).hitCount.count();
+    }
+
+    public long getMissCount(CacheStoreType cacheStoreType) {
+        return getTierStats(cacheStoreType).missCount.count();
+    }
+
+    public long getEntries(CacheStoreType cacheStoreType) {
+        return getTierStats(cacheStoreType).entries.count();
+    }
+
+    // By default, return on-heap stats if no tier is specified
+
     public long getMemorySizeInBytes() {
-        return this.memorySize;
+        return getMemorySizeInBytes(CacheStoreType.ON_HEAP);
     }
 
     public ByteSizeValue getMemorySize() {
-        return new ByteSizeValue(memorySize);
+        return getMemorySize(CacheStoreType.ON_HEAP);
     }
 
     public long getEvictions() {
-        return this.evictions;
+        return getEvictions(CacheStoreType.ON_HEAP);
     }
 
     public long getHitCount() {
-        return this.hitCount;
+        return getHitCount(CacheStoreType.ON_HEAP);
     }
 
     public long getMissCount() {
-        return this.missCount;
+        return getMissCount(CacheStoreType.ON_HEAP);
+    }
+
+    public long getEntries() {
+        return getEntries(CacheStoreType.ON_HEAP);
     }
 
     @Override
     public void writeTo(StreamOutput out) throws IOException {
-        out.writeVLong(memorySize);
-        out.writeVLong(evictions);
-        out.writeVLong(hitCount);
-        out.writeVLong(missCount);
+        if (out.getVersion().onOrAfter(Version.V_3_0_0)) {
+            out.writeMap(this.defaultStatsMap, StreamOutput::writeString, (o, v) -> v.writeTo(o)); // ?
+            // Manually write tier-specific stats map
+            tierSpecificStatsMap.get(CacheStoreType.ON_HEAP.getStringValue()).writeTo(out);
+            tierSpecificStatsMap.get(CacheStoreType.DISK.getStringValue()).writeTo(out);
+        } else {
+            // Write only on-heap values, and don't write entries metric
+            StatsHolder heapStats = defaultStatsMap.get(CacheStoreType.ON_HEAP.getStringValue());
+            out.writeVLong(heapStats.getMemorySize());
+            out.writeVLong(heapStats.getEvictions());
+            out.writeVLong(heapStats.getHitCount());
+            out.writeVLong(heapStats.getMissCount());
+        }
     }
 
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         builder.startObject(Fields.REQUEST_CACHE_STATS);
-        builder.humanReadableField(Fields.MEMORY_SIZE_IN_BYTES, Fields.MEMORY_SIZE, getMemorySize());
-        builder.field(Fields.EVICTIONS, getEvictions());
-        builder.field(Fields.HIT_COUNT, getHitCount());
-        builder.field(Fields.MISS_COUNT, getMissCount());
+        // write on-heap stats outside of tiers object
+        getTierStats(CacheStoreType.ON_HEAP).toXContent(builder, params);
+        getTierSpecificStats(CacheStoreType.ON_HEAP).toXContent(builder, params);
+        if (FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING)) {
+            builder.startObject(Fields.TIERS);
+            for (CacheStoreType cacheStoreType : CacheStoreType.values()) { // fixed order
+                if (cacheStoreType != CacheStoreType.ON_HEAP) {
+                    String tier = cacheStoreType.getStringValue();
+                    builder.startObject(tier);
+                    defaultStatsMap.get(tier).toXContent(builder, params);
+                    tierSpecificStatsMap.get(tier).toXContent(builder, params);
+                    builder.endObject();
+                }
+            }
+            builder.endObject();
+        }
         builder.endObject();
         return builder;
+    }
+
+    private void checkTierSpecificMap() {
+        for (CacheStoreType cacheStoreType : CacheStoreType.values()) {
+            if (tierSpecificStatsMap.get(cacheStoreType.getStringValue()) == null) {
+                throw new OpenSearchException("Missing TierStatsAccumulator for TierType " + cacheStoreType.getStringValue());
+            }
+        }
     }
 
     /**

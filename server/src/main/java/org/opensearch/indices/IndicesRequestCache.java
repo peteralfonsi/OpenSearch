@@ -42,11 +42,12 @@ import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.tier.OnHeapCachingTier;
 import org.opensearch.common.cache.tier.OpenSearchOnHeapCache;
-import org.opensearch.common.cache.tier.TierType;
-import org.opensearch.common.cache.tier.TieredCacheEventListener;
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
+import org.opensearch.common.cache.tier.listeners.TieredCacheEventListener;
 import org.opensearch.common.cache.tier.TieredCacheLoader;
-import org.opensearch.common.cache.tier.TieredCacheService;
-import org.opensearch.common.cache.tier.TieredCacheSpilloverStrategyService;
+import org.opensearch.common.cache.tier.TieredCacheRemovalNotification;
+import org.opensearch.common.cache.tier.service.TieredCacheService;
+import org.opensearch.common.cache.tier.service.TieredCacheSpilloverStrategyService;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
@@ -153,7 +154,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     @Override
-    public void onRemoval(RemovalNotification<Key, BytesReference> notification) {
+    public void onRemoval(TieredCacheRemovalNotification<Key, BytesReference> notification) {
         notification.getKey().entity.onRemoval(notification);
     }
 
@@ -163,8 +164,84 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     @Override
+<<<<<<< HEAD
     public void onCached(Key key, BytesReference value, TierType tierType) {
         key.entity.onCached(key, value, tierType);
+=======
+    public void onCached(Key key, BytesReference value, CacheStoreType cacheStoreType) {
+        key.entity.onCached(key, value, cacheStoreType);
+        updateDiskCleanupKeyToCountMap(new CleanupKey(key.entity, key.readerCacheKeyId), cacheStoreType);
+    }
+
+    /**
+     * Updates the diskCleanupKeyToCountMap with the given CleanupKey and TierType.
+     * If the TierType is not DISK, the method returns without making any changes.
+     * If the ShardId associated with the CleanupKey does not exist in the map, a new entry is created.
+     * The method increments the count of the CleanupKey in the map.
+     *
+     * Why use ShardID as the key ?
+     * CacheEntity mainly contains IndexShard, both of these classes do not override equals() and hashCode() methods.
+     * ShardID class properly overrides equals() and hashCode() methods.
+     * Therefore, to avoid modifying CacheEntity and IndexShard classes to override these methods, we use ShardID as the key.
+     *
+     * @param cleanupKey the CleanupKey to be updated in the map
+     * @param cacheStoreType the TierType of the CleanupKey
+     */
+    private void updateDiskCleanupKeyToCountMap(CleanupKey cleanupKey, CacheStoreType cacheStoreType) {
+        if(!cacheStoreType.equals(CacheStoreType.DISK)) {
+            return;
+        }
+        IndexShard indexShard = (IndexShard)cleanupKey.entity.getCacheIdentity();
+        if(indexShard == null) {
+            logger.warn("IndexShard is null for CleanupKey: {} while cleaning tier : {}",
+                cleanupKey.readerCacheKeyId, cacheStoreType.getStringValue());
+            return;
+        }
+        ShardId shardId = indexShard.shardId();
+
+        diskCleanupKeyToCountMap
+            .computeIfAbsent(shardId, k -> ConcurrentCollections.newConcurrentMap())
+            .merge(cleanupKey.readerCacheKeyId, 1, Integer::sum);
+    }
+
+    /**
+     * Updates the count of stale keys in the disk cache.
+     * This method is called when a CleanupKey is added to the keysToClean set.
+     * It increments the staleKeysInDiskCount by the count of the CleanupKey in the diskCleanupKeyToCountMap.
+     * If the CleanupKey's readerCacheKeyId is null or the CleanupKey's entity is not open, it increments the staleKeysInDiskCount
+     * by the total count of keys associated with the CleanupKey's ShardId in the diskCleanupKeyToCountMap and removes the ShardId from the map.
+     *
+     * @param cleanupKey the CleanupKey that has been marked for cleanup
+     */
+    private void updateStaleKeysInDiskCount(CleanupKey cleanupKey) {
+        IndexShard indexShard = (IndexShard) cleanupKey.entity.getCacheIdentity();
+        if(indexShard == null) {
+            logger.warn("IndexShard is null for CleanupKey: {}",  cleanupKey.readerCacheKeyId);
+            return;
+        }
+        ShardId shardId = indexShard.shardId();
+
+        ConcurrentMap<String, Integer> countMap = diskCleanupKeyToCountMap.get(shardId);
+        if (countMap == null) {
+            return;
+        }
+
+        if (cleanupKey.readerCacheKeyId == null) {
+            int totalSum = countMap.values().stream().mapToInt(Integer::intValue).sum();
+            staleKeysInDiskCount.addAndGet(totalSum);
+            diskCleanupKeyToCountMap.remove(shardId);
+            return;
+        }
+        Integer count = countMap.get(cleanupKey.readerCacheKeyId);
+        if (count == null) {
+            return;
+        }
+        staleKeysInDiskCount.addAndGet(count);
+        countMap.remove(cleanupKey.readerCacheKeyId);
+        if (countMap.isEmpty()) {
+            diskCleanupKeyToCountMap.remove(shardId);
+        }
+>>>>>>> 85c3d799000 (Addressing comments)
     }
 
     BytesReference getOrCompute(
@@ -251,7 +328,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         /**
          * Called after the value was loaded.
          */
-        void onCached(Key key, BytesReference value, TierType tierType);
+        void onCached(Key key, BytesReference value, CacheStoreType cacheStoreType);
 
         /**
          * Returns <code>true</code> iff the resource behind this entity is still open ie.
@@ -385,29 +462,122 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      * Logic to clean up in-memory cache.
      */
     synchronized void cleanCache() {
+        cleanCache(CacheStoreType.ON_HEAP);
+        tieredCacheService.getOnHeapCachingTier().refresh();
+    }
+
+    /**
+     * Logic to clean up disk based cache.
+     * <p>
+     * TODO: cleanDiskCache is very specific to disk caching tier. We can refactor this to be more generic.
+     */
+    synchronized void cleanDiskCache(double diskCachesCleanThresholdPercent) {
+        if (!canSkipDiskCacheCleanup(diskCachesCleanThresholdPercent)) {
+            cleanCache(CacheStoreType.DISK);
+        }
+    }
+
+    private synchronized void cleanCache(CacheStoreType cacheType) {
         final Set<CleanupKey> currentKeysToClean = new HashSet<>();
         final Set<Object> currentFullClean = new HashSet<>();
-        currentKeysToClean.clear();
-        currentFullClean.clear();
-        for (Iterator<CleanupKey> iterator = keysToClean.iterator(); iterator.hasNext();) {
-            CleanupKey cleanupKey = iterator.next();
-            iterator.remove();
-            if (cleanupKey.readerCacheKeyId == null || cleanupKey.entity.isOpen() == false) {
-                // null indicates full cleanup, as does a closed shard
+
+            /*
+            Stores the keys that need to be removed from keysToClean
+            This is done to avoid ConcurrentModificationException
+            */
+        final Set<CleanupKey> keysCleanedFromAllCaches = new HashSet<>();
+
+        for (Map.Entry<CleanupKey, CleanupStatus> entry : keysToClean.entrySet()) {
+            CleanupKey cleanupKey = entry.getKey();
+            CleanupStatus cleanupStatus = entry.getValue();
+
+            if (cleanupStatus.cleanedInHeap && cleanupStatus.cleanedOnDisk) {
+                keysCleanedFromAllCaches.add(cleanupKey);
+                continue;
+            }
+
+            if (cacheType == CacheStoreType.ON_HEAP && cleanupStatus.cleanedInHeap) continue;
+            if (cacheType == CacheStoreType.DISK && cleanupStatus.cleanedOnDisk) continue;
+
+            if (needsFullClean(cleanupKey)) {
                 currentFullClean.add(cleanupKey.entity.getCacheIdentity());
             } else {
                 currentKeysToClean.add(cleanupKey);
             }
+
+            if (cacheType == CacheStoreType.ON_HEAP) {
+                cleanupStatus.cleanedInHeap = true;
+            } else if (cacheType == CacheStoreType.DISK) {
+                cleanupStatus.cleanedOnDisk = true;
+            }
         }
-        if (!currentKeysToClean.isEmpty() || !currentFullClean.isEmpty()) {
-            for (Iterator<Key> iterator = tieredCacheService.getOnHeapCachingTier().keys().iterator(); iterator.hasNext();) {
-                Key key = iterator.next();
-                if (currentFullClean.contains(key.entity.getCacheIdentity())) {
-                    iterator.remove();
-                } else {
-                    if (currentKeysToClean.contains(new CleanupKey(key.entity, key.readerCacheKeyId))) {
-                        iterator.remove();
-                    }
+
+        // Remove keys that have been cleaned from all caches
+        keysToClean.keySet().removeAll(keysCleanedFromAllCaches);
+
+        // Early exit if no cleanup is needed
+        if (currentKeysToClean.isEmpty() && currentFullClean.isEmpty()) {
+            return;
+        }
+
+        CachingTier<Key, BytesReference> cachingTier;
+
+        if (cacheType == CacheStoreType.ON_HEAP) {
+            cachingTier = tieredCacheService.getOnHeapCachingTier();
+        } else {
+            cachingTier = tieredCacheService.getDiskCachingTier().get();
+        }
+
+        cleanUpKeys(
+            cachingTier,
+            currentKeysToClean,
+            currentFullClean
+        );
+    }
+
+    private synchronized boolean canSkipDiskCacheCleanup(double diskCachesCleanThresholdPercent) {
+        if (tieredCacheService.getDiskCachingTier().isEmpty()) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Skipping disk cache keys cleanup since disk caching tier is not present");
+            }
+            return true;
+        }
+        if (tieredCacheService.getDiskCachingTier().get().count() == 0) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Skipping disk cache keys cleanup since disk caching tier is empty");
+            }
+            return true;
+        }
+        if (diskCleanupKeysPercentage() < diskCachesCleanThresholdPercent) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Skipping disk cache keys cleanup since the percentage of stale keys in disk cache is less than the threshold");
+            }
+            return true;
+        }
+        return false;
+    }
+
+    synchronized double diskCleanupKeysPercentage() {
+        int totalKeysInDiskCache = tieredCacheService.getDiskCachingTier()
+            .map(CachingTier::count)
+            .orElse(0);
+        if (totalKeysInDiskCache == 0 || staleKeysInDiskCount.get() == 0) {
+            return 0;
+        }
+        return ((double) staleKeysInDiskCount.get() / totalKeysInDiskCache);
+    }
+
+    synchronized void cleanUpKeys(
+        CachingTier<Key, BytesReference> cachingTier,
+        Set<CleanupKey> currentKeysToClean,
+        Set<Object> currentFullClean
+    ) {
+        for (Key key : cachingTier.keys()) {
+            CleanupKey cleanupKey = new CleanupKey(key.entity, key.readerCacheKeyId);
+            if (currentFullClean.contains(key.entity.getCacheIdentity()) || currentKeysToClean.contains(cleanupKey)) {
+                cachingTier.invalidate(key);
+                if(cachingTier.getTierType() == CacheStoreType.DISK) {
+                    staleKeysInDiskCount.decrementAndGet();
                 }
             }
         }

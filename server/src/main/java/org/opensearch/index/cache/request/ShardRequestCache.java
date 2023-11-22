@@ -33,7 +33,12 @@
 package org.opensearch.index.cache.request;
 
 import org.apache.lucene.util.Accountable;
-import org.opensearch.common.cache.tier.TierType;
+import org.opensearch.OpenSearchException;
+import org.opensearch.common.cache.tier.CacheValue;
+import org.opensearch.common.cache.tier.DiskTierRequestStats;
+import org.opensearch.common.cache.tier.OnHeapTierRequestStats;
+import org.opensearch.common.cache.tier.TierRequestStats;
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.core.common.bytes.BytesReference;
 
@@ -46,11 +51,20 @@ import java.util.EnumMap;
  */
 public final class ShardRequestCache {
 
-    private EnumMap<TierType, StatsHolder> statsHolder = new EnumMap<>(TierType.class);
+    // Holds stats common to all tiers
+    private final EnumMap<CacheStoreType, StatsHolder> defaultStatsHolder = new EnumMap<>(CacheStoreType.class);
+
+    // Holds tier-specific stats
+    private final EnumMap<CacheStoreType, TierStatsAccumulator> tierSpecificStatsHolder = new EnumMap<>(CacheStoreType.class);
 
     public ShardRequestCache() {
-        for (TierType tierType : TierType.values()) {
-            statsHolder.put(tierType, new StatsHolder());
+        tierSpecificStatsHolder.put(CacheStoreType.ON_HEAP, new OnHeapStatsAccumulator());
+        tierSpecificStatsHolder.put(CacheStoreType.DISK, new DiskStatsAccumulator());
+        for (CacheStoreType cacheStoreType : CacheStoreType.values()) {
+            defaultStatsHolder.put(cacheStoreType, new StatsHolder());
+            if (tierSpecificStatsHolder.get(cacheStoreType) == null) {
+                throw new OpenSearchException("Missing TierStatsAccumulator for TierType " + cacheStoreType.getStringValue());
+            }
         }
     }
 
@@ -64,21 +78,30 @@ public final class ShardRequestCache {
         );
     }
 
-    public void onHit(TierType tierType) {
-        statsHolder.get(tierType).hitCount.inc();
+    public void onHit(CacheValue<BytesReference> cacheValue) {
+        CacheStoreType source = cacheValue.getSource();
+        defaultStatsHolder.get(source).hitCount.inc();
+        tierSpecificStatsHolder.get(source).addRequestStats(cacheValue.getStats());
     }
 
-    public void onMiss(TierType tierType) {
-        statsHolder.get(tierType).missCount.inc();
+    public void onMiss(CacheValue<BytesReference> cacheValue) {
+        CacheStoreType source = cacheValue.getSource();
+        defaultStatsHolder.get(source).missCount.inc();
+        tierSpecificStatsHolder.get(source).addRequestStats(cacheValue.getStats());
     }
 
-    public void onCached(Accountable key, BytesReference value, TierType tierType) {
-        statsHolder.get(tierType).totalMetric.inc(key.ramBytesUsed() + value.ramBytesUsed());
+    public void onCached(Accountable key, BytesReference value, CacheStoreType cacheStoreType) {
+        defaultStatsHolder.get(cacheStoreType).totalMetric.inc(key.ramBytesUsed() + value.ramBytesUsed());
+        defaultStatsHolder.get(cacheStoreType).entries.inc();
     }
 
-    public void onRemoval(Accountable key, BytesReference value, boolean evicted, TierType tierType) {
+    public void onRemoval(Accountable key, BytesReference value, boolean evicted) {
+        onRemoval(key, value, evicted, CacheStoreType.ON_HEAP); // By default On heap cache.
+    }
+
+    public void onRemoval(Accountable key, BytesReference value, boolean evicted, CacheStoreType cacheStoreType) {
         if (evicted) {
-            statsHolder.get(tierType).evictionsMetric.inc();
+            defaultStatsHolder.get(cacheStoreType).evictionsMetric.inc();
         }
         long dec = 0;
         if (key != null) {
@@ -87,7 +110,8 @@ public final class ShardRequestCache {
         if (value != null) {
             dec += value.ramBytesUsed();
         }
-        statsHolder.get(tierType).totalMetric.dec(dec);
+        defaultStatsHolder.get(cacheStoreType).totalMetric.dec(dec);
+        defaultStatsHolder.get(cacheStoreType).entries.dec();
     }
 
     static class StatsHolder {

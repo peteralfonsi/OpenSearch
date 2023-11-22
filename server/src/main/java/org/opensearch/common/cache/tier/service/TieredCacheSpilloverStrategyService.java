@@ -6,11 +6,23 @@
  * compatible open source license.
  */
 
-package org.opensearch.common.cache.tier;
+package org.opensearch.common.cache.tier.service;
 
-import org.opensearch.common.cache.RemovalListener;
-import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
+import org.opensearch.common.cache.tier.CacheTierPolicy;
+import org.opensearch.common.cache.tier.CacheValue;
+import org.opensearch.common.cache.tier.DiskTierProvider;
+import org.opensearch.common.settings.ClusterSettings;
+import org.opensearch.common.util.FeatureFlags;
+import org.opensearch.indices.IndicesRequestCache;
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
+import org.opensearch.common.cache.tier.CachingTier;
+import org.opensearch.common.cache.tier.DiskCachingTier;
+import org.opensearch.common.cache.tier.OnHeapCachingTier;
+import org.opensearch.common.cache.tier.TieredCacheLoader;
+import org.opensearch.common.cache.tier.TieredCacheRemovalNotification;
+import org.opensearch.common.cache.tier.listeners.TieredCacheEventListener;
+import org.opensearch.common.cache.tier.listeners.TieredCacheRemovalListener;
 
 import java.util.Arrays;
 import java.util.List;
@@ -24,7 +36,7 @@ import java.util.function.Function;
  * @param <K> Type of key
  * @param <V> Type of value
  */
-public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheService<K, V>, RemovalListener<K, V> {
+public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheService<K, V>, TieredCacheRemovalListener<K, V> {
 
     private final OnHeapCachingTier<K, V> onHeapCachingTier;
 
@@ -63,10 +75,10 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
         if (cacheValue == null) {
             // Add the value to the onHeap cache. Any items if evicted will be moved to lower tier.
             V value = onHeapCachingTier.compute(key, loader);
-            tieredCacheEventListener.onCached(key, value, TierType.ON_HEAP);
+            tieredCacheEventListener.onCached(key, value, CacheStoreType.ON_HEAP);
             return value;
         }
-        return cacheValue.value;
+        return cacheValue.getValue();
     }
 
     @Override
@@ -75,7 +87,7 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
         if (cacheValue == null) {
             return null;
         }
-        return cacheValue.value;
+        return cacheValue.getValue();
     }
 
     /**
@@ -87,7 +99,7 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
         // We don't need to track hits/misses in this case.
         CacheValue<V> cacheValue = getValueFromTierCache(false).apply(key);
         if (cacheValue != null) {
-            switch (cacheValue.source) {
+            switch (cacheValue.getSource()) {
                 case ON_HEAP:
                     onHeapCachingTier.invalidate(key);
                     break;
@@ -126,14 +138,16 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
      * @param notification Contains info about the removal like reason, key/value etc.
      */
     @Override
-    public void onRemoval(RemovalNotification<K, V> notification) {
+    public void onRemoval(TieredCacheRemovalNotification<K, V> notification) {
         if (RemovalReason.EVICTED.equals(notification.getRemovalReason())) {
             switch (notification.getTierType()) {
                 case ON_HEAP:
-                    diskCachingTier.ifPresent(diskTier -> {
-                        diskTier.put(notification.getKey(), notification.getValue());
-                        tieredCacheEventListener.onCached(notification.getKey(), notification.getValue(), TierType.DISK);
-                    });
+                    if (checkPolicies(notification.getValue()) && diskTierInUse) {
+                        diskCachingTier.ifPresent(diskTier -> {
+                            diskTier.put(notification.getKey(), notification.getValue());
+                            tieredCacheEventListener.onCached(notification.getKey(), notification.getValue(), CacheStoreType.DISK);
+                        });
+                    }
                     break;
                 default:
                     break;
@@ -164,8 +178,8 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
     private Function<K, CacheValue<V>> getValueFromTierCache(boolean trackStats) {
         return key -> {
             for (CachingTier<K, V> cachingTier : cachingTierList) {
-                V value = cachingTier.get(key);
-                if (value != null) {
+                CacheValue<V> cacheValue = cachingTier.get(key);
+                if (cacheValue.getValue() != null) {
                     if (trackStats) {
                         tieredCacheEventListener.onHit(key, value, cachingTier.getTierType());
                     }
@@ -224,5 +238,4 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
             return new TieredCacheSpilloverStrategyService<K, V>(this);
         }
     }
-
 }
