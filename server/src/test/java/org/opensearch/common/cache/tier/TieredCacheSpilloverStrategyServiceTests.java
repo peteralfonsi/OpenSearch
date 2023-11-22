@@ -30,12 +30,11 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
     public void testComputeAndAbsentWithoutAnyOnHeapCacheEviction() throws Exception {
         int onHeapCacheSize = randomIntBetween(10, 30);
         MockTieredCacheEventListener<String, String> eventListener = new MockTieredCacheEventListener<String, String>();
-        TieredCacheSpilloverStrategyService<String, String, String> spilloverStrategyService = intializeTieredCacheService(
+        TieredCacheSpilloverStrategyService<String, String> spilloverStrategyService = intializeTieredCacheService(
             onHeapCacheSize,
             randomIntBetween(1, 4),
             eventListener,
-                null,
-            null
+                null
         );
         int numOfItems1 = randomIntBetween(1, onHeapCacheSize / 2 - 1);
         List<String> keys = new ArrayList<>();
@@ -76,11 +75,10 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         int diskCacheSize = randomIntBetween(60, 100);
         int totalSize = onHeapCacheSize + diskCacheSize;
         MockTieredCacheEventListener<String, String> eventListener = new MockTieredCacheEventListener<String, String>();
-        TieredCacheSpilloverStrategyService<String, String, String> spilloverStrategyService = intializeTieredCacheService(
+        TieredCacheSpilloverStrategyService<String, String> spilloverStrategyService = intializeTieredCacheService(
             onHeapCacheSize,
             diskCacheSize,
             eventListener,
-            null,
             null
         );
 
@@ -145,11 +143,10 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         int totalSize = onHeapCacheSize + diskCacheSize;
 
         MockTieredCacheEventListener<String, String> eventListener = new MockTieredCacheEventListener<String, String>();
-        TieredCacheSpilloverStrategyService<String, String, String> spilloverStrategyService = intializeTieredCacheService(
+        TieredCacheSpilloverStrategyService<String, String> spilloverStrategyService = intializeTieredCacheService(
             onHeapCacheSize,
             diskCacheSize,
             eventListener,
-            null,
             null
         );
 
@@ -168,11 +165,10 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         int totalSize = onHeapCacheSize + diskCacheSize;
 
         MockTieredCacheEventListener<String, String> eventListener = new MockTieredCacheEventListener<String, String>();
-        TieredCacheSpilloverStrategyService<String, String, String> spilloverStrategyService = intializeTieredCacheService(
+        TieredCacheSpilloverStrategyService<String, String> spilloverStrategyService = intializeTieredCacheService(
             onHeapCacheSize,
             diskCacheSize,
             eventListener,
-            null,
             null
         );
 
@@ -211,12 +207,10 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         int onHeapCacheSize = randomIntBetween(10, 30);
         MockTieredCacheEventListener<String, String> eventListener = new MockTieredCacheEventListener<String, String>();
         Function<String, String> identityFunction = (String value) -> { return value; };
-        TieredCacheSpilloverStrategyService<String, String, String> spilloverStrategyService = new TieredCacheSpilloverStrategyService.Builder<
-            String,
+        TieredCacheSpilloverStrategyService<String, String> spilloverStrategyService = new TieredCacheSpilloverStrategyService.Builder<
             String,
             String>().setOnHeapCachingTier(new MockOnHeapCacheTier<>(onHeapCacheSize))
             .setTieredCacheEventListener(eventListener)
-            .withPreDiskCachingPolicyFunction(identityFunction)
             .build();
         int numOfItems = randomIntBetween(onHeapCacheSize + 1, onHeapCacheSize * 3);
         for (int iter = 0; iter < numOfItems; iter++) {
@@ -229,12 +223,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         assertEquals(0, eventListener.enumMap.get(TierType.DISK).missCount.count());
     }
 
-    public void testTransformationFunctionAndDiskTierPolicy() throws Exception {
-        // For transformation function, return the string reversed
-        // For policy function, allow if what it receives starts with "a" (so original string ends with "a") and string is even length
-        Function<String, String> reverseStringFunction = (String value) -> {
-            return new StringBuilder(value).reverse().toString();
-        };
+    public void testDiskTierPolicies() throws Exception {
+        // For policy function, allow if what it receives starts with "a" and string is even length
         ArrayList<CacheTierPolicy<String>> policies = new ArrayList<>();
         policies.add(new AllowFirstLetterA());
         policies.add(new AllowEvenLengths());
@@ -242,24 +232,23 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         int onHeapCacheSize = 0;
         int diskCacheSize = 10000;
         MockTieredCacheEventListener<String, String> eventListener = new MockTieredCacheEventListener<String, String>();
-        TieredCacheSpilloverStrategyService<String, String, String> spilloverStrategyService = intializeTieredCacheService(
+        TieredCacheSpilloverStrategyService<String, String> spilloverStrategyService = intializeTieredCacheService(
             onHeapCacheSize,
             diskCacheSize,
             eventListener,
-            reverseStringFunction,
             policies
         );
 
         Map<String, String> keyValuePairs = new HashMap<>();
         Map<String, Boolean> expectedOutputs = new HashMap<>();
-        keyValuePairs.put("key1", "dcba");
+        keyValuePairs.put("key1", "abcd");
         expectedOutputs.put("key1", true);
-        keyValuePairs.put("key2", "edcba");
+        keyValuePairs.put("key2", "abcde");
         expectedOutputs.put("key2", false);
-        keyValuePairs.put("key3", "abc");
+        keyValuePairs.put("key3", "bbc");
         expectedOutputs.put("key3", false);
         keyValuePairs.put("key4", "ab");
-        expectedOutputs.put("key4", false);
+        expectedOutputs.put("key4", true);
         keyValuePairs.put("key5", "");
         expectedOutputs.put("key5", false);
 
@@ -289,14 +278,6 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
                 return false;
             }
         }
-        @Override
-        public boolean isActive() {
-            return true;
-        }
-        @Override
-        public void activate() {}
-        @Override
-        public void deactivate() {}
     }
 
     private static class AllowEvenLengths implements CacheTierPolicy<String> {
@@ -304,14 +285,6 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         public boolean checkData(String data) {
             return data.length() % 2 == 0;
         }
-        @Override
-        public boolean isActive() {
-            return true;
-        }
-        @Override
-        public void activate() {}
-        @Override
-        public void deactivate() {}
     }
 
     private TieredCacheLoader<String, String> getTieredCacheLoader() {
@@ -347,22 +320,14 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         };
     }
 
-    private TieredCacheSpilloverStrategyService<String, String, String> intializeTieredCacheService(
+    private TieredCacheSpilloverStrategyService<String, String> intializeTieredCacheService(
         int onHeapCacheSize,
         int diskCacheSize,
         TieredCacheEventListener<String, String> cacheEventListener,
-        Function<String, String> transformationFunction, // If passed null, default to identity function
         List<CacheTierPolicy<String>> policies // If passed null, default to no policies (empty list)
     ) {
         DiskCachingTier<String, String> diskCache = new MockDiskCachingTier<>(diskCacheSize);
         OnHeapCachingTier<String, String> openSearchOnHeapCache = new MockOnHeapCacheTier<>(onHeapCacheSize);
-
-        Function<String, String> function;
-        if (transformationFunction != null) {
-            function = transformationFunction;
-        } else {
-            function = (String value) -> value;
-        }
 
         List<CacheTierPolicy<String>> policiesToUse = new ArrayList<>();
         if (policies != null) {
@@ -370,10 +335,9 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
 
-        return new TieredCacheSpilloverStrategyService.Builder<String, String, String>().setOnHeapCachingTier(openSearchOnHeapCache)
+        return new TieredCacheSpilloverStrategyService.Builder<String, String>().setOnHeapCachingTier(openSearchOnHeapCache)
             .setOnDiskCachingTier(diskCache)
             .setTieredCacheEventListener(cacheEventListener)
-            .withPreDiskCachingPolicyFunction(function)
             .withPolicies(policiesToUse)
             .build();
     }

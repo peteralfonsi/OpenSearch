@@ -7,25 +7,6 @@
  */
 
 /*
- * Licensed to Elasticsearch under one or more contributor
- * license agreements. See the NOTICE file distributed with
- * this work for additional information regarding copyright
- * ownership. Elasticsearch licenses this file to you under
- * the Apache License, Version 2.0 (the "License"); you may
- * not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
-
-/*
  * Modifications Copyright OpenSearch Contributors. See
  * GitHub history for details.
  */
@@ -41,63 +22,55 @@ import org.opensearch.indices.CacheTierPolicy;
 import org.opensearch.search.query.QuerySearchResult;
 
 import java.io.IOException;
+import java.util.function.Function;
 
 /**
  * A cache tier policy which accepts queries whose took time is greater than some threshold,
  * which is specified as a dynamic cluster-level setting. The threshold should be set to approximately
  * the time it takes to get a result from the cache tier.
+ * The policy expects to be able to read a CachePolicyInfoWrapper from the start of the BytesReference.
  */
-public class DiskTierTookTimePolicy implements CacheTierPolicy<QuerySearchResult> {
+public class DiskTierTookTimePolicy implements CacheTierPolicy<BytesReference> {
     public static final Setting<TimeValue> DISK_TOOKTIME_THRESHOLD_SETTING = Setting.positiveTimeSetting(
         "index.requests.cache.disk.tooktime.threshold",
         new TimeValue(10),
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
-    );
+    ); // Set this to TimeValue.ZERO to let all data through
 
     private TimeValue threshold;
-    boolean isActive;
+    private final Function<BytesReference, CachePolicyInfoWrapper> getPolicyInfoFn;
 
-    public DiskTierTookTimePolicy(Settings settings, ClusterSettings clusterSettings) {
+    public DiskTierTookTimePolicy(Settings settings, ClusterSettings clusterSettings, Function<BytesReference, CachePolicyInfoWrapper> getPolicyInfoFn) {
         this.threshold = DISK_TOOKTIME_THRESHOLD_SETTING.get(settings);
         clusterSettings.addSettingsUpdateConsumer(DISK_TOOKTIME_THRESHOLD_SETTING, this::setThreshold);
-        isActive = true;
+        this.getPolicyInfoFn = getPolicyInfoFn;
     }
 
-    protected void setThreshold(TimeValue threshold) { // public so that we can manually set value in unit test
+    protected void setThreshold(TimeValue threshold) { // protected so that we can manually set value in unit test
         this.threshold = threshold;
     }
 
     @Override
-    public boolean checkData(QuerySearchResult qsr) {
-        if (!isActive) {
+    public boolean checkData(BytesReference data) {
+        if (threshold.equals(TimeValue.ZERO)) {
             return true;
         }
-        Long tookTimeNanos = qsr.getTookTimeNanos();
+        Long tookTimeNanos;
+        try {
+            tookTimeNanos = getPolicyInfoFn.apply(data).getTookTimeNanos();
+        } catch (Exception e) {
+            // If we can't retrieve the took time for whatever reason, admit the data to be safe
+            return true;
+        }
         if (tookTimeNanos == null) {
-            return true;
             // Received a null took time -> this QSR is from an old version which does not have took time, we should accept it
+            return true;
         }
-        TimeValue tookTime = TimeValue.timeValueNanos(qsr.getTookTimeNanos());
+        TimeValue tookTime = TimeValue.timeValueNanos(tookTimeNanos);
         if (tookTime.compareTo(threshold) < 0) { // negative -> tookTime is shorter than threshold
             return false;
         }
         return true;
-    }
-
-    @Override
-    public boolean isActive() {
-        return isActive;
-    }
-
-    @Override
-    public void activate() {
-        isActive = true;
-
-    }
-
-    @Override
-    public void deactivate() {
-        isActive = false;
     }
 }

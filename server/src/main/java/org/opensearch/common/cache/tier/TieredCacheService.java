@@ -15,11 +15,8 @@ import java.util.Optional;
  * flavors like spillover etc.
  * @param <K> Type of key
  * @param <V> Type of value
- * @param <W> Type that V can be transformed into to inspect its contents to apply policies.
- *           For example, if V is BytesReference, W might be QuerySearchResult.
- *           Can be the same as V if no transformation is necessary
  */
-public interface TieredCacheService<K, V, W> {
+public interface TieredCacheService<K, V> {
 
     V computeIfAbsent(K key, TieredCacheLoader<K, V> loader) throws Exception;
 
@@ -34,11 +31,4 @@ public interface TieredCacheService<K, V, W> {
     OnHeapCachingTier<K, V> getOnHeapCachingTier();
 
     Optional<DiskCachingTier<K, V>> getDiskCachingTier();
-
-    /**
-     * Function transforming values of type V to type W so they can be inspected for contents before applying disk-tier policies.
-     * @param value
-     * @return
-     */
-    W preDiskCachingPolicyFunction(V value);
 }
