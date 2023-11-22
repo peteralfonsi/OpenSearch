@@ -251,11 +251,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         tieredCacheService.invalidate(new Key(cacheEntity, cacheKey, readerCacheKeyId));
     }
 
-    // Passed to TieredCacheService as its V -> W transformation function for inspecting BytesReferences in policies
-    public static QuerySearchResult convertBytesReferenceToQSR(BytesReference data) throws IOException, IllegalStateException {
-        return new QuerySearchResult(data.streamInput());
-    }
-
     public static CachePolicyInfoWrapper getPolicyInfo(BytesReference data) throws IOException {
         // Reads the policy info corresponding to this QSR, written in IndicesService$loadIntoContext,
         // without having to create a potentially large short-lived QSR object just for this purpose
