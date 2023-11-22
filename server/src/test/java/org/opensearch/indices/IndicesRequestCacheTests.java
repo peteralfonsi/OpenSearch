@@ -524,16 +524,6 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         return out.bytes();
     }
 
-    public void testBytesReferenceToQSRFunction() throws Exception {
-        BytesReference badQSR = new BytesArray("I love bytes!!!");
-        long ttn = 1000L;
-        BytesReference goodQSR = getQSRBytesReference(ttn);
-        //assertThrows(IOException.class, () -> IndicesRequestCache.convertBytesReferenceToQSR(badQSR));
-        // TODO: Uncomment this line if we decide to enforce IRC only accepting BytesReferences which can become QSRs.
-        QuerySearchResult unpackedQSR = IndicesRequestCache.convertBytesReferenceToQSR(goodQSR);
-        assertEquals(ttn, (long) unpackedQSR.getTookTimeNanos());
-    }
-
     private class TestBytesReference extends AbstractBytesReference {
 
         int dummyValue;
