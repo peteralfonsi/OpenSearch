@@ -27,7 +27,7 @@ import org.opensearch.common.cache.tier.keystore.RBMIntKeyLookupStore;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
-@Fork(1)
+@Fork(3)
 @Warmup(iterations = 3)
 @Measurement(iterations = 5)
 @BenchmarkMode(Mode.SampleTime)
@@ -76,7 +76,6 @@ public class AdHocRBMBenchmark {
         Random rand;
         @Setup(Level.Invocation)
         public void setupRemoveState() {
-            System.out.println("Setting up!!");
             this.kls = new RBMIntKeyLookupStore(0L); // default modulo, no memory cap
             this.rand = Randomness.get();
             this.values = new int[numAdds];
@@ -87,8 +86,6 @@ public class AdHocRBMBenchmark {
             }
         }
     }
-
-
 
     // BENCHMARKS BELOW
     @Benchmark
@@ -108,7 +105,6 @@ public class AdHocRBMBenchmark {
     @Benchmark
     public void testRemove(RemoveState state, Blackhole bh) {
         for (int i = 0; i < state.numAdds; i++) {
-            System.out.println(state.kls.contains(state.values[i]));
             bh.consume(state.kls.remove(state.values[i]));
         }
     }

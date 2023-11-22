@@ -72,6 +72,7 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
     }
 
     protected final int modulo;
+    protected final int modulo_bitmask;
     KeyStoreStats stats;
     protected RoaringBitmap rbm;
     private HashMap<Integer, CounterMetric> collidedIntCounters;
@@ -92,6 +93,11 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
 
     public RBMIntKeyLookupStore(KeystoreModuloValue moduloValue, long memSizeCapInBytes) {
         this.modulo = moduloValue.getValue();
+        if (modulo > 0) {
+            this.modulo_bitmask = modulo - 1; // keep last log_2(modulo) bits
+        } else {
+            this.modulo_bitmask = -1; // all ones, include all bits -> same as no modulo
+        }
         this.stats = new KeyStoreStats(memSizeCapInBytes);
         this.rbm = new RoaringBitmap();
         this.collidedIntCounters = new HashMap<>();
@@ -100,7 +106,8 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
     }
 
     private final int transform(int value) {
-        return modulo == 0 ? value : value % modulo;
+        //return modulo == 0 ? value : value % modulo;
+        return value & modulo_bitmask;
     }
 
     private void handleCollisions(int transformedValue) {
