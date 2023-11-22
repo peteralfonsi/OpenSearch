@@ -8,9 +8,11 @@
 
 package org.opensearch.common.cache.tier;
 
-import org.opensearch.common.cache.RemovalListener;
-import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
+import org.opensearch.common.cache.tier.listeners.TieredCacheEventListener;
+import org.opensearch.common.cache.tier.listeners.TieredCacheRemovalListener;
+import org.opensearch.common.cache.tier.service.TieredCacheSpilloverStrategyService;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.test.OpenSearchTestCase;
 
@@ -43,9 +45,9 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
             TieredCacheLoader<String, String> tieredCacheLoader = getTieredCacheLoader();
             spilloverStrategyService.computeIfAbsent(key, tieredCacheLoader);
         }
-        assertEquals(numOfItems1, eventListener.enumMap.get(TierType.ON_HEAP).missCount.count());
-        assertEquals(0, eventListener.enumMap.get(TierType.ON_HEAP).hitCount.count());
-        assertEquals(0, eventListener.enumMap.get(TierType.ON_HEAP).evictionsMetric.count());
+        assertEquals(numOfItems1, eventListener.enumMap.get(CacheStoreType.ON_HEAP).missCount.count());
+        assertEquals(0, eventListener.enumMap.get(CacheStoreType.ON_HEAP).hitCount.count());
+        assertEquals(0, eventListener.enumMap.get(CacheStoreType.ON_HEAP).evictionsMetric.count());
 
         // Try to hit cache again with some randomization.
         int numOfItems2 = randomIntBetween(1, onHeapCacheSize / 2 - 1);
@@ -63,9 +65,9 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
                 cacheMiss++;
             }
         }
-        assertEquals(cacheHit, eventListener.enumMap.get(TierType.ON_HEAP).hitCount.count());
-        assertEquals(numOfItems1 + cacheMiss, eventListener.enumMap.get(TierType.ON_HEAP).missCount.count());
-        assertEquals(0, eventListener.enumMap.get(TierType.ON_HEAP).evictionsMetric.count());
+        assertEquals(cacheHit, eventListener.enumMap.get(CacheStoreType.ON_HEAP).hitCount.count());
+        assertEquals(numOfItems1 + cacheMiss, eventListener.enumMap.get(CacheStoreType.ON_HEAP).missCount.count());
+        assertEquals(0, eventListener.enumMap.get(CacheStoreType.ON_HEAP).evictionsMetric.count());
     }
 
     public void testComputeAndAbsentWithEvictionsFromOnHeapCache() throws Exception {
@@ -95,15 +97,15 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
             TieredCacheLoader<String, String> tieredCacheLoader = getTieredCacheLoader();
             spilloverStrategyService.computeIfAbsent(key, tieredCacheLoader);
         }
-        assertEquals(numOfItems1, eventListener.enumMap.get(TierType.ON_HEAP).missCount.count());
-        assertEquals(0, eventListener.enumMap.get(TierType.ON_HEAP).hitCount.count());
-        assertTrue(eventListener.enumMap.get(TierType.ON_HEAP).evictionsMetric.count() > 0);
+        assertEquals(numOfItems1, eventListener.enumMap.get(CacheStoreType.ON_HEAP).missCount.count());
+        assertEquals(0, eventListener.enumMap.get(CacheStoreType.ON_HEAP).hitCount.count());
+        assertTrue(eventListener.enumMap.get(CacheStoreType.ON_HEAP).evictionsMetric.count() > 0);
 
         assertEquals(
-            eventListener.enumMap.get(TierType.ON_HEAP).evictionsMetric.count(),
-            eventListener.enumMap.get(TierType.DISK).cachedCount.count()
+            eventListener.enumMap.get(CacheStoreType.ON_HEAP).evictionsMetric.count(),
+            eventListener.enumMap.get(CacheStoreType.DISK).cachedCount.count()
         );
-        assertEquals(diskTierKeys.size(), eventListener.enumMap.get(TierType.DISK).cachedCount.count());
+        assertEquals(diskTierKeys.size(), eventListener.enumMap.get(CacheStoreType.DISK).cachedCount.count());
 
         // Try to hit cache again with some randomization.
         int numOfItems2 = randomIntBetween(50, 200);
@@ -129,10 +131,10 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
             }
         }
         // On heap cache misses would also include diskCacheHits as it means it missed onHeap cache.
-        assertEquals(numOfItems1 + cacheMiss + diskCacheHit, eventListener.enumMap.get(TierType.ON_HEAP).missCount.count());
-        assertEquals(onHeapCacheHit, eventListener.enumMap.get(TierType.ON_HEAP).hitCount.count());
-        assertEquals(cacheMiss + numOfItems1, eventListener.enumMap.get(TierType.DISK).missCount.count());
-        assertEquals(diskCacheHit, eventListener.enumMap.get(TierType.DISK).hitCount.count());
+        assertEquals(numOfItems1 + cacheMiss + diskCacheHit, eventListener.enumMap.get(CacheStoreType.ON_HEAP).missCount.count());
+        assertEquals(onHeapCacheHit, eventListener.enumMap.get(CacheStoreType.ON_HEAP).hitCount.count());
+        assertEquals(cacheMiss + numOfItems1, eventListener.enumMap.get(CacheStoreType.DISK).missCount.count());
+        assertEquals(diskCacheHit, eventListener.enumMap.get(CacheStoreType.DISK).hitCount.count());
     }
 
     public void testComputeAndAbsentWithEvictionsFromBothTier() throws Exception {
@@ -153,8 +155,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
             TieredCacheLoader<String, String> tieredCacheLoader = getTieredCacheLoader();
             spilloverStrategyService.computeIfAbsent(UUID.randomUUID().toString(), tieredCacheLoader);
         }
-        assertTrue(eventListener.enumMap.get(TierType.ON_HEAP).evictionsMetric.count() > 0);
-        assertTrue(eventListener.enumMap.get(TierType.DISK).evictionsMetric.count() > 0);
+        assertTrue(eventListener.enumMap.get(CacheStoreType.ON_HEAP).evictionsMetric.count() > 0);
+        assertTrue(eventListener.enumMap.get(CacheStoreType.DISK).evictionsMetric.count() > 0);
     }
 
     public void testGetAndCount() throws Exception {
@@ -213,10 +215,10 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
             TieredCacheLoader<String, String> tieredCacheLoader = getTieredCacheLoader();
             spilloverStrategyService.computeIfAbsent(UUID.randomUUID().toString(), tieredCacheLoader);
         }
-        assertTrue(eventListener.enumMap.get(TierType.ON_HEAP).evictionsMetric.count() > 0);
-        assertEquals(0, eventListener.enumMap.get(TierType.DISK).cachedCount.count());
-        assertEquals(0, eventListener.enumMap.get(TierType.DISK).evictionsMetric.count());
-        assertEquals(0, eventListener.enumMap.get(TierType.DISK).missCount.count());
+        assertTrue(eventListener.enumMap.get(CacheStoreType.ON_HEAP).evictionsMetric.count() > 0);
+        assertEquals(0, eventListener.enumMap.get(CacheStoreType.DISK).cachedCount.count());
+        assertEquals(0, eventListener.enumMap.get(CacheStoreType.DISK).evictionsMetric.count());
+        assertEquals(0, eventListener.enumMap.get(CacheStoreType.DISK).missCount.count());
     }
 
     public void testDiskTierPolicies() throws Exception {
@@ -338,11 +340,11 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
             .build();
     }
 
-    class MockOnHeapCacheTier<K, V> implements OnHeapCachingTier<K, V>, RemovalListener<K, V> {
+    class MockOnHeapCacheTier<K, V> implements OnHeapCachingTier<K, V>, TieredCacheRemovalListener<K, V> {
 
         Map<K, V> onHeapCacheTier;
         int maxSize;
-        private RemovalListener<K, V> removalListener;
+        private TieredCacheRemovalListener<K, V> removalListener;
 
         MockOnHeapCacheTier(int size) {
             maxSize = size;
@@ -362,7 +364,7 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         @Override
         public V computeIfAbsent(K key, TieredCacheLoader<K, V> loader) throws Exception {
             if (this.onHeapCacheTier.size() > maxSize) { // If it exceeds, just notify for evict.
-                onRemoval(new RemovalNotification<>(key, loader.load(key), RemovalReason.EVICTED, TierType.ON_HEAP));
+                onRemoval(new TieredCacheRemovalNotification<>(key, loader.load(key), RemovalReason.EVICTED, CacheStoreType.ON_HEAP));
                 return loader.load(key);
             }
             return this.onHeapCacheTier.computeIfAbsent(key, k -> {
@@ -382,7 +384,7 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         @Override
         public V compute(K key, TieredCacheLoader<K, V> loader) throws Exception {
             if (this.onHeapCacheTier.size() >= maxSize) { // If it exceeds, just notify for evict.
-                onRemoval(new RemovalNotification<>(key, loader.load(key), RemovalReason.EVICTED, TierType.ON_HEAP));
+                onRemoval(new TieredCacheRemovalNotification<>(key, loader.load(key), RemovalReason.EVICTED, CacheStoreType.ON_HEAP));
                 return loader.load(key);
             }
             return this.onHeapCacheTier.compute(key, ((k, v) -> {
@@ -395,7 +397,7 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-        public void setRemovalListener(RemovalListener<K, V> removalListener) {
+        public void setRemovalListener(TieredCacheRemovalListener<K, V> removalListener) {
             this.removalListener = removalListener;
         }
 
@@ -415,46 +417,56 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-        public TierType getTierType() {
-            return TierType.ON_HEAP;
+        public CacheStoreType getTierType() {
+            return CacheStoreType.ON_HEAP;
         }
 
         @Override
-        public void onRemoval(RemovalNotification<K, V> notification) {
+        public void onRemoval(TieredCacheRemovalNotification<K, V> notification) {
             removalListener.onRemoval(notification);
         }
     }
 
     class MockTieredCacheEventListener<K, V> implements TieredCacheEventListener<K, V> {
 
-        EnumMap<TierType, TestStatsHolder> enumMap = new EnumMap<>(TierType.class);
+        EnumMap<CacheStoreType, TestStatsHolder> enumMap = new EnumMap<>(CacheStoreType.class);
 
         MockTieredCacheEventListener() {
-            for (TierType tierType : TierType.values()) {
-                enumMap.put(tierType, new TestStatsHolder());
+            for (CacheStoreType cacheStoreType : CacheStoreType.values()) {
+                enumMap.put(cacheStoreType, new TestStatsHolder());
             }
         }
 
         @Override
+<<<<<<< HEAD
         public void onMiss(K key, CacheValue<V> cacheValue) {
             enumMap.get(cacheValue.getSource()).missCount.inc();
+=======
+        public void onMiss(K key, CacheStoreType cacheStoreType) {
+            enumMap.get(cacheStoreType).missCount.inc();
+>>>>>>> 2e9c47836bf (Addressing comments)
         }
 
         @Override
-        public void onRemoval(RemovalNotification<K, V> notification) {
+        public void onRemoval(TieredCacheRemovalNotification<K, V> notification) {
             if (notification.getRemovalReason().equals(RemovalReason.EVICTED)) {
                 enumMap.get(notification.getTierType()).evictionsMetric.inc();
             }
         }
 
         @Override
+<<<<<<< HEAD
         public void onHit(K key, CacheValue<V> cacheValue) {
             enumMap.get(cacheValue.getSource()).hitCount.inc();
+=======
+        public void onHit(K key, V value, CacheStoreType cacheStoreType) {
+            enumMap.get(cacheStoreType).hitCount.inc();
+>>>>>>> 2e9c47836bf (Addressing comments)
         }
 
         @Override
-        public void onCached(K key, V value, TierType tierType) {
-            enumMap.get(tierType).cachedCount.inc();
+        public void onCached(K key, V value, CacheStoreType cacheStoreType) {
+            enumMap.get(cacheStoreType).cachedCount.inc();
         }
 
         class TestStatsHolder {
@@ -466,9 +478,9 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
     }
 
-    class MockDiskCachingTier<K, V> implements DiskCachingTier<K, V>, RemovalListener<K, V> {
+    class MockDiskCachingTier<K, V> implements DiskCachingTier<K, V>, TieredCacheRemovalListener<K, V> {
         Map<K, V> diskTier;
-        private RemovalListener<K, V> removalListener;
+        private TieredCacheRemovalListener<K, V> removalListener;
         int maxSize;
 
         MockDiskCachingTier(int size) {
@@ -484,7 +496,7 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         @Override
         public void put(K key, V value) {
             if (this.diskTier.size() >= maxSize) { // For simplification
-                onRemoval(new RemovalNotification<>(key, value, RemovalReason.EVICTED, TierType.DISK));
+                onRemoval(new TieredCacheRemovalNotification<>(key, value, RemovalReason.EVICTED, CacheStoreType.DISK));
                 return;
             }
             this.diskTier.put(key, value);
@@ -509,7 +521,7 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         @Override
         public V compute(K key, TieredCacheLoader<K, V> loader) throws Exception {
             if (this.diskTier.size() >= maxSize) { // If it exceeds, just notify for evict.
-                onRemoval(new RemovalNotification<>(key, loader.load(key), RemovalReason.EVICTED, TierType.DISK));
+                onRemoval(new TieredCacheRemovalNotification<>(key, loader.load(key), RemovalReason.EVICTED, CacheStoreType.DISK));
                 return loader.load(key);
             }
             return this.diskTier.compute(key, (k, v) -> {
@@ -522,7 +534,7 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-        public void setRemovalListener(RemovalListener<K, V> removalListener) {
+        public void setRemovalListener(TieredCacheRemovalListener<K, V> removalListener) {
             this.removalListener = removalListener;
         }
 
@@ -542,12 +554,12 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-        public TierType getTierType() {
-            return TierType.DISK;
+        public CacheStoreType getTierType() {
+            return CacheStoreType.DISK;
         }
 
         @Override
-        public void onRemoval(RemovalNotification<K, V> notification) {
+        public void onRemoval(TieredCacheRemovalNotification<K, V> notification) {
             this.removalListener.onRemoval(notification);
         }
 

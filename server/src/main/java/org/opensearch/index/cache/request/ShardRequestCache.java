@@ -38,7 +38,7 @@ import org.opensearch.common.cache.tier.CacheValue;
 import org.opensearch.common.cache.tier.DiskTierRequestStats;
 import org.opensearch.common.cache.tier.OnHeapTierRequestStats;
 import org.opensearch.common.cache.tier.TierRequestStats;
-import org.opensearch.common.cache.tier.TierType;
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -58,18 +58,18 @@ import java.util.EnumMap;
 public final class ShardRequestCache {
 
     // Holds stats common to all tiers
-    private final EnumMap<TierType, StatsHolder> defaultStatsHolder = new EnumMap<>(TierType.class);
+    private final EnumMap<CacheStoreType, StatsHolder> defaultStatsHolder = new EnumMap<>(CacheStoreType.class);
 
     // Holds tier-specific stats
-    private final EnumMap<TierType, TierStatsAccumulator> tierSpecificStatsHolder = new EnumMap<>(TierType.class);
+    private final EnumMap<CacheStoreType, TierStatsAccumulator> tierSpecificStatsHolder = new EnumMap<>(CacheStoreType.class);
 
     public ShardRequestCache() {
-        tierSpecificStatsHolder.put(TierType.ON_HEAP, new OnHeapStatsAccumulator());
-        tierSpecificStatsHolder.put(TierType.DISK, new DiskStatsAccumulator());
-        for (TierType tierType : TierType.values()) {
-            defaultStatsHolder.put(tierType, new StatsHolder());
-            if (tierSpecificStatsHolder.get(tierType) == null) {
-                throw new OpenSearchException("Missing TierStatsAccumulator for TierType " + tierType.getStringValue());
+        tierSpecificStatsHolder.put(CacheStoreType.ON_HEAP, new OnHeapStatsAccumulator());
+        tierSpecificStatsHolder.put(CacheStoreType.DISK, new DiskStatsAccumulator());
+        for (CacheStoreType cacheStoreType : CacheStoreType.values()) {
+            defaultStatsHolder.put(cacheStoreType, new StatsHolder());
+            if (tierSpecificStatsHolder.get(cacheStoreType) == null) {
+                throw new OpenSearchException("Missing TierStatsAccumulator for TierType " + cacheStoreType.getStringValue());
             }
         }
     }
@@ -79,25 +79,29 @@ public final class ShardRequestCache {
     }
 
     public void onHit(CacheValue<BytesReference> cacheValue) {
-        TierType source = cacheValue.getSource();
+        CacheStoreType source = cacheValue.getSource();
         defaultStatsHolder.get(source).hitCount.inc();
         tierSpecificStatsHolder.get(source).addRequestStats(cacheValue.getStats());
     }
 
     public void onMiss(CacheValue<BytesReference> cacheValue) {
-        TierType source = cacheValue.getSource();
+        CacheStoreType source = cacheValue.getSource();
         defaultStatsHolder.get(source).missCount.inc();
         tierSpecificStatsHolder.get(source).addRequestStats(cacheValue.getStats());
     }
 
-    public void onCached(Accountable key, BytesReference value, TierType tierType) {
-        defaultStatsHolder.get(tierType).totalMetric.inc(key.ramBytesUsed() + value.ramBytesUsed());
-        defaultStatsHolder.get(tierType).entries.inc();
+    public void onCached(Accountable key, BytesReference value, CacheStoreType cacheStoreType) {
+        defaultStatsHolder.get(cacheStoreType).totalMetric.inc(key.ramBytesUsed() + value.ramBytesUsed());
+        defaultStatsHolder.get(cacheStoreType).entries.inc();
     }
 
-    public void onRemoval(Accountable key, BytesReference value, boolean evicted, TierType tierType) {
+    public void onRemoval(Accountable key, BytesReference value, boolean evicted) {
+        onRemoval(key, value, evicted, CacheStoreType.ON_HEAP); // By default On heap cache.
+    }
+
+    public void onRemoval(Accountable key, BytesReference value, boolean evicted, CacheStoreType cacheStoreType) {
         if (evicted) {
-            defaultStatsHolder.get(tierType).evictionsMetric.inc();
+            defaultStatsHolder.get(cacheStoreType).evictionsMetric.inc();
         }
         long dec = 0;
         if (key != null) {
@@ -106,8 +110,8 @@ public final class ShardRequestCache {
         if (value != null) {
             dec += value.ramBytesUsed();
         }
-        defaultStatsHolder.get(tierType).totalMetric.dec(dec);
-        defaultStatsHolder.get(tierType).entries.dec();
+        defaultStatsHolder.get(cacheStoreType).totalMetric.dec(dec);
+        defaultStatsHolder.get(cacheStoreType).entries.dec();
     }
 
     /**

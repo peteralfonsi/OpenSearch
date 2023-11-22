@@ -8,6 +8,8 @@
 
 package org.opensearch.common.cache.tier;
 
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
+
 /**
  * Represents a cache value, with its associated tier type where it is stored,
  * and tier-specific stats for an individual request stored in a map.
@@ -15,10 +17,10 @@ package org.opensearch.common.cache.tier;
  */
 public class CacheValue<V> {
     V value;
-    TierType source;
+    CacheStoreType source;
     TierRequestStats stats;
 
-    CacheValue(V value, TierType source, TierRequestStats stats) {
+    CacheValue(V value, CacheStoreType source, TierRequestStats stats) {
         this.value = value;
         this.source = source;
         this.stats = stats;
@@ -28,7 +30,7 @@ public class CacheValue<V> {
         return value;
     }
 
-    public TierType getSource() {
+    public CacheStoreType getSource() {
         return source;
     }
 

@@ -49,11 +49,12 @@ import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
 import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
 import org.opensearch.common.cache.tier.OnHeapCachingTier;
 import org.opensearch.common.cache.tier.OpenSearchOnHeapCache;
-import org.opensearch.common.cache.tier.TierType;
-import org.opensearch.common.cache.tier.TieredCacheEventListener;
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
+import org.opensearch.common.cache.tier.listeners.TieredCacheEventListener;
 import org.opensearch.common.cache.tier.TieredCacheLoader;
-import org.opensearch.common.cache.tier.TieredCacheService;
-import org.opensearch.common.cache.tier.TieredCacheSpilloverStrategyService;
+import org.opensearch.common.cache.tier.TieredCacheRemovalNotification;
+import org.opensearch.common.cache.tier.service.TieredCacheService;
+import org.opensearch.common.cache.tier.service.TieredCacheSpilloverStrategyService;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
@@ -245,7 +246,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     @Override
-    public void onRemoval(RemovalNotification<Key, BytesReference> notification) {
+    public void onRemoval(TieredCacheRemovalNotification<Key, BytesReference> notification) {
         notification.getKey().entity.onRemoval(notification);
     }
 
@@ -255,9 +256,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     @Override
-    public void onCached(Key key, BytesReference value, TierType tierType) {
-        key.entity.onCached(key, value, tierType);
-        updateDiskCleanupKeyToCountMap(new CleanupKey(key.entity, key.readerCacheKeyId), tierType);
+    public void onCached(Key key, BytesReference value, CacheStoreType cacheStoreType) {
+        key.entity.onCached(key, value, cacheStoreType);
+        updateDiskCleanupKeyToCountMap(new CleanupKey(key.entity, key.readerCacheKeyId), cacheStoreType);
     }
 
     /**
@@ -272,16 +273,16 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      * Therefore, to avoid modifying CacheEntity and IndexShard classes to override these methods, we use ShardID as the key.
      *
      * @param cleanupKey the CleanupKey to be updated in the map
-     * @param tierType the TierType of the CleanupKey
+     * @param cacheStoreType the TierType of the CleanupKey
      */
-    private void updateDiskCleanupKeyToCountMap(CleanupKey cleanupKey, TierType tierType) {
-        if(!tierType.equals(TierType.DISK)) {
+    private void updateDiskCleanupKeyToCountMap(CleanupKey cleanupKey, CacheStoreType cacheStoreType) {
+        if(!cacheStoreType.equals(CacheStoreType.DISK)) {
             return;
         }
         IndexShard indexShard = (IndexShard)cleanupKey.entity.getCacheIdentity();
         if(indexShard == null) {
             logger.warn("IndexShard is null for CleanupKey: {} while cleaning tier : {}",
-                cleanupKey.readerCacheKeyId, tierType.getStringValue());
+                cleanupKey.readerCacheKeyId, cacheStoreType.getStringValue());
             return;
         }
         ShardId shardId = indexShard.shardId();
@@ -422,7 +423,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         /**
          * Called after the value was loaded.
          */
-        void onCached(Key key, BytesReference value, TierType tierType);
+        void onCached(Key key, BytesReference value, CacheStoreType cacheStoreType);
 
         /**
          * Returns <code>true</code> iff the resource behind this entity is still open ie.
@@ -557,7 +558,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      * Logic to clean up in-memory cache.
      */
     synchronized void cleanCache() {
-        cleanCache(TierType.ON_HEAP);
+        cleanCache(CacheStoreType.ON_HEAP);
         tieredCacheService.getOnHeapCachingTier().refresh();
     }
 
@@ -568,11 +569,11 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      */
     synchronized void cleanDiskCache(double diskCachesCleanThresholdPercent) {
         if (!canSkipDiskCacheCleanup(diskCachesCleanThresholdPercent)) {
-            cleanCache(TierType.DISK);
+            cleanCache(CacheStoreType.DISK);
         }
     }
 
-    private synchronized void cleanCache(TierType cacheType) {
+    private synchronized void cleanCache(CacheStoreType cacheType) {
         final Set<CleanupKey> currentKeysToClean = new HashSet<>();
         final Set<Object> currentFullClean = new HashSet<>();
 
@@ -591,8 +592,8 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
                 continue;
             }
 
-            if (cacheType == TierType.ON_HEAP && cleanupStatus.cleanedInHeap) continue;
-            if (cacheType == TierType.DISK && cleanupStatus.cleanedOnDisk) continue;
+            if (cacheType == CacheStoreType.ON_HEAP && cleanupStatus.cleanedInHeap) continue;
+            if (cacheType == CacheStoreType.DISK && cleanupStatus.cleanedOnDisk) continue;
 
             if (needsFullClean(cleanupKey)) {
                 currentFullClean.add(cleanupKey.entity.getCacheIdentity());
@@ -600,9 +601,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
                 currentKeysToClean.add(cleanupKey);
             }
 
-            if (cacheType == TierType.ON_HEAP) {
+            if (cacheType == CacheStoreType.ON_HEAP) {
                 cleanupStatus.cleanedInHeap = true;
-            } else if (cacheType == TierType.DISK) {
+            } else if (cacheType == CacheStoreType.DISK) {
                 cleanupStatus.cleanedOnDisk = true;
             }
         }
@@ -617,7 +618,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
 
         CachingTier<Key, BytesReference> cachingTier;
 
-        if (cacheType == TierType.ON_HEAP) {
+        if (cacheType == CacheStoreType.ON_HEAP) {
             cachingTier = tieredCacheService.getOnHeapCachingTier();
         } else {
             cachingTier = tieredCacheService.getDiskCachingTier().get();
@@ -671,7 +672,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             CleanupKey cleanupKey = new CleanupKey(key.entity, key.readerCacheKeyId);
             if (currentFullClean.contains(key.entity.getCacheIdentity()) || currentKeysToClean.contains(cleanupKey)) {
                 cachingTier.invalidate(key);
-                if(cachingTier.getTierType() == TierType.DISK) {
+                if(cachingTier.getTierType() == CacheStoreType.DISK) {
                     staleKeysInDiskCount.decrementAndGet();
                 }
             }

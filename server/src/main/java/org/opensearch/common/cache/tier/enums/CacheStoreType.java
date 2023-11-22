@@ -6,19 +6,19 @@
  * compatible open source license.
  */
 
-package org.opensearch.common.cache.tier;
+package org.opensearch.common.cache.tier.enums;
 
 /**
- * Tier types in cache.
+ * Cache store types in tiered cache.
  */
-public enum TierType {
+public enum CacheStoreType {
 
     ON_HEAP("on_heap"),
     DISK("disk");
 
     private final String stringValue;
 
-    TierType(String stringValue) {
+    CacheStoreType(String stringValue) {
         // Associate each TierType with a string representation, for use in API responses and elsewhere
         this.stringValue = stringValue;
     }

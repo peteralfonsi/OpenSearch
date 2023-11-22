@@ -6,9 +6,11 @@
  * compatible open source license.
  */
 
-package org.opensearch.common.cache.tier;
+package org.opensearch.common.cache.tier.listeners;
 
-import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.tier.CacheValue;
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
+import org.opensearch.common.cache.tier.TieredCacheRemovalNotification;
 
 /**
  * This can be used to listen to tiered caching events
@@ -19,10 +21,9 @@ public interface TieredCacheEventListener<K, V> {
 
     void onMiss(K key, CacheValue<V> cacheValue);
 
-    void onRemoval(RemovalNotification<K, V> notification);
+    void onRemoval(TieredCacheRemovalNotification<K, V> notification);
 
     void onHit(K key, CacheValue<V> cacheValue);
 
-    void onCached(K key, V value, TierType tierType);
-    // Since only get() produces a CacheValue with stats, no need to modify onCached or onRemoval to have the CacheValue.
+    void onCached(K key, V value, CacheStoreType cacheStoreType);
 }
