@@ -9,7 +9,7 @@
 package org.opensearch.common.cache.tier;
 
 /**
- * A class created by disk tier implementations containing disk-specific stats for a single request.
+ * A class created by on-heap tier implementations containing on-heap-specific stats for a single request.
  */
 public class OnHeapTierRequestStats implements TierRequestStats {
     @Override

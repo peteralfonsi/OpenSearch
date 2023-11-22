@@ -146,6 +146,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         String SETTING_PREFIX = "indices.request.cache";
         String STORAGE_PATH = indicesService.getNodePaths()[0].indicesPath.toString() + "/request_cache";
 
+        double diskTierKeystoreWeightFraction = 0.05; // Allocate 5% of the on-heap weight to the disk tier's keystore
+        long keystoreMaxWeight = (long) (diskTierKeystoreWeightFraction * INDICES_CACHE_QUERY_SIZE.get(settings).getBytes());
+
         EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>()
             .setKeyType(Key.class)
             .setValueType(BytesReference.class)
@@ -157,6 +160,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             .setSettingPrefix(SETTING_PREFIX)
             .setKeySerializer(new IRCKeyWriteableSerializer(this))
             .setValueSerializer(new BytesReferenceSerializer())
+            .setKeyStoreMaxWeightInBytes(keystoreMaxWeight)
             .build();
 
         // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
