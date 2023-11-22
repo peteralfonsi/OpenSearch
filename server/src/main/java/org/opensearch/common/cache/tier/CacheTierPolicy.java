@@ -46,19 +46,4 @@ public interface CacheTierPolicy<T> {
      * @return true if accepted, otherwise false
      */
     boolean checkData(T data);
-
-    /**
-     * Checks whether the policy is currently being enforced.
-     */
-    boolean isActive();
-
-    /**
-     * Starts enforcing the policy if it is not already being enforced.
-     */
-    void activate();
-
-    /**
-     * Stops enforcing the policy. The policy will allow all input.
-     */
-    void deactivate();
 }

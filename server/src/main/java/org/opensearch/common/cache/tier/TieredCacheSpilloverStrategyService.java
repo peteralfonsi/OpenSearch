@@ -28,9 +28,8 @@ import java.util.function.Function;
  * cache items to disk tier cache.
  * @param <K> Type of key
  * @param <V> Type of value
- * @param <W> Type that V can be unpacked into for inspection by policies. Can be the same as V.
  */
-public class TieredCacheSpilloverStrategyService<K, V, W> implements TieredCacheService<K, V, W>, RemovalListener<K, V> {
+public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheService<K, V>, RemovalListener<K, V> {
 
     private final OnHeapCachingTier<K, V> onHeapCachingTier;
 
@@ -44,17 +43,15 @@ public class TieredCacheSpilloverStrategyService<K, V, W> implements TieredCache
      * Maintains caching tiers in order of get calls.
      */
     private final List<CachingTier<K, V>> cachingTierList;
-    private final List<CacheTierPolicy<W>> policies;
-    private final Function<V, W> transformationFunction;
+    private final List<CacheTierPolicy<V>> policies;
 
-    private TieredCacheSpilloverStrategyService(Builder<K, V, W> builder) {
+    private TieredCacheSpilloverStrategyService(Builder<K, V> builder) {
         this.onHeapCachingTier = Objects.requireNonNull(builder.onHeapCachingTier);
         this.diskCachingTier = Optional.ofNullable(builder.diskCachingTier);
         this.tieredCacheEventListener = Objects.requireNonNull(builder.tieredCacheEventListener);
         this.cachingTierList = this.diskCachingTier.map(diskTier -> Arrays.asList(onHeapCachingTier, diskTier))
             .orElse(List.of(onHeapCachingTier));
         this.policies = Objects.requireNonNull(builder.policies);
-        this.transformationFunction = Objects.requireNonNull(builder.transformationFunction);
         setRemovalListeners();
     }
 
@@ -164,22 +161,9 @@ public class TieredCacheSpilloverStrategyService<K, V, W> implements TieredCache
         return this.diskCachingTier;
     }
 
-    @Override
-    public W preDiskCachingPolicyFunction(V value) {
-        return transformationFunction.apply(value);
-    }
-
     boolean checkPolicies(V value) {
-        W unpacked;
-        try {
-            unpacked = preDiskCachingPolicyFunction(value);
-        } catch (Exception e) {
-            // Bandaid solution: Accept any values that can't be unpacked into type W.
-            // TODO: Decide if this is reasonable, or if we should require the IRC to only accept BytesReferences which can be turned into QSRs.
-            return true;
-        }
-        for (CacheTierPolicy<W> policy : policies) {
-            if (!policy.checkData(unpacked)) {
+        for (CacheTierPolicy<V> policy : policies) {
+            if (!policy.checkData(value)) {
                 return false;
             }
         }
@@ -219,50 +203,43 @@ public class TieredCacheSpilloverStrategyService<K, V, W> implements TieredCache
      * Builder object
      * @param <K> Type of key
      * @param <V> Type of value
-     * @param <W> Type that V can be unpacked into for inspection by policies. Can be the same as V.
      */
-    public static class Builder<K, V, W> {
+    public static class Builder<K, V> {
         private OnHeapCachingTier<K, V> onHeapCachingTier;
         private DiskCachingTier<K, V> diskCachingTier;
         private TieredCacheEventListener<K, V> tieredCacheEventListener;
-        private ArrayList<CacheTierPolicy<W>> policies = new ArrayList<>();
-        private Function<V, W> transformationFunction;
+        private ArrayList<CacheTierPolicy<V>> policies = new ArrayList<>();
 
         public Builder() {}
 
-        public Builder<K, V, W> setOnHeapCachingTier(OnHeapCachingTier<K, V> onHeapCachingTier) {
+        public Builder<K, V> setOnHeapCachingTier(OnHeapCachingTier<K, V> onHeapCachingTier) {
             this.onHeapCachingTier = onHeapCachingTier;
             return this;
         }
 
-        public Builder<K, V, W> setOnDiskCachingTier(DiskCachingTier<K, V> diskCachingTier) {
+        public Builder<K, V> setOnDiskCachingTier(DiskCachingTier<K, V> diskCachingTier) {
             this.diskCachingTier = diskCachingTier;
             return this;
         }
 
-        public Builder<K, V, W> setTieredCacheEventListener(TieredCacheEventListener<K, V> tieredCacheEventListener) {
+        public Builder<K, V> setTieredCacheEventListener(TieredCacheEventListener<K, V> tieredCacheEventListener) {
             this.tieredCacheEventListener = tieredCacheEventListener;
             return this;
         }
 
-        public Builder<K, V, W> withPolicy(CacheTierPolicy<W> policy) {
+        public Builder<K, V> withPolicy(CacheTierPolicy<V> policy) {
             this.policies.add(policy);
             return this;
         }
 
         // Add multiple policies at once
-        public Builder<K, V, W> withPolicies(List<CacheTierPolicy<W>> policiesList) {
+        public Builder<K, V> withPolicies(List<CacheTierPolicy<V>> policiesList) {
             this.policies.addAll(policiesList);
             return this;
         }
 
-        public Builder<K, V, W> withPreDiskCachingPolicyFunction(Function<V, W> function) {
-            this.transformationFunction = function;
-            return this;
-        }
-
-        public TieredCacheSpilloverStrategyService<K, V, W> build() {
-            return new TieredCacheSpilloverStrategyService<K, V, W>(this);
+        public TieredCacheSpilloverStrategyService<K, V> build() {
+            return new TieredCacheSpilloverStrategyService<K, V>(this);
         }
     }
 

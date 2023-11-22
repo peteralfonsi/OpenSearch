@@ -45,9 +45,10 @@ import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.common.Strings;
-import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.bytes.BytesReference;
+import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.index.shard.ShardId;
+import org.opensearch.indices.IndicesRequestCache;
 import org.opensearch.search.DocValueFormat;
 import org.opensearch.search.SearchShardTarget;
 import org.opensearch.search.internal.AliasFilter;
@@ -57,14 +58,21 @@ import org.opensearch.search.query.QuerySearchResult;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.io.IOException;
-import java.util.Optional;
+import java.util.function.Function;
 
 public class DiskTierTookTimePolicyTests extends OpenSearchTestCase {
+    private final Function<BytesReference, CachePolicyInfoWrapper> transformationFunction = (data) -> {
+        try {
+            return IndicesRequestCache.getPolicyInfo(data);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
+        }
+    };
     private DiskTierTookTimePolicy getTookTimePolicy() {
         // dummy settings
         Settings dummySettings = Settings.EMPTY;
         ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
-        return new DiskTierTookTimePolicy(dummySettings, dummyClusterSettings);
+        return new DiskTierTookTimePolicy(dummySettings, dummyClusterSettings, transformationFunction);
     }
 
     public void testQSRSetupFunction() throws IOException {
@@ -80,12 +88,19 @@ public class DiskTierTookTimePolicyTests extends OpenSearchTestCase {
         long shortMillis = (long) (0.9 * threshMillis);
         long longMillis = (long) (1.5 * threshMillis);
         tookTimePolicy.setThreshold(new TimeValue((long) threshMillis));
-        QuerySearchResult shortQSR = getQSR(shortMillis * 1000000);
-        QuerySearchResult longQSR = getQSR(longMillis * 1000000);
+        BytesReference shortTime = getValidPolicyInput(getQSR(shortMillis * 1000000));
+        BytesReference longTime = getValidPolicyInput(getQSR(longMillis * 1000000));
 
-        boolean shortResult = tookTimePolicy.checkData(shortQSR);
+        boolean shortResult = tookTimePolicy.checkData(shortTime);
         assertFalse(shortResult);
-        boolean longResult = tookTimePolicy.checkData(longQSR);
+        boolean longResult = tookTimePolicy.checkData(longTime);
+        assertTrue(longResult);
+
+        DiskTierTookTimePolicy disabledPolicy = getTookTimePolicy();
+        disabledPolicy.setThreshold(TimeValue.ZERO);
+        shortResult = disabledPolicy.checkData(shortTime);
+        assertTrue(shortResult);
+        longResult = disabledPolicy.checkData(longTime);
         assertTrue(longResult);
     }
 
@@ -116,5 +131,15 @@ public class DiskTierTookTimePolicyTests extends OpenSearchTestCase {
 
         result.setTookTimeNanos(tookTimeNanos);
         return result;
+    }
+
+    private BytesReference getValidPolicyInput(QuerySearchResult qsr) throws IOException {
+        // When it's used in the cache, the policy will receive BytesReferences which have a CachePolicyInfoWrapper
+        // at the beginning of them, followed by the actual QSR.
+        CachePolicyInfoWrapper policyInfo = new CachePolicyInfoWrapper(qsr.getTookTimeNanos());
+        BytesStreamOutput out = new BytesStreamOutput();
+        policyInfo.writeTo(out);
+        qsr.writeTo(out);
+        return out.bytes();
     }
 }

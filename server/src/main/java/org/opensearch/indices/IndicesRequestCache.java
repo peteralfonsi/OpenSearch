@@ -41,6 +41,7 @@ import org.apache.lucene.util.RamUsageEstimator;
 import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.tier.BytesReferenceSerializer;
+import org.opensearch.common.cache.tier.CachePolicyInfoWrapper;
 import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
 import org.opensearch.common.cache.tier.CacheValue;
 import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
@@ -120,7 +121,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     private final Set<CleanupKey> keysToClean = ConcurrentCollections.newConcurrentSet();
     private final ByteSizeValue size;
     private final TimeValue expire;
-    private final TieredCacheService<Key, BytesReference, QuerySearchResult> tieredCacheService;
+    private final TieredCacheService<Key, BytesReference> tieredCacheService;
     private final IndicesService indicesService;
 
     IndicesRequestCache(Settings settings, IndicesService indicesService, ClusterSettings clusterSettings) {
@@ -133,9 +134,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             (k, v) -> k.ramBytesUsed() + v.ramBytesUsed()
         ).setMaximumWeight(sizeInBytes).setExpireAfterAccess(expire).build();
 
-        Function<BytesReference, QuerySearchResult> transformationFunction = (data) -> {
+        Function<BytesReference, CachePolicyInfoWrapper> transformationFunction = (data) -> {
             try {
-                return convertBytesReferenceToQSR(data);
+                return getPolicyInfo(data);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -159,12 +160,11 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             .build();
 
         // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
-        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference, QuerySearchResult>()
+        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>()
             .setOnHeapCachingTier(openSearchOnHeapCache)
             .setOnDiskCachingTier(ehcacheDiskTier)
             .setTieredCacheEventListener(this)
-            .withPreDiskCachingPolicyFunction(transformationFunction)
-            .withPolicy(new DiskTierTookTimePolicy(settings, clusterSettings))
+            .withPolicy(new DiskTierTookTimePolicy(settings, clusterSettings, transformationFunction))
             .build();
         this.indicesService = indicesService;
     }
@@ -250,6 +250,12 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     // Passed to TieredCacheService as its V -> W transformation function for inspecting BytesReferences in policies
     public static QuerySearchResult convertBytesReferenceToQSR(BytesReference data) throws IOException, IllegalStateException {
         return new QuerySearchResult(data.streamInput());
+    }
+
+    public static CachePolicyInfoWrapper getPolicyInfo(BytesReference data) throws IOException {
+        // Reads the policy info corresponding to this QSR, written in IndicesService$loadIntoContext,
+        // without having to create a potentially large short-lived QSR object just for this purpose
+        return new CachePolicyInfoWrapper(data.streamInput());
     }
 
     /**
