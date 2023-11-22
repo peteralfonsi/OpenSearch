@@ -11,6 +11,7 @@ package org.opensearch.benchmark.time;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
+import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Measurement;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
@@ -39,7 +40,7 @@ public class AdHocRBMBenchmark {
         @Param({"10000", "100000", "1000000", "10000000"})
         public int numAdds;
         Random rand;
-        @Setup
+        @Setup(Level.Invocation)
         public void setupAddState() {
             this.kls = new RBMIntKeyLookupStore(0L); // default modulo, no memory cap
             this.rand = Randomness.get();
@@ -47,14 +48,35 @@ public class AdHocRBMBenchmark {
     }
 
     @State(Scope.Benchmark)
-    public static class ContainsRemoveState {
+    public static class ContainsState {
         public RBMIntKeyLookupStore kls;
         @Param({"10000", "100000", "1000000", "10000000"})
         public int numAdds;
         public int[] values;
         Random rand;
         @Setup
-        public void setupContainsRemoveState() {
+        public void setupContainsState() {
+            this.kls = new RBMIntKeyLookupStore(0L); // default modulo, no memory cap
+            this.rand = Randomness.get();
+            this.values = new int[numAdds];
+            for (int i = 0; i < numAdds; i++) {
+                int val = rand.nextInt();
+                values[i] = val;
+                kls.add(val);
+            }
+        }
+    }
+
+    @State(Scope.Benchmark)
+    public static class RemoveState {
+        public RBMIntKeyLookupStore kls;
+        @Param({"10000", "100000", "1000000", "10000000"})
+        public int numAdds;
+        public int[] values;
+        Random rand;
+        @Setup(Level.Invocation)
+        public void setupRemoveState() {
+            System.out.println("Setting up!!");
             this.kls = new RBMIntKeyLookupStore(0L); // default modulo, no memory cap
             this.rand = Randomness.get();
             this.values = new int[numAdds];
@@ -77,16 +99,17 @@ public class AdHocRBMBenchmark {
     }
 
     @Benchmark
-    public void testContains(ContainsRemoveState state, Blackhole bh) {
+    public void testContains(ContainsState state, Blackhole bh) {
         for (int i = 0; i < state.numAdds; i++) {
             bh.consume(state.kls.contains(state.values[i]));
         }
     }
 
     @Benchmark
-    public void testRemove(ContainsRemoveState state) {
+    public void testRemove(RemoveState state, Blackhole bh) {
         for (int i = 0; i < state.numAdds; i++) {
-            state.kls.remove(state.values[i]);
+            System.out.println(state.kls.contains(state.values[i]));
+            bh.consume(state.kls.remove(state.values[i]));
         }
     }
 

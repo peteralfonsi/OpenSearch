@@ -285,6 +285,26 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
         assertTrue(kls.contains(offset + 17 * modulo));
     }
 
+    public void testRemoveRandom() throws Exception {
+        RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(0L);
+        int numToAdd = 1000000;
+        Random rand = Randomness.get();
+        int[] values = new int[numToAdd];
+        for (int i = 0; i < numToAdd; i++) {
+            values[i] = rand.nextInt();
+            kls.add(values[i]);
+        }
+
+        int numRemoved = 0;
+        for (int i = 0; i < numToAdd; i++) {
+            if (kls.remove(values[i])) {
+                numRemoved++;
+            }
+        }
+        System.out.println(numRemoved);
+        assertTrue((double) numRemoved / numToAdd > 0.95); // Able to remove >95%
+    }
+
     public void testNullInputs() throws Exception {
         RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(RBMIntKeyLookupStore.KeystoreModuloValue.TWO_TO_TWENTY_NINE, 0L);
         assertFalse(kls.add(null));
