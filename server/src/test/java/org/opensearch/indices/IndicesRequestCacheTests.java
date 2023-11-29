@@ -47,15 +47,14 @@ import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.util.BytesRef;
+import org.junit.Before;
+import org.junit.Test;
+import org.mockito.Mockito;
 import org.opensearch.action.OriginalIndices;
 import org.opensearch.action.OriginalIndicesTests;
 import org.opensearch.action.search.SearchRequest;
 import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.UUIDs;
-import org.junit.Before;
-import org.junit.Test;
-import org.mockito.Mockito;
-import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.cache.tier.DiskCachingTier;
 import org.opensearch.common.cache.tier.TieredCacheService;
 import org.opensearch.common.cache.tier.TieredCacheSpilloverStrategyService;
@@ -67,7 +66,6 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.common.Strings;
 import org.opensearch.core.common.bytes.AbstractBytesReference;
-import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -79,14 +77,14 @@ import org.opensearch.index.IndexService;
 import org.opensearch.index.cache.request.ShardRequestCache;
 import org.opensearch.index.query.TermQueryBuilder;
 import org.opensearch.index.shard.IndexShard;
+import org.opensearch.indices.IndicesRequestCache.CacheEntity;
+import org.opensearch.indices.IndicesRequestCache.Key;
 import org.opensearch.search.DocValueFormat;
 import org.opensearch.search.SearchShardTarget;
 import org.opensearch.search.internal.AliasFilter;
 import org.opensearch.search.internal.ShardSearchContextId;
 import org.opensearch.search.internal.ShardSearchRequest;
 import org.opensearch.search.query.QuerySearchResult;
-import org.opensearch.indices.IndicesRequestCache.CacheEntity;
-import org.opensearch.indices.IndicesRequestCache.Key;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
 import java.io.IOException;
@@ -100,7 +98,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
-import static org.mockito.internal.verification.VerificationModeFactory.atLeastOnce;
+import static org.mockito.internal.verification.VerificationModeFactory.times;
 
 public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
 
@@ -700,6 +698,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         public void cleanDiskCacheWhenCleanupKeysPercentageIsGreaterThanOrEqualToThreshold() {
             final int DISK_CACHE_COUNT = 100;
             final double CLEANUP_THRESHOLD = 50.0;
+            final int STALE_KEYS_IN_DISK_COUNT = 51;
 
             // Mock dependencies
             IndicesService mockIndicesService = mock(IndicesService.class);
@@ -728,11 +727,12 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
             when(mockIterator.next()).thenReturn(firstMockKey, secondMockKey);
 
             cache.addCleanupKeyForTesting(mockEntity, "readerCacheKeyId");
+            cache.setStaleKeysInDiskCountForTesting(STALE_KEYS_IN_DISK_COUNT);
             cache.cleanDiskCache(CLEANUP_THRESHOLD);
 
             // Verify interactions
             verify(mockDiskCachingTier).keys();
-            verify(mockIterator, atLeastOnce()).remove();
+            verify(mockIterator, times(2)).next();
         }
 
         @Test
@@ -780,6 +780,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
             IndicesRequestCache.CacheEntity mockEntity = Mockito.mock(IndicesRequestCache.CacheEntity.class);
             when(mockEntity.getCacheIdentity()).thenReturn(new Object());
             cache.addCleanupKeyForTesting(mockEntity, "readerCacheKeyId");
+            cache.setStaleKeysInDiskCountForTesting(1);
 
             double result = cache.diskCleanupKeysPercentage();
             assertEquals(1.0, result, 0);
