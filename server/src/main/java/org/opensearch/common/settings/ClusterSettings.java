@@ -688,11 +688,12 @@ public final class ClusterSettings extends AbstractScopedSettings {
                 RemoteStoreNodeService.REMOTE_STORE_COMPATIBILITY_MODE_SETTING,
                 IndicesService.CLUSTER_REMOTE_TRANSLOG_BUFFER_INTERVAL_SETTING,
                 IndicesService.CLUSTER_REMOTE_INDEX_RESTRICT_ASYNC_DURABILITY_SETTING,
+                IndicesService.CLUSTER_RESTRICT_INDEX_REPLICATION_TYPE_SETTING,
+                IndicesService.INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING,
                 AdmissionControlSettings.ADMISSION_CONTROL_TRANSPORT_LAYER_MODE,
                 CPUBasedAdmissionControllerSettings.CPU_BASED_ADMISSION_CONTROLLER_TRANSPORT_LAYER_MODE,
                 CPUBasedAdmissionControllerSettings.INDEXING_CPU_USAGE_LIMIT,
                 CPUBasedAdmissionControllerSettings.SEARCH_CPU_USAGE_LIMIT,
-                IndicesService.CLUSTER_RESTRICT_INDEX_REPLICATION_TYPE_SETTING,
                 DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING
             )
         )

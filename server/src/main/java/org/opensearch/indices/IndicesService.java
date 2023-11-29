@@ -242,11 +242,10 @@ public class IndicesService extends AbstractLifecycleComponent
 
     public static final Setting<String> INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING =
         Setting.simpleString(
-            INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING_KEY,
+            "cluster.request_cache.disk.cleanup_threshold_percentage",
             INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING_DEFAULT_VALUE,
             value -> {
-                String errorLogBase = "The value of the setting " +
-                    INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING_KEY +
+                String errorLogBase = "Setting 'cluster.request_cache.disk.cleanup_threshold_percentage' " +
                     " must be ";
                 if (!value.endsWith("%")) {
                     throw new IllegalArgumentException(errorLogBase + "a percentage");
