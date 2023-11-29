@@ -230,6 +230,7 @@ public class IndicesService extends AbstractLifecycleComponent
     public static final Setting<TimeValue> INDICES_REQUEST_CACHE_DISK_CLEAN_INTERVAL_SETTING = Setting.positiveTimeSetting(
         INDICES_REQUEST_CACHE_DISK_CLEAN_INTERVAL_SETTING_KEY,
         TimeValue.timeValueMinutes(1),
+        Property.Dynamic,
         Property.NodeScope
     );
 
