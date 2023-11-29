@@ -65,6 +65,8 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.common.unit.ByteSizeValue;
+import org.opensearch.core.index.shard.ShardId;
+import org.opensearch.index.shard.IndexShard;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -75,6 +77,7 @@ import java.util.Iterator;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 /**
@@ -119,6 +122,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
 
     private final ConcurrentMap<CleanupKey, Boolean> registeredClosedListeners = ConcurrentCollections.newConcurrentMap();
     private final Set<CleanupKey> keysToClean = ConcurrentCollections.newConcurrentSet();
+    // A map to keep track of the number of keys to be cleaned for a given ShardId and readerCacheKeyId
+    private final ConcurrentMap<ShardId, ConcurrentMap<String , Integer>> diskCleanupKeyToCountMap = ConcurrentCollections.newConcurrentMap();
+    private final AtomicInteger staleKeysInDiskCount = new AtomicInteger(0);
     private final ByteSizeValue size;
     private final TimeValue expire;
     private final TieredCacheService<Key, BytesReference> tieredCacheService;
@@ -196,7 +202,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     void clear(CacheEntity entity) {
-        keysToClean.add(new CleanupKey(entity, null));
+        CleanupKey cleanupKey = new CleanupKey(entity, null);
+        keysToClean.add(cleanupKey);
+        updateStaleKeysInDiskCount(cleanupKey);
         cleanCache();
     }
 
@@ -218,7 +226,70 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     @Override
     public void onCached(Key key, BytesReference value, TierType tierType) {
         key.entity.onCached(key, value, tierType);
+        updateDiskCleanupKeyToCountMap(new CleanupKey(key.entity, key.readerCacheKeyId), tierType);
     }
+
+    /**
+     * Updates the diskCleanupKeyToCountMap with the given CleanupKey and TierType.
+     * If the TierType is not DISK, the method returns without making any changes.
+     * If the ShardId associated with the CleanupKey does not exist in the map, a new entry is created.
+     * The method increments the count of the CleanupKey in the map.
+     *
+     * Why use ShardID as the key ?
+     * CacheEntity mainly contains IndexShard, both of these classes do not override equals() and hashCode() methods.
+     * ShardID class properly overrides equals() and hashCode() methods.
+     * Therefore, to avoid modifying CacheEntity and IndexShard classes to override these methods, we use ShardID as the key.
+     *
+     * @param cleanupKey the CleanupKey to be updated in the map
+     * @param tierType the TierType of the CleanupKey
+     */
+    private void updateDiskCleanupKeyToCountMap(CleanupKey cleanupKey, TierType tierType) {
+        if(!tierType.equals(TierType.DISK)) {
+            return;
+        }
+        IndexShard indexShard = (IndexShard)cleanupKey.entity.getCacheIdentity();
+        ShardId shardId = indexShard.shardId();
+
+        diskCleanupKeyToCountMap
+            .computeIfAbsent(shardId, k -> ConcurrentCollections.newConcurrentMap())
+            .merge(cleanupKey.readerCacheKeyId, 1, Integer::sum);
+    }
+
+    /**
+     * Updates the count of stale keys in the disk cache.
+     * This method is called when a CleanupKey is added to the keysToClean set.
+     * It increments the staleKeysInDiskCount by the count of the CleanupKey in the diskCleanupKeyToCountMap.
+     * If the CleanupKey's readerCacheKeyId is null or the CleanupKey's entity is not open, it increments the staleKeysInDiskCount
+     * by the total count of keys associated with the CleanupKey's ShardId in the diskCleanupKeyToCountMap and removes the ShardId from the map.
+     *
+     * @param cleanupKey the CleanupKey that has been marked for cleanup
+     */
+    private void updateStaleKeysInDiskCount(CleanupKey cleanupKey) {
+        IndexShard indexShard = (IndexShard) cleanupKey.entity.getCacheIdentity();
+        ShardId shardId = indexShard.shardId();
+
+        ConcurrentMap<String, Integer> countMap = diskCleanupKeyToCountMap.get(shardId);
+        if (countMap == null) {
+            return;
+        }
+
+        if (cleanupKey.readerCacheKeyId == null) {
+            int totalSum = countMap.values().stream().mapToInt(Integer::intValue).sum();
+            staleKeysInDiskCount.addAndGet(totalSum);
+            diskCleanupKeyToCountMap.remove(shardId);
+            return;
+        }
+        Integer count = countMap.get(cleanupKey.readerCacheKeyId);
+        if (count == null) {
+            return;
+        }
+        staleKeysInDiskCount.addAndGet(count);
+        countMap.remove(cleanupKey.readerCacheKeyId);
+        if (countMap.isEmpty()) {
+            diskCleanupKeyToCountMap.remove(shardId);
+        }
+    }
+
 
     BytesReference getOrCompute(
         CacheEntity cacheEntity,
@@ -414,6 +485,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             Boolean remove = registeredClosedListeners.remove(this);
             if (remove != null) {
                 keysToClean.add(this);
+                updateStaleKeysInDiskCount(new CleanupKey(this.entity, this.readerCacheKeyId));
             }
         }
 
@@ -482,7 +554,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
                 return;
             }
             cleanUpKeys(
-                tieredCacheService.getOnHeapCachingTier(),
+                tieredCacheService.getDiskCachingTier().get(),
                 currentKeysToClean,
                 currentFullClean);
         });
@@ -492,10 +564,10 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         int totalKeysInDiskCache = tieredCacheService.getDiskCachingTier()
             .map(CachingTier::count)
             .orElse(0);
-        if (totalKeysInDiskCache == 0 || keysToClean.isEmpty()) {
+        if (totalKeysInDiskCache == 0 || staleKeysInDiskCount.get() == 0) {
             return 0;
         }
-        return ((double) keysToClean.size() / totalKeysInDiskCache) * 100;
+        return ((double) staleKeysInDiskCount.get() / totalKeysInDiskCache) * 100;
     }
 
     synchronized void cleanUpKeys(
@@ -543,19 +615,28 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         return tieredCacheService.count();
     }
 
+    // to be used for testing only
     int numRegisteredCloseListeners() { // for testing
         return registeredClosedListeners.size();
     }
 
+    // to be used for testing only
     void addCleanupKeyForTesting(CacheEntity entity, String readerCacheKeyId) { // for testing
         keysToClean.add(new CleanupKey(entity, readerCacheKeyId));
     }
 
+    // to be used for testing only
     int getKeysToCleanSizeForTesting() { // for testing
         return keysToClean.size();
     }
 
+    // to be used for testing only
     Key createKeyForTesting(CacheEntity entity, String readerCacheKeyId) { // for testing
         return new Key(entity, null, readerCacheKeyId);
+    }
+
+    // to be used for testing only
+    void setStaleKeysInDiskCountForTesting(int count) {
+        staleKeysInDiskCount.set(count);
     }
 }
