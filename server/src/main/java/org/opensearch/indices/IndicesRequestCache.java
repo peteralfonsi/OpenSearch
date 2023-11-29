@@ -452,7 +452,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         }
 
         cleanUpKeys(
-            tieredCacheService.getOnHeapCachingTier().keys().iterator(),
+            tieredCacheService.getOnHeapCachingTier(),
             currentKeysToClean,
             currentFullClean
         );
@@ -481,7 +481,10 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             if (currentKeysToClean.isEmpty() && currentFullClean.isEmpty()) {
                 return;
             }
-            cleanUpKeys(diskCachingTier.keys().iterator(), currentKeysToClean, currentFullClean);
+            cleanUpKeys(
+                tieredCacheService.getOnHeapCachingTier(),
+                currentKeysToClean,
+                currentFullClean);
         });
     }
 
@@ -495,16 +498,21 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         return ((double) keysToClean.size() / totalKeysInDiskCache) * 100;
     }
 
-    synchronized void cleanUpKeys(Iterator<Key> iterator, Set<CleanupKey> currentKeysToClean, Set<Object> currentFullClean) {
+    synchronized void cleanUpKeys(
+        CachingTier<Key, BytesReference> cachingTier,
+        Set<CleanupKey> currentKeysToClean,
+        Set<Object> currentFullClean
+    ) {
+        Iterator<Key> iterator = cachingTier.keys().iterator();
         while (iterator.hasNext()) {
             Key key = iterator.next();
             CleanupKey cleanupKey = new CleanupKey(key.entity, key.readerCacheKeyId);
             if (currentFullClean.contains(key.entity.getCacheIdentity())) {
-                iterator.remove();
+                cachingTier.invalidate(key);
                 currentFullClean.remove(key.entity.getCacheIdentity());
                 keysToClean.remove(cleanupKey); // since a key could be either in onHeap or disk cache.
             } else if (currentKeysToClean.contains(cleanupKey)) {
-                iterator.remove();
+                cachingTier.invalidate(key);
                 currentKeysToClean.remove(cleanupKey);
                 keysToClean.remove(cleanupKey);
             }
