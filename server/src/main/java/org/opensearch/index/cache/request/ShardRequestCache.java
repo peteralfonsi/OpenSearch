@@ -120,7 +120,7 @@ public final class ShardRequestCache {
     static abstract class TierStatsAccumulator<S extends TierRequestStats> implements Writeable, ToXContentFragment {
         /**
          * Add new stats from a single request to this holder.
-         * @param stats
+         * @param stats The stats from a single request to add
          */
         public abstract void addRequestStats(S stats);
 
