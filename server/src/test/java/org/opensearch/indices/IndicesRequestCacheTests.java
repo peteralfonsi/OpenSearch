@@ -92,7 +92,6 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -101,6 +100,12 @@ import static org.mockito.Mockito.when;
 import static org.mockito.internal.verification.VerificationModeFactory.times;
 
 public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
+    public IndexShard getIndexShardCache() {
+        IndexShard indexShard = mock(IndexShard.class);
+        ShardId shardId = mock(ShardId.class);
+        when(indexShard.shardId()).thenReturn(shardId);
+        return indexShard;
+    }
 
     public void testBasicOperationsCache() throws Exception {
         ShardRequestCache requestCacheStats = new ShardRequestCache();
@@ -113,7 +118,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         DirectoryReader reader = OpenSearchDirectoryReader.wrap(DirectoryReader.open(writer), new ShardId("foo", "bar", 1));
         TermQueryBuilder termQuery = new TermQueryBuilder("id", "0");
         BytesReference termBytes = XContentHelper.toXContent(termQuery, MediaTypeRegistry.JSON, false);
-        AtomicBoolean indexShard = new AtomicBoolean(true);
+        IndexShard indexShard = getIndexShardCache();
 
         // initial cache
         TestEntity entity = new TestEntity(requestCacheStats, indexShard);
@@ -143,7 +148,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         if (randomBoolean()) {
             reader.close();
         } else {
-            indexShard.set(false); // closed shard but reader is still open
+            entity.setIsOpen(false);
             cache.clear(entity);
         }
         cache.cleanCache();
@@ -161,7 +166,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
     public void testCacheDifferentReaders() throws Exception {
         ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class), dummyClusterSettings);
-        AtomicBoolean indexShard = new AtomicBoolean(true);
+        IndexShard indexShard = getIndexShardCache();
         ShardRequestCache requestCacheStats = new ShardRequestCache();
         Directory dir = newDirectory();
         IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig());
@@ -239,7 +244,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         if (randomBoolean()) {
             secondReader.close();
         } else {
-            indexShard.set(false); // closed shard but reader is still open
+            entity.setIsOpen(false);
             cache.clear(secondEntity);
         }
         cache.cleanCache();
@@ -258,7 +263,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         {
             IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class), dummyClusterSettings);
-            AtomicBoolean indexShard = new AtomicBoolean(true);
+            IndexShard indexShard = getIndexShardCache();
             ShardRequestCache requestCacheStats = new ShardRequestCache();
             Directory dir = newDirectory();
             IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig());
@@ -287,7 +292,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
             getInstanceFromNode(IndicesService.class),
             dummyClusterSettings
         );
-        AtomicBoolean indexShard = new AtomicBoolean(true);
+        IndexShard indexShard = getIndexShardCache();
         ShardRequestCache requestCacheStats = new ShardRequestCache();
         Directory dir = newDirectory();
         IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig());
@@ -316,7 +321,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         logger.info("Memory size: {}", requestCacheStats.stats().getMemorySize());
         BytesReference value3 = cache.getOrCompute(thirdEntity, thirdLoader, thirdReader, termBytes);
         assertEquals("baz", value3.streamInput().readString());
-        assertEquals(2, cache.count());
+        assertEquals(2, requestCacheStats.stats().getEntries());
         assertEquals(1, requestCacheStats.stats().getEvictions());
         IOUtils.close(reader, secondReader, thirdReader, writer, dir, cache);
     }
@@ -324,7 +329,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
     public void testClearAllEntityIdentity() throws Exception {
         ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class), dummyClusterSettings);
-        AtomicBoolean indexShard = new AtomicBoolean(true);
+        IndexShard indexShard = getIndexShardCache();
 
         ShardRequestCache requestCacheStats = new ShardRequestCache();
         Directory dir = newDirectory();
@@ -344,7 +349,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
 
         writer.updateDocument(new Term("id", "0"), newDoc(0, "baz"));
         DirectoryReader thirdReader = OpenSearchDirectoryReader.wrap(DirectoryReader.open(writer), new ShardId("foo", "bar", 1));
-        AtomicBoolean differentIdentity = new AtomicBoolean(true);
+        IndexShard differentIdentity = getIndexShardCache();
         TestEntity thirdEntity = new TestEntity(requestCacheStats, differentIdentity);
         Loader thirdLoader = new Loader(thirdReader, 0);
 
@@ -417,7 +422,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         DirectoryReader reader = OpenSearchDirectoryReader.wrap(DirectoryReader.open(writer), new ShardId("foo", "bar", 1));
         TermQueryBuilder termQuery = new TermQueryBuilder("id", "0");
         BytesReference termBytes = XContentHelper.toXContent(termQuery, MediaTypeRegistry.JSON, false);
-        AtomicBoolean indexShard = new AtomicBoolean(true);
+        IndexShard indexShard = getIndexShardCache();
 
         // initial cache
         TestEntity entity = new TestEntity(requestCacheStats, indexShard);
@@ -461,7 +466,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         if (randomBoolean()) {
             reader.close();
         } else {
-            indexShard.set(false); // closed shard but reader is still open
+            entity.setIsOpen(false); // closed shard but reader is still open
             cache.clear(entity);
         }
         cache.cleanCache();
@@ -476,8 +481,8 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
     }
 
     public void testEqualsKey() throws IOException {
-        AtomicBoolean trueBoolean = new AtomicBoolean(true);
-        AtomicBoolean falseBoolean = new AtomicBoolean(false);
+        IndexShard trueBoolean = getIndexShardCache();
+        IndexShard falseBoolean = getIndexShardCache();
         IndicesService indicesService = getInstanceFromNode(IndicesService.class);
         IndicesRequestCache indicesRequestCache = indicesService.indicesRequestCache;
         Directory dir = newDirectory();
@@ -617,10 +622,11 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
     }
 
     private class TestEntity extends AbstractIndexShardCacheEntity {
-        private final AtomicBoolean standInForIndexShard;
+        private final IndexShard standInForIndexShard;
         private final ShardRequestCache shardRequestCache;
+        private boolean isOpen = true;
 
-        private TestEntity(ShardRequestCache shardRequestCache, AtomicBoolean standInForIndexShard) {
+        private TestEntity(ShardRequestCache shardRequestCache, IndexShard standInForIndexShard) {
             this.standInForIndexShard = standInForIndexShard;
             this.shardRequestCache = shardRequestCache;
         }
@@ -632,7 +638,11 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
 
         @Override
         public boolean isOpen() {
-            return standInForIndexShard.get();
+            return this.isOpen;
+        }
+
+        public void setIsOpen(boolean isOpen) {
+            this.isOpen = isOpen;
         }
 
         @Override
