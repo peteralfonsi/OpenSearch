@@ -10,7 +10,6 @@ package org.opensearch.common.cache.tier;
 
 import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.RemovalListener;
-import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.common.bytes.BytesArray;
@@ -72,8 +71,9 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
     public void testBasicGetAndPutBytesReference() throws Exception {
         Settings settings = Settings.builder().build();
         try (NodeEnvironment env = newNodeEnvironment(settings)) {
-            EhCacheDiskCachingTier<String, BytesReference> ehCacheDiskCachingTier = new EhCacheDiskCachingTier.Builder<String, BytesReference>()
-                .setKeyType(String.class)
+            EhCacheDiskCachingTier<String, BytesReference> ehCacheDiskCachingTier = new EhCacheDiskCachingTier.Builder<
+                String,
+                BytesReference>().setKeyType(String.class)
                 .setValueType(BytesReference.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setSettings(settings)
@@ -317,6 +317,7 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
     private static class StringSerializer implements Serializer<String, byte[]> {
 
         private final Charset charset = StandardCharsets.UTF_8;
+
         @Override
         public byte[] serialize(String object) {
             return object.getBytes(charset);

@@ -58,7 +58,8 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         String node = internalCluster().startNode(
             Settings.builder()
                 .put(IndicesRequestCache.INDICES_CACHE_QUERY_SIZE.getKey(), new ByteSizeValue(heapSizeBytes))
-                .put(DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING.getKey(), TimeValue.ZERO) // allow into disk cache regardless of took time
+                .put(DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING.getKey(), TimeValue.ZERO) // allow into disk cache regardless of
+                                                                                                      // took time
         );
         Client client = client(node);
 
@@ -101,13 +102,13 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
 
         // We make another actual request that should be in the disk tier. Disk specific stats should keep incrementing
         resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello1")).get();
-        IndicesRequestCacheIT.assertCacheState(client, "index", 0,  numRequests + 2, TierType.ON_HEAP, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + 2, TierType.ON_HEAP, false);
         IndicesRequestCacheIT.assertCacheState(client, "index", 2, numRequests, TierType.DISK, false);
         tookTimeSoFar = assertDiskTierSpecificStats(client, "index", 2, tookTimeSoFar, -1);
 
         // A final request for something in neither tier shouldn't increment disk specific stats
         resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + numRequests)).get();
-        IndicesRequestCacheIT.assertCacheState(client, "index", 0,  numRequests + 3, TierType.ON_HEAP, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + 3, TierType.ON_HEAP, false);
         IndicesRequestCacheIT.assertCacheState(client, "index", 2, numRequests + 1, TierType.DISK, false);
         assertDiskTierSpecificStats(client, "index", 2, tookTimeSoFar, tookTimeSoFar);
 
@@ -124,7 +125,13 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         return requestCacheStats.getMemorySizeInBytes(tierType);
     }
 
-    private long assertDiskTierSpecificStats(Client client, String index, long totalDiskReaches, long totalGetTimeLowerBound, long totalGetTimeUpperBound) {
+    private long assertDiskTierSpecificStats(
+        Client client,
+        String index,
+        long totalDiskReaches,
+        long totalGetTimeLowerBound,
+        long totalGetTimeUpperBound
+    ) {
         // set bounds to -1 to ignore them
         RequestCacheStats requestCacheStats = client.admin()
             .indices()

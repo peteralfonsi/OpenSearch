@@ -46,7 +46,6 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.common.Strings;
 import org.opensearch.core.common.bytes.BytesReference;
-import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.indices.IndicesRequestCache;
 import org.opensearch.search.DocValueFormat;
@@ -68,6 +67,7 @@ public class DiskTierTookTimePolicyTests extends OpenSearchTestCase {
             throw new RuntimeException(e);
         }
     };
+
     private DiskTierTookTimePolicy getTookTimePolicy() {
         // dummy settings
         Settings dummySettings = Settings.EMPTY;
@@ -80,6 +80,7 @@ public class DiskTierTookTimePolicyTests extends OpenSearchTestCase {
         QuerySearchResult qsr = getQSR(ttn);
         assertEquals(ttn, qsr.getTookTimeNanos());
     }
+
     public void testTookTimePolicy() throws Exception {
         DiskTierTookTimePolicy tookTimePolicy = getTookTimePolicy();
 
@@ -104,7 +105,7 @@ public class DiskTierTookTimePolicyTests extends OpenSearchTestCase {
         assertTrue(longResult);
     }
 
-     public static QuerySearchResult getQSR(long tookTimeNanos) {
+    public static QuerySearchResult getQSR(long tookTimeNanos) {
         // package-private, also used by IndicesRequestCacheTests.java
         // setup from QuerySearchResultTests.java
         ShardId shardId = new ShardId("index", "uuid", randomInt());

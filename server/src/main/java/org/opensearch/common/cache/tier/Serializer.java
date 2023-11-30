@@ -8,8 +8,6 @@
 
 package org.opensearch.common.cache.tier;
 
-import java.io.IOException;
-
 /**
  * An interface for serializers, to be used in disk caching tier and elsewhere.
  * T is the class of the original object, and U is the serialized class.

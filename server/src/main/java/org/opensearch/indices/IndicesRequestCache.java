@@ -42,8 +42,8 @@ import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.tier.BytesReferenceSerializer;
 import org.opensearch.common.cache.tier.CachePolicyInfoWrapper;
-import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
 import org.opensearch.common.cache.tier.CacheValue;
+import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
 import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
 import org.opensearch.common.cache.tier.OnHeapCachingTier;
 import org.opensearch.common.cache.tier.OpenSearchOnHeapCache;
@@ -64,7 +64,6 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.common.unit.ByteSizeValue;
-import org.opensearch.search.query.QuerySearchResult;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -149,8 +148,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         double diskTierKeystoreWeightFraction = 0.05; // Allocate 5% of the on-heap weight to the disk tier's keystore
         long keystoreMaxWeight = (long) (diskTierKeystoreWeightFraction * INDICES_CACHE_QUERY_SIZE.get(settings).getBytes());
 
-        EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>()
-            .setKeyType(Key.class)
+        EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>().setKeyType(
+            Key.class
+        )
             .setValueType(BytesReference.class)
             .setExpireAfterAccess(TimeValue.MAX_VALUE)
             .setSettings(settings)
@@ -164,8 +164,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             .build();
 
         // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
-        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>()
-            .setOnHeapCachingTier(openSearchOnHeapCache)
+        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>().setOnHeapCachingTier(
+            openSearchOnHeapCache
+        )
             .setOnDiskCachingTier(ehcacheDiskTier)
             .setTieredCacheEventListener(this)
             .withPolicy(new DiskTierTookTimePolicy(settings, clusterSettings, transformationFunction))
@@ -328,7 +329,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      *
      * @opensearch.internal
      */
-     class Key implements Accountable, Writeable {
+    class Key implements Accountable, Writeable {
         private final long BASE_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(Key.class);
 
         public final CacheEntity entity; // use as identity equality

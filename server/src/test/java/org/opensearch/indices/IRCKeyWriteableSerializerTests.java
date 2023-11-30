@@ -15,9 +15,7 @@ import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.index.IndexService;
 import org.opensearch.index.shard.IndexShard;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
-import org.opensearch.test.OpenSearchTestCase;
 
-import java.nio.ByteBuffer;
 import java.util.Random;
 import java.util.UUID;
 
@@ -33,9 +31,9 @@ public class IRCKeyWriteableSerializerTests extends OpenSearchSingleNodeTestCase
         IRCKeyWriteableSerializer ser = new IRCKeyWriteableSerializer(irc);
 
         int NUM_KEYS = 1000;
-        int[] valueLengths = new int[]{ 1000, 6000 }; // test both branches in equals()
+        int[] valueLengths = new int[] { 1000, 6000 }; // test both branches in equals()
         Random rand = Randomness.get();
-        for (int valueLength: valueLengths) {
+        for (int valueLength : valueLengths) {
             for (int i = 0; i < NUM_KEYS; i++) {
                 IndicesRequestCache.Key key = getRandomIRCKey(valueLength, rand, irc, entity);
                 byte[] serialized = ser.serialize(key);
@@ -45,7 +43,13 @@ public class IRCKeyWriteableSerializerTests extends OpenSearchSingleNodeTestCase
             }
         }
     }
-    private IndicesRequestCache.Key getRandomIRCKey(int valueLength, Random random, IndicesRequestCache irc, IndicesService.IndexShardCacheEntity entity) {
+
+    private IndicesRequestCache.Key getRandomIRCKey(
+        int valueLength,
+        Random random,
+        IndicesRequestCache irc,
+        IndicesService.IndexShardCacheEntity entity
+    ) {
         byte[] value = new byte[valueLength];
         for (int i = 0; i < valueLength; i++) {
             value[i] = (byte) (random.nextInt(126 - 32) + 32);
@@ -54,4 +58,3 @@ public class IRCKeyWriteableSerializerTests extends OpenSearchSingleNodeTestCase
         return irc.new Key(entity, keyValue, UUID.randomUUID().toString()); // same UUID source as used in real key
     }
 }
-

@@ -20,6 +20,7 @@ public class DiskTierRequestStats implements TierRequestStats {
         this.requestReachedDisk = requestReachedDisk;
         this.requestGetTimeNanos = requestGetTimeNanos;
     }
+
     @Override
     public TierType getTierType() {
         return TierType.DISK;

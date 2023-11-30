@@ -18,9 +18,7 @@ import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.common.bytes.BytesReference;
-import org.opensearch.search.query.QuerySearchResult;
 
-import java.io.IOException;
 import java.util.function.Function;
 
 /**
@@ -40,7 +38,11 @@ public class DiskTierTookTimePolicy implements CacheTierPolicy<BytesReference> {
     private TimeValue threshold;
     private final Function<BytesReference, CachePolicyInfoWrapper> getPolicyInfoFn;
 
-    public DiskTierTookTimePolicy(Settings settings, ClusterSettings clusterSettings, Function<BytesReference, CachePolicyInfoWrapper> getPolicyInfoFn) {
+    public DiskTierTookTimePolicy(
+        Settings settings,
+        ClusterSettings clusterSettings,
+        Function<BytesReference, CachePolicyInfoWrapper> getPolicyInfoFn
+    ) {
         this.threshold = DISK_TOOKTIME_THRESHOLD_SETTING.get(settings);
         clusterSettings.addSettingsUpdateConsumer(DISK_TOOKTIME_THRESHOLD_SETTING, this::setThreshold);
         this.getPolicyInfoFn = getPolicyInfoFn;

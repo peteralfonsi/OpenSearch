@@ -61,7 +61,6 @@ import org.opensearch.common.CheckedConsumer;
 import org.opensearch.common.CheckedFunction;
 import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.Nullable;
-import org.opensearch.common.cache.Cache;
 import org.opensearch.common.cache.tier.CachePolicyInfoWrapper;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.lease.Releasable;

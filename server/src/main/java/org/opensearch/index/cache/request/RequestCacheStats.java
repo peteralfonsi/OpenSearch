@@ -34,7 +34,6 @@ package org.opensearch.index.cache.request;
 
 import org.opensearch.OpenSearchException;
 import org.opensearch.Version;
-import org.opensearch.common.cache.tier.TierRequestStats;
 import org.opensearch.common.cache.tier.TierType;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -44,7 +43,6 @@ import org.opensearch.core.xcontent.ToXContentFragment;
 import org.opensearch.core.xcontent.XContentBuilder;
 
 import java.io.IOException;
-import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -55,17 +53,21 @@ import java.util.Map;
  */
 public class RequestCacheStats implements Writeable, ToXContentFragment {
 
-    private Map<String, StatsHolder> defaultStatsMap = new HashMap<>(){{
-        for (TierType tierType : TierType.values()) {
-            put(tierType.getStringValue(), new StatsHolder());
-            // Every possible tier type must have counters, even if they are disabled. Then the counters report 0
-        }}
+    private Map<String, StatsHolder> defaultStatsMap = new HashMap<>() {
+        {
+            for (TierType tierType : TierType.values()) {
+                put(tierType.getStringValue(), new StatsHolder());
+                // Every possible tier type must have counters, even if they are disabled. Then the counters report 0
+            }
+        }
     };
 
-     private Map<String, ShardRequestCache.TierStatsAccumulator> tierSpecificStatsMap = new HashMap<>(){{
-        put(TierType.ON_HEAP.getStringValue(), new ShardRequestCache.OnHeapStatsAccumulator());
-        put(TierType.DISK.getStringValue(), new ShardRequestCache.DiskStatsAccumulator());
-     }};
+    private Map<String, ShardRequestCache.TierStatsAccumulator> tierSpecificStatsMap = new HashMap<>() {
+        {
+            put(TierType.ON_HEAP.getStringValue(), new ShardRequestCache.OnHeapStatsAccumulator());
+            put(TierType.DISK.getStringValue(), new ShardRequestCache.DiskStatsAccumulator());
+        }
+    };
 
     public RequestCacheStats() {}
 

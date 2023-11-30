@@ -8,8 +8,6 @@
 
 package org.opensearch.common.cache.tier;
 
-import org.ehcache.core.spi.service.FileBasedPersistenceContext;
-import org.ehcache.spi.serialization.SerializerException;
 import org.opensearch.OpenSearchException;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
@@ -21,12 +19,9 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 
 import java.io.File;
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
@@ -41,14 +36,13 @@ import org.ehcache.config.builders.CacheManagerBuilder;
 import org.ehcache.config.builders.PooledExecutionServiceConfigurationBuilder;
 import org.ehcache.config.builders.ResourcePoolsBuilder;
 import org.ehcache.config.units.MemoryUnit;
+import org.ehcache.core.spi.service.FileBasedPersistenceContext;
 import org.ehcache.event.CacheEvent;
 import org.ehcache.event.CacheEventListener;
 import org.ehcache.event.EventType;
 import org.ehcache.expiry.ExpiryPolicy;
 import org.ehcache.impl.config.store.disk.OffHeapDiskStoreConfiguration;
-import org.opensearch.core.common.bytes.BytesReference;
-import org.opensearch.core.common.unit.ByteSizeValue;
-import org.opensearch.search.query.QuerySearchResult;
+import org.ehcache.spi.serialization.SerializerException;
 
 /**
  * An ehcache-based disk tier implementation.
@@ -133,7 +127,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         close();
         cacheManager = buildCacheManager();
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
-        
+
         long keystoreMaxWeight = builder.keystoreMaxWeightInBytes;
         this.keystore = new RBMIntKeyLookupStore(keystoreMaxWeight);
     }
@@ -177,11 +171,11 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
             })
                 .withService(getListenerConfiguration(builder))
                 .withService(
-                new OffHeapDiskStoreConfiguration(
-                    this.threadPoolAlias,
-                    DISK_WRITE_CONCURRENCY.get(settings),
-                    DISK_SEGMENTS.get(settings)
-                )
+                    new OffHeapDiskStoreConfiguration(
+                        this.threadPoolAlias,
+                        DISK_WRITE_CONCURRENCY.get(settings),
+                        DISK_SEGMENTS.get(settings)
+                    )
                 )
                 .withKeySerializer(new KeySerializerWrapper<K>(keySerializer))
         );
@@ -383,6 +377,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
      */
     private class KeySerializerWrapper<K> implements org.ehcache.spi.serialization.Serializer<K> {
         public Serializer<K, byte[]> serializer;
+
         public KeySerializerWrapper(Serializer<K, byte[]> serializer) {
             this.serializer = serializer;
         }
@@ -440,6 +435,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         private Serializer<K, byte[]> keySerializer;
         private Serializer<V, byte[]> valueSerializer;
         private long keystoreMaxWeightInBytes = 0;
+
         public Builder() {}
 
         public EhCacheDiskCachingTier.Builder<K, V> setMaximumWeightInBytes(long sizeInBytes) {

@@ -32,10 +32,6 @@
 
 package org.opensearch.common.cache.tier;
 
-import org.opensearch.core.common.bytes.BytesReference;
-
-import java.io.IOException;
-
 /**
  * An interface for policies that inspect data of type T to decide whether they are admitted into a cache tier.
  */

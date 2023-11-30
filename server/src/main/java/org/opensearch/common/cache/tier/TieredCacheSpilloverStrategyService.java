@@ -8,13 +8,9 @@
 
 package org.opensearch.common.cache.tier;
 
-import org.opensearch.common.cache.Cache;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
-import org.opensearch.core.common.bytes.BytesReference;
-import org.opensearch.indices.IndicesRequestCache;
-import org.opensearch.search.query.QuerySearchResult;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -187,7 +183,7 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
                     if (trackStats) {
                         tieredCacheEventListener.onHit(key, cacheValue);
                     }
-                    return cacheValue; //new CacheValue<>(value, cachingTier.getTierType());
+                    return cacheValue; // new CacheValue<>(value, cachingTier.getTierType());
                 }
                 if (trackStats) {
                     tieredCacheEventListener.onMiss(key, cacheValue);
@@ -196,8 +192,6 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
             return null;
         };
     }
-
-
 
     /**
      * Builder object

@@ -15,12 +15,10 @@ import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -34,7 +32,7 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
             onHeapCacheSize,
             randomIntBetween(1, 4),
             eventListener,
-                null
+            null
         );
         int numOfItems1 = randomIntBetween(1, onHeapCacheSize / 2 - 1);
         List<String> keys = new ArrayList<>();
@@ -209,9 +207,7 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         Function<String, String> identityFunction = (String value) -> { return value; };
         TieredCacheSpilloverStrategyService<String, String> spilloverStrategyService = new TieredCacheSpilloverStrategyService.Builder<
             String,
-            String>().setOnHeapCachingTier(new MockOnHeapCacheTier<>(onHeapCacheSize))
-            .setTieredCacheEventListener(eventListener)
-            .build();
+            String>().setOnHeapCachingTier(new MockOnHeapCacheTier<>(onHeapCacheSize)).setTieredCacheEventListener(eventListener).build();
         int numOfItems = randomIntBetween(onHeapCacheSize + 1, onHeapCacheSize * 3);
         for (int iter = 0; iter < numOfItems; iter++) {
             TieredCacheLoader<String, String> tieredCacheLoader = getTieredCacheLoader();
@@ -307,6 +303,7 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
     private TieredCacheLoader<String, String> getTieredCacheLoaderWithKeyValueMap(Map<String, String> map) {
         return new TieredCacheLoader<String, String>() {
             boolean isLoaded;
+
             @Override
             public String load(String key) throws Exception {
                 isLoaded = true;
@@ -333,7 +330,6 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         if (policies != null) {
             policiesToUse = policies;
         }
-
 
         return new TieredCacheSpilloverStrategyService.Builder<String, String>().setOnHeapCachingTier(openSearchOnHeapCache)
             .setOnDiskCachingTier(diskCache)

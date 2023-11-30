@@ -218,7 +218,8 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
                 if (removalSet == null) {
                     // First time a removal has been attempted for this transformed value
                     HashSet<Integer> newRemovalSet = new HashSet<>();
-                    newRemovalSet.add(value); // Add the key value, not the transformed value, to the list of attempted removals for this transformedValue
+                    newRemovalSet.add(value); // Add the key value, not the transformed value, to the list of attempted removals for this
+                                              // transformedValue
                     removalSets.put(transformedValue, newRemovalSet);
                     numCollisions.dec();
                 } else {
@@ -280,7 +281,7 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
         return transform(value1) == transform(value2);
     }
 
-     static double getRBMSizeMultiplier(int numEntries, int modulo) {
+    static double getRBMSizeMultiplier(int numEntries, int modulo) {
         double effectiveModulo = (double) modulo / 2;
         /* This model was created when we used % operator to calculate modulo. This has range (-modulo, modulo).
         Now we have optimized to use a bitmask, which has range [0, modulo). So the number of possible values stored

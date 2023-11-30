@@ -44,7 +44,6 @@ import org.opensearch.common.cache.tier.TierType;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.time.DateFormatter;
 import org.opensearch.common.util.FeatureFlags;
-import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.index.cache.request.RequestCacheStats;
 import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.search.aggregations.bucket.global.GlobalAggregationBuilder;
@@ -677,7 +676,7 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
         assertCacheState(client, "index", 1, 2, TierType.ON_HEAP, false);
         assertCacheState(client, "index", 0, 2, TierType.DISK, false);
 
-        //assertNumCacheEntries(client, "index", 1, TierType.ON_HEAP); // Evictions won't be 1 until the cache cleaner runs every minute
+        // assertNumCacheEntries(client, "index", 1, TierType.ON_HEAP); // Evictions won't be 1 until the cache cleaner runs every minute
     }
 
     protected static void assertCacheState(

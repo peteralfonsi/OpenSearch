@@ -8,10 +8,6 @@
 
 package org.opensearch.common.cache.tier;
 
-import org.opensearch.common.cache.tier.TierType;
-
-import java.util.Map;
-
 /**
  * Represents a cache value, with its associated tier type where it is stored,
  * and tier-specific stats for an individual request stored in a map.
