@@ -56,6 +56,7 @@ import org.opensearch.action.search.SearchRequest;
 import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.UUIDs;
 import org.opensearch.common.cache.tier.DiskCachingTier;
+import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
 import org.opensearch.common.cache.tier.TieredCacheService;
 import org.opensearch.common.cache.tier.TieredCacheSpilloverStrategyService;
 import org.opensearch.common.io.stream.BytesStreamOutput;
@@ -93,6 +94,7 @@ import java.util.Iterator;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -742,6 +744,48 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
 
             // Verify interactions
             verify(mockDiskCachingTier).keys();
+            verify(mockIterator, times(2)).next();
+        }
+
+        @Test
+        public void cleanDiskCacheAndCallInvalidateOfDiskTier() {
+            final int DISK_CACHE_COUNT = 100;
+            final double CLEANUP_THRESHOLD = 50.0;
+            final int STALE_KEYS_IN_DISK_COUNT = 51;
+
+            // Mock dependencies
+            IndicesService mockIndicesService = mock(IndicesService.class);
+            TieredCacheService<Key, BytesReference> mockTieredCacheService = mock(TieredCacheService.class);
+            DiskCachingTier<Key, BytesReference> mockDiskCachingTier = mock(EhCacheDiskCachingTier.class);
+            Iterator<Key> mockIterator = mock(Iterator.class);
+            Iterable<Key> mockIterable = () -> mockIterator;
+
+            IndicesRequestCache cache = new IndicesRequestCache(
+                Settings.EMPTY,
+                mockIndicesService,
+                mockTieredCacheService
+            );
+
+            // Set up mocks
+            when(mockTieredCacheService.getDiskCachingTier()).thenReturn(Optional.of(mockDiskCachingTier));
+            when(mockDiskCachingTier.count()).thenReturn(DISK_CACHE_COUNT);
+            when(mockDiskCachingTier.keys()).thenReturn(mockIterable);
+            when(mockIterator.hasNext()).thenReturn(true, true, false);
+
+            // Create mock Keys and return them when next() is called
+            CacheEntity mockEntity = mock(CacheEntity.class);
+            Key firstMockKey = cache.createKeyForTesting(mockEntity, "readerCacheKeyId1");
+            Key secondMockKey = cache.createKeyForTesting(mockEntity, "readerCacheKeyId2");
+            when(mockEntity.getCacheIdentity()).thenReturn(new Object());
+            when(mockIterator.next()).thenReturn(firstMockKey, secondMockKey);
+
+            cache.addCleanupKeyForTesting(mockEntity, "readerCacheKeyId");
+            cache.setStaleKeysInDiskCountForTesting(STALE_KEYS_IN_DISK_COUNT);
+            cache.cleanDiskCache(CLEANUP_THRESHOLD);
+
+            // Verify interactions
+            verify(mockDiskCachingTier).keys();
+            verify(mockDiskCachingTier, times(1)).invalidate(any(IndicesRequestCache.Key.class));
             verify(mockIterator, times(2)).next();
         }
 
