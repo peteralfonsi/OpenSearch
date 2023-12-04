@@ -31,4 +31,6 @@ public interface TieredCacheService<K, V> {
     OnHeapCachingTier<K, V> getOnHeapCachingTier();
 
     Optional<DiskCachingTier<K, V>> getDiskCachingTier();
+    void addDiskTier(DiskCachingTier<K, V> newTier);
+    void removeDiskTier();
 }

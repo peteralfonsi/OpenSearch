@@ -11,6 +11,10 @@ package org.opensearch.common.cache.tier;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
+import org.opensearch.common.settings.ClusterSettings;
+import org.opensearch.common.settings.Settings;
+import org.opensearch.indices.IndicesRequestCache;
+import org.opensearch.indices.IndicesService;
 
 import java.util.Arrays;
 import java.util.List;
@@ -31,13 +35,14 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
     /**
      * Optional in case tiered caching is turned off.
      */
-    private final Optional<DiskCachingTier<K, V>> diskCachingTier;
+    private Optional<DiskCachingTier<K, V>> diskCachingTier;
     private final TieredCacheEventListener<K, V> tieredCacheEventListener;
 
     /**
      * Maintains caching tiers in order of get calls.
      */
-    private final List<CachingTier<K, V>> cachingTierList;
+    private List<CachingTier<K, V>> cachingTierList;
+
 
     private TieredCacheSpilloverStrategyService(Builder<K, V> builder) {
         this.onHeapCachingTier = Objects.requireNonNull(builder.onHeapCachingTier);
@@ -180,6 +185,25 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
     }
 
 
+
+    /**
+     * Dynamically add a new disk tier.
+     */
+    public void addDiskTier(DiskCachingTier<K, V> newTier) {
+        assert getDiskCachingTier().isEmpty();
+        diskCachingTier = Optional.of(newTier);
+        cachingTierList = List.of(onHeapCachingTier, diskCachingTier.get());
+    }
+
+    /**
+     * Dynamically remove an existing disk tier.
+     */
+    public void removeDiskTier() {
+        assert getDiskCachingTier().isPresent();
+        diskCachingTier.get().close();
+        diskCachingTier = Optional.empty();
+        cachingTierList = List.of(onHeapCachingTier);
+    }
 
     /**
      * Builder object
