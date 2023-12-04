@@ -40,6 +40,11 @@ import org.apache.lucene.util.Accountable;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.tier.BytesReferenceSerializer;
+import org.opensearch.common.cache.tier.CachePolicyInfoWrapper;
+import org.opensearch.common.cache.tier.CacheValue;
+import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
+import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
 import org.opensearch.common.cache.tier.OnHeapCachingTier;
 import org.opensearch.common.cache.tier.OpenSearchOnHeapCache;
 import org.opensearch.common.cache.tier.TierType;
@@ -48,6 +53,7 @@ import org.opensearch.common.cache.tier.TieredCacheLoader;
 import org.opensearch.common.cache.tier.TieredCacheService;
 import org.opensearch.common.cache.tier.TieredCacheSpilloverStrategyService;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
+import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
 import org.opensearch.common.settings.Settings;
@@ -68,6 +74,7 @@ import java.util.Iterator;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Function;
 
 /**
  * The indices request cache allows to cache a shard level request stage responses, helping with improving
@@ -114,10 +121,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     private final ByteSizeValue size;
     private final TimeValue expire;
     private final TieredCacheService<Key, BytesReference> tieredCacheService;
-
     private final IndicesService indicesService;
 
-    IndicesRequestCache(Settings settings, IndicesService indicesService) {
+    IndicesRequestCache(Settings settings, IndicesService indicesService, ClusterSettings clusterSettings) {
         this.size = INDICES_CACHE_QUERY_SIZE.get(settings);
         this.expire = INDICES_CACHE_QUERY_EXPIRE.exists(settings) ? INDICES_CACHE_QUERY_EXPIRE.get(settings) : null;
         long sizeInBytes = size.getBytes();
@@ -127,16 +133,53 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             (k, v) -> k.ramBytesUsed() + v.ramBytesUsed()
         ).setMaximumWeight(sizeInBytes).setExpireAfterAccess(expire).build();
 
+        Function<BytesReference, CachePolicyInfoWrapper> transformationFunction = (data) -> {
+            try {
+                return getPolicyInfo(data);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        };
+        // enabling this for testing purposes. Remove/tweak!!
+        long CACHE_SIZE_IN_BYTES = 1000000L;
+        String SETTING_PREFIX = "indices.request.cache";
+        String STORAGE_PATH = indicesService.getNodePaths()[0].indicesPath.toString() + "/request_cache";
+
+        double diskTierKeystoreWeightFraction = 0.05; // Allocate 5% of the on-heap weight to the disk tier's keystore
+        long keystoreMaxWeight = (long) (diskTierKeystoreWeightFraction * INDICES_CACHE_QUERY_SIZE.get(settings).getBytes());
+
+        EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>().setKeyType(
+            Key.class
+        )
+            .setValueType(BytesReference.class)
+            .setExpireAfterAccess(TimeValue.MAX_VALUE)
+            .setSettings(settings)
+            .setThreadPoolAlias("ehcacheTest")
+            .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
+            .setStoragePath(STORAGE_PATH)
+            .setSettingPrefix(SETTING_PREFIX)
+            .setKeySerializer(new IRCKeyWriteableSerializer(this))
+            .setValueSerializer(new BytesReferenceSerializer())
+            .setKeyStoreMaxWeightInBytes(keystoreMaxWeight)
+            .build();
+
         // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
         tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>().setOnHeapCachingTier(
             openSearchOnHeapCache
-        ).setTieredCacheEventListener(this).build();
+        )
+            .setOnDiskCachingTier(ehcacheDiskTier)
+            .setTieredCacheEventListener(this)
+            .withPolicy(new DiskTierTookTimePolicy(settings, clusterSettings, transformationFunction))
+            .build();
         this.indicesService = indicesService;
     }
 
     @Override
     public void close() {
         tieredCacheService.invalidateAll();
+        if (tieredCacheService.getDiskCachingTier().isPresent()) {
+            tieredCacheService.getDiskCachingTier().get().close();
+        }
     }
 
     void clear(CacheEntity entity) {
@@ -145,8 +188,8 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     @Override
-    public void onMiss(Key key, TierType tierType) {
-        key.entity.onMiss(tierType);
+    public void onMiss(Key key, CacheValue<BytesReference> cacheValue) {
+        key.entity.onMiss(cacheValue);
     }
 
     @Override
@@ -155,8 +198,8 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     @Override
-    public void onHit(Key key, BytesReference value, TierType tierType) {
-        key.entity.onHit(tierType);
+    public void onHit(Key key, CacheValue<BytesReference> cacheValue) {
+        key.entity.onHit(cacheValue);
     }
 
     @Override
@@ -209,13 +252,18 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         tieredCacheService.invalidate(new Key(cacheEntity, cacheKey, readerCacheKeyId));
     }
 
+    public static CachePolicyInfoWrapper getPolicyInfo(BytesReference data) throws IOException {
+        // Reads the policy info corresponding to this QSR, written in IndicesService$loadIntoContext,
+        // without having to create a potentially large short-lived QSR object just for this purpose
+        return new CachePolicyInfoWrapper(data.streamInput());
+    }
+
     /**
      * Loader for the request cache
      *
      * @opensearch.internal
      */
     private static class Loader implements TieredCacheLoader<Key, BytesReference> {
-
         private final CacheEntity entity;
         private final CheckedSupplier<BytesReference, IOException> loader;
         private boolean loaded;
@@ -262,12 +310,12 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         /**
          * Called each time this entity has a cache hit.
          */
-        void onHit(TierType tierType);
+        void onHit(CacheValue<BytesReference> cacheValue);
 
         /**
          * Called each time this entity has a cache miss.
          */
-        void onMiss(TierType tierType);
+        void onMiss(CacheValue<BytesReference> cacheValue);
 
         /**
          * Called when this entity instance is removed

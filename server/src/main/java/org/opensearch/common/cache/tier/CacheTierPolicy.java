@@ -30,36 +30,16 @@
  * GitHub history for details.
  */
 
-package org.opensearch.common.metrics;
-
-import java.util.concurrent.atomic.LongAdder;
+package org.opensearch.common.cache.tier;
 
 /**
- * A counter metric for tracking.
- *
- * @opensearch.internal
+ * An interface for policies that inspect data of type T to decide whether they are admitted into a cache tier.
  */
-public class CounterMetric implements Metric {
-
-    private final LongAdder counter = new LongAdder();
-
-    public void inc() {
-        counter.increment();
-    }
-
-    public void inc(long n) {
-        counter.add(n);
-    }
-
-    public void dec() {
-        counter.decrement();
-    }
-
-    public void dec(long n) {
-        counter.add(-n);
-    }
-
-    public long count() {
-        return counter.sum();
-    }
+public interface CacheTierPolicy<T> {
+    /**
+     * Determines whether this policy allows the data into its cache tier.
+     * @param data The data to check
+     * @return true if accepted, otherwise false
+     */
+    boolean checkData(T data);
 }
