@@ -3,7 +3,7 @@ on: [pull_request]
 
 jobs:
   assemble:
-    if: github.repository == 'peteralfonsi/OpenSearch'
+    if: github.repository == 'opensearch-project/OpenSearch'
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -24,8 +24,3 @@ jobs:
       - name: Run Gradle (assemble)
         run: |
           ./gradlew assemble --parallel --no-build-cache -PDISABLE_BUILD_CACHE
-      - name: Upload artifact
-        uses: actions/upload-artifact@v2
-        with:
-          name: tiered-caching-artifact
-          path: distribution/archives/linux-tar/build/install/opensearch-3.0.0-SNAPSHOT/lib/opensearch-3.0.0-SNAPSHOT.jar
