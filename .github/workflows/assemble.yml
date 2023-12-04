@@ -28,4 +28,4 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: tiered-caching-artifact
-          path: distribution/archives/linux-tar/build/install/opensearch-3.0.0-SNAPSHOT/lib/opensearch-3.0.0-SNAPSHOT.jar
+          path: distribution/archives/linux-tar/build/distributions/opensearch-min-3.0.0-SNAPSHOT-linux-x64.tar.gz
