@@ -17,6 +17,7 @@ import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.tier.keystore.RBMIntKeyLookupStore;
 import org.opensearch.common.metrics.CounterMetric;
+import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
@@ -46,6 +47,8 @@ import org.ehcache.event.CacheEventListener;
 import org.ehcache.event.EventType;
 import org.ehcache.expiry.ExpiryPolicy;
 import org.ehcache.impl.config.store.disk.OffHeapDiskStoreConfiguration;
+
+import org.ehcache.spi.serialization.SerializerException;
 import org.opensearch.core.common.unit.ByteSizeValue;
 
 /**
@@ -73,6 +76,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     private final String threadPoolAlias;
 
     private final Settings settings;
+    private final ClusterSettings clusterSettings;
 
     private CounterMetric count = new CounterMetric();
 
@@ -117,6 +121,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
             this.threadPoolAlias = builder.threadPoolAlias;
         }
         this.settings = Objects.requireNonNull(builder.settings, "Settings objects shouldn't be null");
+        this.clusterSettings = Objects.requireNonNull(builder.clusterSettings, "ClusterSettings object shouldn't be null");
         Objects.requireNonNull(builder.settingPrefix, "Setting prefix shouldn't be null");
         this.DISK_WRITE_MINIMUM_THREADS = Setting.intSetting(builder.settingPrefix + ".tiered.disk.ehcache.min_threads", 2, 1, 5);
         this.DISK_WRITE_MAXIMUM_THREADS = Setting.intSetting(builder.settingPrefix + ".tiered.disk.ehcache.max_threads", 2, 1, 20);
@@ -127,11 +132,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
 
         cacheManager = buildCacheManager();
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
-
-        // IndicesRequestCache gets 1%, of which we allocate 5% to the keystore = 0.05%
-        // TODO: how do we change this automatically based on INDICES_CACHE_QUERY_SIZE setting?
-        Setting<ByteSizeValue> keystoreSizeSetting = Setting.memorySizeSetting(builder.settingPrefix + ".tiered.disk.keystore_size", "0.05%");
-        this.keystore = new RBMIntKeyLookupStore(keystoreSizeSetting.get(this.settings).getBytes());
+        this.keystore = new RBMIntKeyLookupStore(clusterSettings);
     }
 
     private PersistentCacheManager buildCacheManager() {
@@ -436,6 +437,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         private String threadPoolAlias;
 
         private Settings settings;
+        private ClusterSettings clusterSettings;
 
         private String diskCacheAlias;
 
@@ -509,6 +511,11 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
 
         public EhCacheDiskCachingTier.Builder<K, V> setValueSerializer(Serializer<V, byte[]> valueSerializer) {
             this.valueSerializer = valueSerializer;
+            return this;
+        }
+
+        public EhCacheDiskCachingTier.Builder<K, V> setClusterSettings(ClusterSettings clusterSettings) {
+            this.clusterSettings = clusterSettings;
             return this;
         }
 

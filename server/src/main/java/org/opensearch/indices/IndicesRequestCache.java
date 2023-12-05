@@ -172,8 +172,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             .setOnDiskCachingTier(ehcacheDiskTier)
             .setTieredCacheEventListener(this)
             .build();
-        this.indicesService = indicesService;
-        this.settings = settings;
         clusterSettings.addSettingsUpdateConsumer(INDICES_CACHE_DISK_TIER_ENABLED, this::toggleDiskTierEnabled);
     }
 

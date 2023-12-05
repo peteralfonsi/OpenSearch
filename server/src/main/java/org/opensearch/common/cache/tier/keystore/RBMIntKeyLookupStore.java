@@ -39,6 +39,9 @@ import java.util.HashSet;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+import org.opensearch.common.settings.ClusterSettings;
+import org.opensearch.common.settings.Setting;
+import org.opensearch.core.common.unit.ByteSizeValue;
 import org.roaringbitmap.RoaringBitmap;
 
 /**
@@ -50,6 +53,13 @@ import org.roaringbitmap.RoaringBitmap;
  * The store estimates its memory footprint and will stop adding more values once it reaches its memory cap.
  */
 public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
+    public static final Setting<ByteSizeValue> INDICES_CACHE_KEYSTORE_SIZE = Setting.memorySizeSetting(
+        "index.requests.cache.tiered.disk.keystore.size",
+        "0.05%", // 5% of INDICES_CACHE_QUERY_SIZE
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
+    );
+
     /**
      * An enum representing modulo values for use in the keystore
      */
@@ -87,12 +97,18 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
     // so we don't want to do it on every get(), and it doesn't matter much if there are +- 10000 keys in this store
     // in terms of storage impact
 
-    // Default constructor sets modulo = 2^28
-    public RBMIntKeyLookupStore(long memSizeCapInBytes) {
-        this(KeystoreModuloValue.TWO_TO_TWENTY_EIGHT, memSizeCapInBytes);
+    // Use this constructor to set the memory cap to the value in ClusterSettings
+    public RBMIntKeyLookupStore(ClusterSettings clusterSettings) {
+        this(clusterSettings.get(INDICES_CACHE_KEYSTORE_SIZE).getBytes(), clusterSettings);
     }
 
-    public RBMIntKeyLookupStore(KeystoreModuloValue moduloValue, long memSizeCapInBytes) {
+    // Use this constructor to specify some other memory cap
+    public RBMIntKeyLookupStore(long memSizeCapInBytes, ClusterSettings clusterSettings) {
+        this(KeystoreModuloValue.TWO_TO_TWENTY_EIGHT, memSizeCapInBytes, clusterSettings);
+    }
+
+    // Use this constructor to specify memory cap and modulo
+    public RBMIntKeyLookupStore(KeystoreModuloValue moduloValue, long memSizeCapInBytes, ClusterSettings clusterSettings) {
         this.modulo = moduloValue.getValue();
         if (modulo > 0) {
             this.modulo_bitmask = modulo - 1; // keep last log_2(modulo) bits
@@ -104,6 +120,7 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
         this.collidedIntCounters = new HashMap<>();
         this.removalSets = new HashMap<>();
         this.mostRecentByteEstimate = 0L;
+
     }
 
     private int transform(int value) {
@@ -361,5 +378,17 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
 
     HashSet<Integer> getRemovalSetForValue(int value) {
         return removalSets.get(transform(value));
+    }
+
+    /**
+     * Run when the setting for keystore memory cap is updated.
+     * @param newMemSizeCap The new cap size.
+     */
+    protected void setMemSizeCap(ByteSizeValue newMemSizeCap) {
+        stats.memSizeCapInBytes = newMemSizeCap.getBytes();
+        mostRecentByteEstimate = getMemorySizeInBytes();
+        if (mostRecentByteEstimate > getMemorySizeCapInBytes()) {
+            stats.atCapacity.set(true);
+        }
     }
 }

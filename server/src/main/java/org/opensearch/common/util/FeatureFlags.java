@@ -56,6 +56,13 @@ public class FeatureFlags {
     public static final String TELEMETRY = "opensearch.experimental.feature.telemetry.enabled";
 
     /**
+
+    /**
+     * Gates the functionality of using a disk tier in the IndicesRequestCache.
+     */
+    public static final String TIERED_CACHING = "opensearch.experimental.feature.tiered_caching.enabled";
+
+    /**
      * Should store the settings from opensearch.yml.
      */
     private static Settings settings;
@@ -100,4 +107,6 @@ public class FeatureFlags {
         false,
         Property.NodeScope
     );
+
+    public static final Setting<Boolean> TIERED_CACHING_SETTING = Setting.boolSetting(TIERED_CACHING, false, Property.NodeScope);
 }
