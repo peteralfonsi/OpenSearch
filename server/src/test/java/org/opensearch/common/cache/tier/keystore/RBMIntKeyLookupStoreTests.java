@@ -436,6 +436,6 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
         // check the keystore is now full and has its lower cap
         assertTrue(kls.isFull());
         assertEquals(memSize/2, kls.getMemorySizeCapInBytes());
-        assertFalse(kls.add(rand.nextInt())); 
+        assertFalse(kls.add(rand.nextInt()));
     }
 }
