@@ -80,6 +80,7 @@ import org.opensearch.cluster.service.ClusterManagerTaskThrottler;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
+import org.opensearch.common.cache.tier.keystore.RBMIntKeyLookupStore;
 import org.opensearch.common.logging.Loggers;
 import org.opensearch.common.network.NetworkModule;
 import org.opensearch.common.network.NetworkService;
@@ -692,8 +693,7 @@ public final class ClusterSettings extends AbstractScopedSettings {
                 CPUBasedAdmissionControllerSettings.CPU_BASED_ADMISSION_CONTROLLER_TRANSPORT_LAYER_MODE,
                 CPUBasedAdmissionControllerSettings.INDEXING_CPU_USAGE_LIMIT,
                 CPUBasedAdmissionControllerSettings.SEARCH_CPU_USAGE_LIMIT,
-                IndicesService.CLUSTER_RESTRICT_INDEX_REPLICATION_TYPE_SETTING,
-                DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING
+                IndicesService.CLUSTER_RESTRICT_INDEX_REPLICATION_TYPE_SETTING
             )
         )
     );
@@ -718,6 +718,12 @@ public final class ClusterSettings extends AbstractScopedSettings {
             TelemetrySettings.METRICS_PUBLISH_INTERVAL_SETTING,
             TelemetrySettings.TRACER_FEATURE_ENABLED_SETTING,
             TelemetrySettings.METRICS_FEATURE_ENABLED_SETTING
+        ),
+        List.of(FeatureFlags.TIERED_CACHING),
+        List.of(
+            RBMIntKeyLookupStore.INDICES_CACHE_KEYSTORE_SIZE,
+            IndicesRequestCache.INDICES_CACHE_DISK_STALE_KEY_THRESHOLD,
+            DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING
         )
     );
 }
