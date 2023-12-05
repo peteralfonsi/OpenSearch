@@ -72,6 +72,8 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
     }
 
     protected final int modulo;
+    protected final int modulo_bitmask;
+    // Since our modulo is always a power of two we can optimize it by ANDing with a particular bitmask
     KeyStoreStats stats;
     protected RoaringBitmap rbm;
     private HashMap<Integer, CounterMetric> collidedIntCounters;
@@ -80,7 +82,7 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
     protected final Lock readLock = lock.readLock();
     protected final Lock writeLock = lock.writeLock();
     private long mostRecentByteEstimate;
-    private final int REFRESH_SIZE_EST_INTERVAL = 10000;
+    protected final int REFRESH_SIZE_EST_INTERVAL = 10000;
     // Refresh size estimate every X new elements. Refreshes use the RBM's internal size estimator, which takes ~0.01 ms,
     // so we don't want to do it on every get(), and it doesn't matter much if there are +- 10000 keys in this store
     // in terms of storage impact
@@ -92,6 +94,11 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
 
     public RBMIntKeyLookupStore(KeystoreModuloValue moduloValue, long memSizeCapInBytes) {
         this.modulo = moduloValue.getValue();
+        if (modulo > 0) {
+            this.modulo_bitmask = modulo - 1; // keep last log_2(modulo) bits
+        } else {
+            this.modulo_bitmask = -1; // -1 in twos complement is all ones -> includes all bits -> same as no modulo
+        }
         this.stats = new KeyStoreStats(memSizeCapInBytes);
         this.rbm = new RoaringBitmap();
         this.collidedIntCounters = new HashMap<>();
@@ -99,8 +106,8 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
         this.mostRecentByteEstimate = 0L;
     }
 
-    private final int transform(int value) {
-        return modulo == 0 ? value : value % modulo;
+    private int transform(int value) {
+        return value & modulo_bitmask;
     }
 
     private void handleCollisions(int transformedValue) {
@@ -211,7 +218,8 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
                 if (removalSet == null) {
                     // First time a removal has been attempted for this transformed value
                     HashSet<Integer> newRemovalSet = new HashSet<>();
-                    newRemovalSet.add(value); // Add the key value, not the transformed value, to the list of attempted removals for this transformedValue
+                    newRemovalSet.add(value); // Add the key value, not the transformed value, to the list of attempted removals for this
+                                              // transformedValue
                     removalSets.put(transformedValue, newRemovalSet);
                     numCollisions.dec();
                 } else {
@@ -273,8 +281,15 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
         return transform(value1) == transform(value2);
     }
 
-     static double getRBMSizeMultiplier(int numEntries, int modulo) {
-        double x = Math.log10((double) numEntries / modulo);
+    static double getRBMSizeMultiplier(int numEntries, int modulo) {
+        double effectiveModulo = (double) modulo / 2;
+        /* This model was created when we used % operator to calculate modulo. This has range (-modulo, modulo).
+        Now we have optimized to use a bitmask, which has range [0, modulo). So the number of possible values stored
+        is halved. */
+        if (modulo == 0) {
+            effectiveModulo = Math.pow(2, 32);
+        }
+        double x = Math.log10((double) numEntries / effectiveModulo);
         if (x < -5) {
             return 7.0;
         }

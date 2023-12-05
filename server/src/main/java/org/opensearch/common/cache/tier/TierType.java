@@ -27,4 +27,3 @@ public enum TierType {
         return this.stringValue;
     }
 }
-

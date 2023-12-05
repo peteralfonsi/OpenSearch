@@ -68,6 +68,7 @@ import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.index.shard.IndexShard;
 
+
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Collection;
@@ -155,8 +156,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         double diskTierKeystoreWeightFraction = 0.05; // Allocate 5% of the on-heap weight to the disk tier's keystore
         long keystoreMaxWeight = (long) (diskTierKeystoreWeightFraction * INDICES_CACHE_QUERY_SIZE.get(settings).getBytes());
 
-        EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>()
-            .setKeyType(Key.class)
+        EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>().setKeyType(
+            Key.class
+        )
             .setValueType(BytesReference.class)
             .setExpireAfterAccess(TimeValue.MAX_VALUE)
             .setSettings(settings)
@@ -170,8 +172,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             .build();
 
         // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
-        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>()
-            .setOnHeapCachingTier(openSearchOnHeapCache)
+        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>().setOnHeapCachingTier(
+            openSearchOnHeapCache
+        )
             .setOnDiskCachingTier(ehcacheDiskTier)
             .setTieredCacheEventListener(this)
             .withPolicy(new DiskTierTookTimePolicy(settings, clusterSettings, transformationFunction))
@@ -424,7 +427,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      *
      * @opensearch.internal
      */
-     class Key implements Accountable, Writeable {
+    class Key implements Accountable, Writeable {
         private final long BASE_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(Key.class);
 
         public final CacheEntity entity; // use as identity equality

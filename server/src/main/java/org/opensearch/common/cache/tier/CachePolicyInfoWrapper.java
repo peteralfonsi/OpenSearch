@@ -26,6 +26,7 @@ import java.io.IOException;
  */
 public class CachePolicyInfoWrapper implements Writeable {
     private final Long tookTimeNanos;
+
     public CachePolicyInfoWrapper(Long tookTimeNanos) {
         this.tookTimeNanos = tookTimeNanos;
         // Add more values here as they are needed for future cache tier policies

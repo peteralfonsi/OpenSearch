@@ -92,6 +92,9 @@ public class RequestCacheStatsTests extends OpenSearchTestCase {
 
     private void assertDiskStatsState(RequestCacheStats stats, long totalGetTime, long totalDiskReaches) {
         assertEquals(totalGetTime, ((ShardRequestCache.DiskStatsAccumulator) stats.getTierSpecificStats(TierType.DISK)).getTotalGetTime());
-        assertEquals(totalDiskReaches, ((ShardRequestCache.DiskStatsAccumulator) stats.getTierSpecificStats(TierType.DISK)).getTotalDiskReaches());
+        assertEquals(
+            totalDiskReaches,
+            ((ShardRequestCache.DiskStatsAccumulator) stats.getTierSpecificStats(TierType.DISK)).getTotalDiskReaches()
+        );
     }
 }

@@ -9,13 +9,12 @@
 package org.opensearch.indices;
 
 import org.opensearch.OpenSearchException;
+import org.opensearch.common.cache.tier.Serializer;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.BytesStreamInput;
-import org.opensearch.common.cache.tier.Serializer;
 
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.Arrays;
 
 /**
@@ -24,9 +23,11 @@ import java.util.Arrays;
 public class IRCKeyWriteableSerializer implements Serializer<IndicesRequestCache.Key, byte[]> {
 
     IndicesRequestCache irc;
+
     public IRCKeyWriteableSerializer(IndicesRequestCache irc) {
         this.irc = irc;
     }
+
     @Override
     public byte[] serialize(IndicesRequestCache.Key object) {
         try {

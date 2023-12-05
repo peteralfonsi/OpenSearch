@@ -126,7 +126,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         close();
         cacheManager = buildCacheManager();
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
-        
+
         long keystoreMaxWeight = builder.keystoreMaxWeightInBytes;
         this.keystore = new RBMIntKeyLookupStore(keystoreMaxWeight);
     }
@@ -170,11 +170,11 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
             })
                 .withService(getListenerConfiguration(builder))
                 .withService(
-                new OffHeapDiskStoreConfiguration(
-                    this.threadPoolAlias,
-                    DISK_WRITE_CONCURRENCY.get(settings),
-                    DISK_SEGMENTS.get(settings)
-                )
+                    new OffHeapDiskStoreConfiguration(
+                        this.threadPoolAlias,
+                        DISK_WRITE_CONCURRENCY.get(settings),
+                        DISK_SEGMENTS.get(settings)
+                    )
                 )
                 .withKeySerializer(new KeySerializerWrapper<K>(keySerializer))
         );
@@ -386,6 +386,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
      */
     private class KeySerializerWrapper<K> implements org.ehcache.spi.serialization.Serializer<K> {
         public Serializer<K, byte[]> serializer;
+
         public KeySerializerWrapper(Serializer<K, byte[]> serializer) {
             this.serializer = serializer;
         }
@@ -443,6 +444,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         private Serializer<K, byte[]> keySerializer;
         private Serializer<V, byte[]> valueSerializer;
         private long keystoreMaxWeightInBytes = 0;
+
         public Builder() {}
 
         public EhCacheDiskCachingTier.Builder<K, V> setMaximumWeightInBytes(long sizeInBytes) {

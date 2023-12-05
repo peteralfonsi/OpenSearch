@@ -8,8 +8,6 @@
 
 package org.opensearch.index.cache.request;
 
-import org.opensearch.common.cache.tier.TierRequestStats;
-import org.opensearch.common.cache.tier.TierType;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -20,8 +18,6 @@ import org.opensearch.core.xcontent.XContentBuilder;
 
 import java.io.IOException;
 import java.io.Serializable;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * The basic StatsHolder class, which accumulates shard-level stats that are common across all tiers.

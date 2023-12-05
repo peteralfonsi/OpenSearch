@@ -112,7 +112,11 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
     public void testBasicOperationsCache() throws Exception {
         ShardRequestCache requestCacheStats = new ShardRequestCache();
         ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
-        IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class), dummyClusterSettings);
+        IndicesRequestCache cache = new IndicesRequestCache(
+            Settings.EMPTY,
+            getInstanceFromNode(IndicesService.class),
+            dummyClusterSettings
+        );
         Directory dir = newDirectory();
         IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig());
 
@@ -332,7 +336,6 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class), dummyClusterSettings);
         IndexShard indexShard = getIndexShardCache();
-
         ShardRequestCache requestCacheStats = new ShardRequestCache();
         Directory dir = newDirectory();
         IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig());
@@ -416,7 +419,11 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
     public void testInvalidate() throws Exception {
         ShardRequestCache requestCacheStats = new ShardRequestCache();
         ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
-        IndicesRequestCache cache = new IndicesRequestCache(Settings.EMPTY, getInstanceFromNode(IndicesService.class), dummyClusterSettings);
+        IndicesRequestCache cache = new IndicesRequestCache(
+            Settings.EMPTY,
+            getInstanceFromNode(IndicesService.class),
+            dummyClusterSettings
+        );
         Directory dir = newDirectory();
         IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig());
 

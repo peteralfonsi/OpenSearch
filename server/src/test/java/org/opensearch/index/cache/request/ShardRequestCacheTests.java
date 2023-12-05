@@ -8,7 +8,6 @@
 
 package org.opensearch.index.cache.request;
 
-
 import org.opensearch.common.cache.tier.DiskTierRequestStats;
 import org.opensearch.test.OpenSearchTestCase;
 
@@ -20,6 +19,7 @@ public class ShardRequestCacheTests extends OpenSearchTestCase {
         ShardRequestCache src = new ShardRequestCache();
         RequestCacheStats rcs = src.stats();
     }
+
     public void testDiskStatsAccumulator() throws Exception {
         ShardRequestCache.DiskStatsAccumulator acc = new ShardRequestCache.DiskStatsAccumulator();
         DiskTierRequestStats reachedDiskReqStats = new DiskTierRequestStats(145L, true);

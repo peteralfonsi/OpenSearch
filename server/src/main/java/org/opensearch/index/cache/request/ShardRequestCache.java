@@ -119,7 +119,7 @@ public final class ShardRequestCache {
     static abstract class TierStatsAccumulator<S extends TierRequestStats> implements Writeable, ToXContentFragment {
         /**
          * Add new stats from a single request to this holder.
-         * @param stats
+         * @param stats The stats from a single request to add
          */
         public abstract void addRequestStats(S stats);
 
@@ -137,7 +137,9 @@ public final class ShardRequestCache {
      */
     public static class OnHeapStatsAccumulator extends TierStatsAccumulator<OnHeapTierRequestStats> {
         OnHeapStatsAccumulator() {}
+
         OnHeapStatsAccumulator(StreamInput in) {}
+
         @Override
         public void addRequestStats(OnHeapTierRequestStats stats) {}
 
@@ -159,6 +161,7 @@ public final class ShardRequestCache {
     public static class DiskStatsAccumulator extends TierStatsAccumulator<DiskTierRequestStats> {
         final CounterMetric totalGetTime;
         final CounterMetric totalDiskReaches; // Number of times a get() has actually reached the disk
+
         public DiskStatsAccumulator() {
             this.totalGetTime = new CounterMetric();
             this.totalDiskReaches = new CounterMetric();
@@ -172,10 +175,7 @@ public final class ShardRequestCache {
         }
 
         public DiskStatsAccumulator(StreamInput in) throws IOException {
-            this(
-                in.readVLong(),
-                in.readVLong()
-            );
+            this(in.readVLong(), in.readVLong());
         }
 
         public long getTotalGetTime() {
