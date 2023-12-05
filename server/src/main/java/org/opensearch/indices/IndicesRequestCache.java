@@ -121,7 +121,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     );
 
     private final ConcurrentMap<CleanupKey, Boolean> registeredClosedListeners = ConcurrentCollections.newConcurrentMap();
-    private final Set<CleanupKey> keysToClean = ConcurrentCollections.newConcurrentSet();
+    private final Map<CleanupKey, CleanupStatus> keysToClean = ConcurrentCollections.newConcurrentMap();
     // A map to keep track of the number of keys to be cleaned for a given ShardId and readerCacheKeyId
     private final ConcurrentMap<ShardId, ConcurrentMap<String , Integer>> diskCleanupKeyToCountMap = ConcurrentCollections.newConcurrentMap();
     private final AtomicInteger staleKeysInDiskCount = new AtomicInteger(0);
@@ -203,7 +203,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
 
     void clear(CacheEntity entity) {
         CleanupKey cleanupKey = new CleanupKey(entity, null);
-        keysToClean.add(cleanupKey);
+        keysToClean.put(cleanupKey, new CleanupStatus());
         updateStaleKeysInDiskCount(cleanupKey);
         cleanCache();
     }
@@ -370,6 +370,11 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         }
     }
 
+    public class CleanupStatus {
+        public boolean cleanedInHeap;
+        public boolean cleanedOnDisk;
+    }
+
     /**
      * Basic interface to make this cache testable.
      */
@@ -484,8 +489,8 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         public void onClose(IndexReader.CacheKey cacheKey) {
             Boolean remove = registeredClosedListeners.remove(this);
             if (remove != null) {
-                keysToClean.add(this);
-                updateStaleKeysInDiskCount(new CleanupKey(this.entity, this.readerCacheKeyId));
+                keysToClean.put(this, new CleanupStatus());
+                updateStaleKeysInDiskCount(this);
             }
         }
 
@@ -622,7 +627,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
 
     // to be used for testing only
     void addCleanupKeyForTesting(CacheEntity entity, String readerCacheKeyId) { // for testing
-        keysToClean.add(new CleanupKey(entity, readerCacheKeyId));
+        keysToClean.put(new CleanupKey(entity, readerCacheKeyId), new CleanupStatus());
     }
 
     // to be used for testing only
