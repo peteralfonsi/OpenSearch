@@ -140,7 +140,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
                 throw new RuntimeException(e);
             }
         };
-        // enabling this for testing purposes. Remove/tweak!!
+        // enabling this for testing purposes. TODO: Remove/tweak!!
         long CACHE_SIZE_IN_BYTES = 1000000L;
         String SETTING_PREFIX = "indices.request.cache";
         String STORAGE_PATH = indicesService.getNodePaths()[0].indicesPath.toString() + "/request_cache";

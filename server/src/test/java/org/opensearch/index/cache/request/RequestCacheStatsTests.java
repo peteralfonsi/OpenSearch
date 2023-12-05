@@ -23,11 +23,11 @@ public class RequestCacheStatsTests extends OpenSearchTestCase {
         for (TierType tierType : TierType.values()) {
             assertTierState(emptyStats, tierType, 0, 0, 0, 0, 0);
         }
-        assertDiskStatsState(emptyStats, 0, 0);
+        assertDiskStatsState(emptyStats, 0, 0, false, 0, 0.0);
         Map<TierType, StatsHolder> testHeapMap = new HashMap<>();
         testHeapMap.put(TierType.ON_HEAP, new StatsHolder(1, 2, 3, 4, 5));
         Map<TierType, ShardRequestCache.TierStatsAccumulator> tierSpecificMap = new HashMap<>();
-        tierSpecificMap.put(TierType.DISK, new ShardRequestCache.DiskStatsAccumulator(6, 7));
+        tierSpecificMap.put(TierType.DISK, new ShardRequestCache.DiskStatsAccumulator(6, 7, false, 100L, 0.8));
         RequestCacheStats heapAndSpecificOnlyStats = new RequestCacheStats(testHeapMap, tierSpecificMap);
         for (TierType tierType : TierType.values()) {
             if (tierType == TierType.ON_HEAP) {
@@ -36,14 +36,14 @@ public class RequestCacheStatsTests extends OpenSearchTestCase {
                 assertTierState(heapAndSpecificOnlyStats, tierType, 0, 0, 0, 0, 0);
             }
         }
-        assertDiskStatsState(heapAndSpecificOnlyStats, 6, 7);
+        assertDiskStatsState(heapAndSpecificOnlyStats, 6, 7, false, 100L, 0.8);
 
         Map<TierType, StatsHolder> testBothTiersMap = new HashMap<>();
         testBothTiersMap.put(TierType.ON_HEAP, new StatsHolder(11, 12, 13, 14, 15));
         testBothTiersMap.put(TierType.DISK, new StatsHolder(6, 7, 8, 9, 10));
         Map<TierType, ShardRequestCache.TierStatsAccumulator> newTierSpecificMap = new HashMap<>();
         newTierSpecificMap.put(TierType.ON_HEAP, new ShardRequestCache.OnHeapStatsAccumulator());
-        newTierSpecificMap.put(TierType.DISK, new ShardRequestCache.DiskStatsAccumulator(8, 9));
+        newTierSpecificMap.put(TierType.DISK, new ShardRequestCache.DiskStatsAccumulator(8, 9, true, 102L, 0.7));
         RequestCacheStats bothTiersStats = new RequestCacheStats(testBothTiersMap, newTierSpecificMap);
         assertTierState(bothTiersStats, TierType.ON_HEAP, 11, 12, 13, 14, 15);
         assertTierState(bothTiersStats, TierType.DISK, 6, 7, 8, 9, 10);
@@ -51,7 +51,8 @@ public class RequestCacheStatsTests extends OpenSearchTestCase {
         bothTiersStats.add(heapAndSpecificOnlyStats);
         assertTierState(bothTiersStats, TierType.ON_HEAP, 12, 14, 16, 18, 20);
         assertTierState(bothTiersStats, TierType.DISK, 6, 7, 8, 9, 10);
-        assertDiskStatsState(bothTiersStats, 14, 16);
+        assertDiskStatsState(bothTiersStats, 14, 16, false, 100L, 0.8);
+        // We expect the "new" info, which was added to bothTiersStats, to take precedence over the "old" info for the last 3 values
     }
 
     public void testSerialization() throws Exception {
@@ -63,7 +64,7 @@ public class RequestCacheStatsTests extends OpenSearchTestCase {
         testMap.put(TierType.DISK, new StatsHolder(6, 7, 8, 9, 10));
         Map<TierType, ShardRequestCache.TierStatsAccumulator> tierSpecificMap = new HashMap<>();
         tierSpecificMap.put(TierType.ON_HEAP, new ShardRequestCache.OnHeapStatsAccumulator());
-        tierSpecificMap.put(TierType.DISK, new ShardRequestCache.DiskStatsAccumulator(20, 21));
+        tierSpecificMap.put(TierType.DISK, new ShardRequestCache.DiskStatsAccumulator(20, 21, true, 103L, 0.6));
         RequestCacheStats stats = new RequestCacheStats(testMap, tierSpecificMap);
         stats.writeTo(os);
         BytesStreamInput is = new BytesStreamInput(BytesReference.toBytes(os.bytes()));
@@ -71,7 +72,7 @@ public class RequestCacheStatsTests extends OpenSearchTestCase {
 
         assertTierState(deserialized, TierType.ON_HEAP, 11, 12, 13, 14, 15);
         assertTierState(deserialized, TierType.DISK, 6, 7, 8, 9, 10);
-        assertDiskStatsState(deserialized, 20, 21);
+        assertDiskStatsState(deserialized, 20, 21, true, 103L, 0.6);
     }
 
     private void assertTierState(
@@ -90,11 +91,14 @@ public class RequestCacheStatsTests extends OpenSearchTestCase {
         assertEquals(entries, stats.getEntries(tierType));
     }
 
-    private void assertDiskStatsState(RequestCacheStats stats, long totalGetTime, long totalDiskReaches) {
+    private void assertDiskStatsState(RequestCacheStats stats, long totalGetTime, long totalDiskReaches, boolean keystoreIsFull, long keystoreWeight, double staleKeysThreshold) {
         assertEquals(totalGetTime, ((ShardRequestCache.DiskStatsAccumulator) stats.getTierSpecificStats(TierType.DISK)).getTotalGetTime());
         assertEquals(
             totalDiskReaches,
             ((ShardRequestCache.DiskStatsAccumulator) stats.getTierSpecificStats(TierType.DISK)).getTotalDiskReaches()
         );
+        assertEquals(keystoreIsFull, ((ShardRequestCache.DiskStatsAccumulator) stats.getTierSpecificStats(TierType.DISK)).keystoreIsFull);
+        assertEquals(keystoreWeight, ((ShardRequestCache.DiskStatsAccumulator) stats.getTierSpecificStats(TierType.DISK)).keystoreWeight);
+        assertEquals(staleKeysThreshold, ((ShardRequestCache.DiskStatsAccumulator) stats.getTierSpecificStats(TierType.DISK)).staleKeyThreshold, 0.001);
     }
 }

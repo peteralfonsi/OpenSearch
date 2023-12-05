@@ -183,7 +183,7 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
                     if (trackStats) {
                         tieredCacheEventListener.onHit(key, cacheValue);
                     }
-                    return cacheValue; // new CacheValue<>(value, cachingTier.getTierType());
+                    return cacheValue;
                 }
                 if (trackStats) {
                     tieredCacheEventListener.onMiss(key, cacheValue);

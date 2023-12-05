@@ -478,7 +478,7 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
 
         @Override
         public CacheValue<V> get(K key) {
-            return new CacheValue<>(this.diskTier.get(key), TierType.DISK, new DiskTierRequestStats(0L, true));
+            return new CacheValue<>(this.diskTier.get(key), TierType.DISK, new DiskTierRequestStats(0L, true, false, 0, 0.0));
         }
 
         @Override

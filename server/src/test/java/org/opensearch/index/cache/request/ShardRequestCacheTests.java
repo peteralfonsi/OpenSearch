@@ -22,19 +22,28 @@ public class ShardRequestCacheTests extends OpenSearchTestCase {
 
     public void testDiskStatsAccumulator() throws Exception {
         ShardRequestCache.DiskStatsAccumulator acc = new ShardRequestCache.DiskStatsAccumulator();
-        DiskTierRequestStats reachedDiskReqStats = new DiskTierRequestStats(145L, true);
+        DiskTierRequestStats reachedDiskReqStats = new DiskTierRequestStats(145L, true, false, 100L, 0.7);
         acc.addRequestStats(reachedDiskReqStats);
         assertEquals(1, acc.getTotalDiskReaches());
         assertEquals(145, acc.getTotalGetTime());
-        DiskTierRequestStats noDiskReqStats = new DiskTierRequestStats(391392L, false);
+        assertFalse(acc.keystoreIsFull);
+        assertEquals(100L, acc.keystoreWeight);
+        assertEquals(0.7, acc.staleKeyThreshold, 0.001);
+        DiskTierRequestStats noDiskReqStats = new DiskTierRequestStats(391392L, false, true, 102L, 0.6);
         acc.addRequestStats(noDiskReqStats);
         assertEquals(1, acc.getTotalDiskReaches());
         assertEquals(145, acc.getTotalGetTime());
+        assertTrue(acc.keystoreIsFull);
+        assertEquals(102L, acc.keystoreWeight);
+        assertEquals(0.6, acc.staleKeyThreshold, 0.001);
 
         ShardRequestCache.DiskStatsAccumulator other = new ShardRequestCache.DiskStatsAccumulator();
-        other.addRequestStats(new DiskTierRequestStats(1L, true));
+        other.addRequestStats(new DiskTierRequestStats(1L, true, true, 102L, 0.6));
         acc.add(other);
         assertEquals(146, acc.getTotalGetTime());
         assertEquals(2, acc.getTotalDiskReaches());
+        assertTrue(acc.keystoreIsFull);
+        assertEquals(102L, acc.keystoreWeight);
+        assertEquals(0.6, acc.staleKeyThreshold, 0.001);
     }
 }

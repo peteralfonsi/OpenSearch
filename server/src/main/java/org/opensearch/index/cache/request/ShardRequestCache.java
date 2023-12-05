@@ -49,6 +49,8 @@ import org.opensearch.core.xcontent.XContentBuilder;
 
 import java.io.IOException;
 import java.util.EnumMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Tracks the portion of the request cache in use for a particular shard.
@@ -161,21 +163,33 @@ public final class ShardRequestCache {
     public static class DiskStatsAccumulator extends TierStatsAccumulator<DiskTierRequestStats> {
         final CounterMetric totalGetTime;
         final CounterMetric totalDiskReaches; // Number of times a get() has actually reached the disk
+        boolean keystoreIsFull;
+        long keystoreWeight;
+        double staleKeyThreshold;
 
         public DiskStatsAccumulator() {
+            // values accumulated with each new request
             this.totalGetTime = new CounterMetric();
             this.totalDiskReaches = new CounterMetric();
+
+            // values updated with each new request
+            this.keystoreIsFull = false;
+            this.keystoreWeight = 0;
+            this.staleKeyThreshold = 0.0;
         }
 
-        public DiskStatsAccumulator(long totalGetTime, long totalDiskReaches) {
+        public DiskStatsAccumulator(long totalGetTime, long totalDiskReaches, boolean keystoreIsFull, long keystoreWeight, double staleKeyThreshold) {
             this.totalGetTime = new CounterMetric();
             this.totalGetTime.inc(totalGetTime);
             this.totalDiskReaches = new CounterMetric();
             this.totalDiskReaches.inc(totalDiskReaches);
+            this.keystoreIsFull = keystoreIsFull;
+            this.keystoreWeight = keystoreWeight;
+            this.staleKeyThreshold = staleKeyThreshold;
         }
 
         public DiskStatsAccumulator(StreamInput in) throws IOException {
-            this(in.readVLong(), in.readVLong());
+            this(in.readVLong(), in.readVLong(), in.readBoolean(), in.readVLong(), in.readDouble());
         }
 
         public long getTotalGetTime() {
@@ -192,6 +206,10 @@ public final class ShardRequestCache {
                 this.totalDiskReaches.inc();
                 this.totalGetTime.inc(stats.getRequestGetTimeNanos());
             }
+            // below values only update based on new info from the disk tier, they don't add
+            this.keystoreIsFull = stats.getKeystoreIsFull();
+            this.keystoreWeight = stats.getKeystoreWeight();
+            this.staleKeyThreshold = stats.getStaleKeyThreshold();
         }
 
         @Override
@@ -200,24 +218,36 @@ public final class ShardRequestCache {
             DiskStatsAccumulator castOther = (DiskStatsAccumulator) other;
             this.totalDiskReaches.inc(castOther.totalDiskReaches.count());
             this.totalGetTime.inc(castOther.totalGetTime.count());
+            this.keystoreIsFull = castOther.keystoreIsFull;
+            this.keystoreWeight = castOther.keystoreWeight;
+            this.staleKeyThreshold = castOther.staleKeyThreshold;
         }
 
         @Override
         public void writeTo(StreamOutput out) throws IOException {
             out.writeVLong(totalGetTime.count());
             out.writeVLong(totalDiskReaches.count());
+            out.writeBoolean(keystoreIsFull);
+            out.writeVLong(keystoreWeight);
+            out.writeDouble(staleKeyThreshold);
         }
 
         @Override
         public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
             builder.field(Fields.TOTAL_GET_TIME, getTotalGetTime());
             builder.field(Fields.TOTAL_DISK_REACHES, getTotalDiskReaches());
+            builder.field(Fields.KEYSTORE_IS_FULL, keystoreIsFull);
+            builder.field(Fields.KEYSTORE_WEIGHT, keystoreWeight);
+            builder.field(Fields.STALE_KEYS_THRESHOLD, staleKeyThreshold);
             return builder;
         }
 
         static final class Fields { // Used for field names in API response
             static final String TOTAL_GET_TIME = "total_get_time_nanos";
             static final String TOTAL_DISK_REACHES = "total_disk_reaches";
+            static final String KEYSTORE_IS_FULL = "keystore_full";
+            static final String KEYSTORE_WEIGHT = "keystore_weight";
+            static final String STALE_KEYS_THRESHOLD = "stale_keys_threshold";
         }
     }
 }

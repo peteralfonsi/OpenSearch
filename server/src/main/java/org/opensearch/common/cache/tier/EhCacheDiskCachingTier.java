@@ -223,7 +223,8 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         if (reachedDisk) {
             tookTime = System.nanoTime() - now;
         }
-        DiskTierRequestStats stats = new DiskTierRequestStats(tookTime, reachedDisk);
+        DiskTierRequestStats stats = new DiskTierRequestStats(tookTime, reachedDisk, keystore.isFull(), keystore.getMemorySizeInBytes(), 0.0);
+        // TODO: Add in stale key threshold once Kiran's code is merged in
         return new CacheValue<>(value, TierType.DISK, stats);
     }
 
