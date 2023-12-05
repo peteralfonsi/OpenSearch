@@ -690,6 +690,7 @@ public final class ClusterSettings extends AbstractScopedSettings {
                 IndicesService.CLUSTER_REMOTE_INDEX_RESTRICT_ASYNC_DURABILITY_SETTING,
                 IndicesService.CLUSTER_RESTRICT_INDEX_REPLICATION_TYPE_SETTING,
                 IndicesService.INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING,
+                IndicesService.INDICES_REQUEST_CACHE_DISK_CLEAN_INTERVAL_SETTING,
                 AdmissionControlSettings.ADMISSION_CONTROL_TRANSPORT_LAYER_MODE,
                 CPUBasedAdmissionControllerSettings.CPU_BASED_ADMISSION_CONTROLLER_TRANSPORT_LAYER_MODE,
                 CPUBasedAdmissionControllerSettings.INDEXING_CPU_USAGE_LIMIT,
