@@ -35,6 +35,8 @@ import org.opensearch.common.Randomness;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.core.common.unit.ByteSizeUnit;
+import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.test.OpenSearchTestCase;
 import org.roaringbitmap.RoaringBitmap;
 
@@ -419,5 +421,20 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
         assertEquals(1, numCollisions.count());
         assertTrue(kls.contains(k1));
         assertTrue(kls.contains(k2));
+    }
+
+    public void testSetMemSizeCap() throws Exception {
+        RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(0L, DUMMY_CLUSTER_SETTINGS);
+        Random rand = Randomness.get();
+        for (int i = 0; i < RBMIntKeyLookupStore.REFRESH_SIZE_EST_INTERVAL * 3; i++) {
+            kls.add(rand.nextInt());
+        }
+        long memSize = kls.getMemorySizeInBytes();
+        assertEquals(0, kls.getMemorySizeCapInBytes());
+        kls.setMemSizeCap(new ByteSizeValue(memSize/2, ByteSizeUnit.BYTES));
+        // check the keystore is now full and has its lower cap
+        assertTrue(kls.isFull());
+        assertEquals(memSize/2, kls.getMemorySizeCapInBytes());
+        assertFalse(kls.add(rand.nextInt())); 
     }
 }
