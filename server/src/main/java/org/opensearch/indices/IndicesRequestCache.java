@@ -73,7 +73,7 @@ import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Iterator;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
@@ -206,6 +206,12 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         keysToClean.put(cleanupKey, new CleanupStatus());
         updateStaleKeysInDiskCount(cleanupKey);
         cleanCache();
+        /*
+        this would be triggered by the cache clear API call
+        we need to make sure we clean the disk cache as well
+        hence passing threshold as 0
+        */
+        cleanDiskCache(0);
     }
 
     @Override
@@ -289,7 +295,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             diskCleanupKeyToCountMap.remove(shardId);
         }
     }
-
 
     BytesReference getOrCompute(
         CacheEntity cacheEntity,
@@ -520,8 +525,33 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     synchronized void cleanCache() {
         final Set<CleanupKey> currentKeysToClean = new HashSet<>();
         final Set<Object> currentFullClean = new HashSet<>();
+        /*
+        Stores the keys that need to be removed from keysToClean
+        This is done to avoid ConcurrentModificationException
+        */
+        final Set<CleanupKey> keysCleanedFromAllCaches = new HashSet<>();
 
-        categorizeKeysForCleanup(currentKeysToClean, currentFullClean);
+        for (Map.Entry<CleanupKey, CleanupStatus> entry : keysToClean.entrySet()) {
+            CleanupKey cleanupKey = entry.getKey();
+            CleanupStatus cleanupStatus = entry.getValue();
+
+            if (cleanupStatus.cleanedInHeap && cleanupStatus.cleanedOnDisk) {
+                keysCleanedFromAllCaches.add(cleanupKey);
+                continue;
+            }
+
+            if (cleanupStatus.cleanedInHeap) continue;
+
+            if (needsFullClean(cleanupKey)) {
+                currentFullClean.add(cleanupKey.entity.getCacheIdentity());
+            } else {
+                currentKeysToClean.add(cleanupKey);
+            }
+            cleanupStatus.cleanedInHeap = true;
+        }
+
+        // Remove keys that have been cleaned from all caches
+        keysToClean.keySet().removeAll(keysCleanedFromAllCaches);
 
         // Early exit if no cleanup is needed
         if (currentKeysToClean.isEmpty() && currentFullClean.isEmpty()) {
@@ -549,10 +579,37 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
                     return;
                 }
             }
-            Set<CleanupKey> currentKeysToClean = new HashSet<>();
-            Set<Object> currentFullClean = new HashSet<>();
+            // Categorize keys to be cleaned into currentKeysToClean and currentFullClean
+            final Set<CleanupKey> currentKeysToClean = new HashSet<>();
+            final Set<Object> currentFullClean = new HashSet<>();
 
-            categorizeKeysForCleanup(currentKeysToClean, currentFullClean);
+            /*
+            Stores the keys that need to be removed from keysToClean
+            This is done to avoid ConcurrentModificationException
+            */
+            final Set<CleanupKey> keysCleanedFromAllCaches = new HashSet<>();
+
+            for (Map.Entry<CleanupKey, CleanupStatus> entry : keysToClean.entrySet()) {
+                CleanupKey cleanupKey = entry.getKey();
+                CleanupStatus cleanupStatus = entry.getValue();
+
+                if (cleanupStatus.cleanedInHeap && cleanupStatus.cleanedOnDisk) {
+                    keysCleanedFromAllCaches.add(cleanupKey);
+                    continue;
+                }
+
+                if (cleanupStatus.cleanedOnDisk) continue;
+
+                if (needsFullClean(cleanupKey)) {
+                    currentFullClean.add(cleanupKey.entity.getCacheIdentity());
+                } else {
+                    currentKeysToClean.add(cleanupKey);
+                }
+                cleanupStatus.cleanedOnDisk = true;
+            }
+
+            // Remove keys that have been cleaned from all caches
+            keysToClean.keySet().removeAll(keysCleanedFromAllCaches);
 
             // Early exit if no cleanup is needed
             if (currentKeysToClean.isEmpty() && currentFullClean.isEmpty()) {
@@ -580,30 +637,11 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         Set<CleanupKey> currentKeysToClean,
         Set<Object> currentFullClean
     ) {
-        Iterator<Key> iterator = cachingTier.keys().iterator();
-        while (iterator.hasNext()) {
-            Key key = iterator.next();
+        for (Key key : cachingTier.keys()) {
             CleanupKey cleanupKey = new CleanupKey(key.entity, key.readerCacheKeyId);
-            if (currentFullClean.contains(key.entity.getCacheIdentity())) {
+            if (currentFullClean.contains(key.entity.getCacheIdentity()) || currentKeysToClean.contains(cleanupKey)) {
                 cachingTier.invalidate(key);
-                currentFullClean.remove(key.entity.getCacheIdentity());
-                keysToClean.remove(cleanupKey); // since a key could be either in onHeap or disk cache.
-            } else if (currentKeysToClean.contains(cleanupKey)) {
-                cachingTier.invalidate(key);
-                currentKeysToClean.remove(cleanupKey);
-                keysToClean.remove(cleanupKey);
-            }
-        }
-    }
-
-    private void categorizeKeysForCleanup(Set<CleanupKey> currentKeysToClean, Set<Object> currentFullClean) {
-        Iterator<CleanupKey> iterator = keysToClean.iterator();
-        while (iterator.hasNext()) {
-            CleanupKey cleanupKey = iterator.next();
-            if (needsFullClean(cleanupKey)) {
-                currentFullClean.add(cleanupKey.entity.getCacheIdentity());
-            } else {
-                currentKeysToClean.add(cleanupKey);
+                staleKeysInDiskCount.decrementAndGet();
             }
         }
     }
