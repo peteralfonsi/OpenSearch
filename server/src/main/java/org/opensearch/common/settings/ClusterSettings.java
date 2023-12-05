@@ -722,7 +722,7 @@ public final class ClusterSettings extends AbstractScopedSettings {
         List.of(FeatureFlags.TIERED_CACHING),
         List.of(
             RBMIntKeyLookupStore.INDICES_CACHE_KEYSTORE_SIZE,
-            IndicesRequestCache.INDICES_CACHE_DISK_STALE_KEY_THRESHOLD,
+            //IndicesRequestCache.INDICES_CACHE_DISK_STALE_KEY_THRESHOLD,
             DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING
         )
     );

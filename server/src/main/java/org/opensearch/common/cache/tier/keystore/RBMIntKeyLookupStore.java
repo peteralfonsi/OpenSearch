@@ -92,7 +92,7 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
     protected final Lock readLock = lock.readLock();
     protected final Lock writeLock = lock.writeLock();
     private long mostRecentByteEstimate;
-    protected final int REFRESH_SIZE_EST_INTERVAL = 10000;
+    protected static final int REFRESH_SIZE_EST_INTERVAL = 10000;
     // Refresh size estimate every X new elements. Refreshes use the RBM's internal size estimator, which takes ~0.01 ms,
     // so we don't want to do it on every get(), and it doesn't matter much if there are +- 10000 keys in this store
     // in terms of storage impact
