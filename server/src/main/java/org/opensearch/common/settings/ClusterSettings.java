@@ -79,6 +79,11 @@ import org.opensearch.cluster.service.ClusterManagerService;
 import org.opensearch.cluster.service.ClusterManagerTaskThrottler;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.annotation.PublicApi;
+<<<<<<< HEAD
+=======
+import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
+import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
+>>>>>>> 29d31b48646 (added skeleton for stale key threshold setting)
 import org.opensearch.common.cache.tier.keystore.RBMIntKeyLookupStore;
 import org.opensearch.common.logging.Loggers;
 import org.opensearch.common.network.NetworkModule;
@@ -699,8 +704,9 @@ public final class ClusterSettings extends AbstractScopedSettings {
         List.of(FeatureFlags.TIERED_CACHING),
         List.of(
             RBMIntKeyLookupStore.INDICES_CACHE_KEYSTORE_SIZE,
-            IndicesRequestCache.INDICES_CACHE_DISK_STALE_KEY_THRESHOLD
+            IndicesRequestCache.INDICES_CACHE_DISK_STALE_KEY_THRESHOLD,
             //DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING // TODO: Enable once policy PR is merged in
+            EhCacheDiskCachingTier.INDICES_CACHE_DISK_STALE_KEY_THRESHOLD
         )
     );
 }

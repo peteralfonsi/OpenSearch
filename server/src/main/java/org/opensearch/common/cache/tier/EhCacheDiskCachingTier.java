@@ -20,6 +20,7 @@ import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.settings.Setting.Property;
 import org.opensearch.common.unit.TimeValue;
 
 import java.io.File;
@@ -49,13 +50,19 @@ import org.ehcache.expiry.ExpiryPolicy;
 import org.ehcache.impl.config.store.disk.OffHeapDiskStoreConfiguration;
 
 import org.ehcache.spi.serialization.SerializerException;
-import org.opensearch.core.common.unit.ByteSizeValue;
+
 
 /**
  * @param <K> The key type of cache entries
  * @param <V> The value type of cache entries
  */
 public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
+    public static final Setting<Double> INDICES_CACHE_DISK_STALE_KEY_THRESHOLD = Setting.doubleSetting(
+        "index.requests.cache.tiered.disk.stale_cleanup_threshold",
+        0.5,
+        Property.Dynamic,
+        Property.NodeScope
+    );
 
     // A Cache manager can create many caches.
     private PersistentCacheManager cacheManager;
@@ -133,6 +140,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         cacheManager = buildCacheManager();
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
         this.keystore = new RBMIntKeyLookupStore(clusterSettings);
+        clusterSettings.addSettingsUpdateConsumer(INDICES_CACHE_DISK_STALE_KEY_THRESHOLD, this::setStaleKeyThreshold);
     }
 
     private PersistentCacheManager buildCacheManager() {
@@ -280,6 +288,11 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         } catch (CachePersistenceException e) {
             throw new OpenSearchException("Exception occurred while destroying ehcache and associated data", e);
         } catch (NullPointerException ignored) {} // Another test node has already destroyed the cache manager
+    }
+
+    private void setStaleKeyThreshold(double newThreshold) {
+        return;
+        //TODO: Fill in once Kiran's code is merged
     }
 
     /**
