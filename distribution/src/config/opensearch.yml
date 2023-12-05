@@ -127,3 +127,12 @@ ${path.logs}
 # Once there is no observed impact on performance, this feature flag can be removed.
 #
 #opensearch.experimental.optimization.datetime_formatter_caching.enabled: false
+#
+#
+# Gates the tiered caching feature. This feature adds a disk tier to the IndicesRequestCache.
+# opensearch.experimental.feature.tiered_caching.enabled: false
+#
+# Settings related to tiered caching:
+# index.requests.cache.tiered.disk.keystore.size: 0.05%
+# index.requests.cache.tiered.disk.stale_cleanup_threshold: 0.5
+#
