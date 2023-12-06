@@ -55,6 +55,7 @@ import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.common.util.concurrent.ConcurrentCollections;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -162,17 +163,35 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             (k, v) -> k.ramBytesUsed() + v.ramBytesUsed()
         ).setMaximumWeight(sizeInBytes).setExpireAfterAccess(expire).build();
 
-        // enabling this for testing purposes. Remove/tweak!!
-        EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = getDefaultDiskTier(settings);
 
         // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
-        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>().setOnHeapCachingTier(
-            openSearchOnHeapCache
-        )
-            .setOnDiskCachingTier(ehcacheDiskTier)
-            .setTieredCacheEventListener(this)
-            .build();
-        clusterSettings.addSettingsUpdateConsumer(INDICES_CACHE_DISK_TIER_ENABLED, this::toggleDiskTierEnabled);
+        TieredCacheSpilloverStrategyService.Builder<Key, BytesReference> tieredCacheServiceBuilder = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>()
+            .setOnHeapCachingTier(openSearchOnHeapCache)
+            .setTieredCacheEventListener(this);
+
+        if (FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING)) {
+            // enabling this for testing purposes. Remove/tweak!!
+            long CACHE_SIZE_IN_BYTES = 1000000L;
+            String SETTING_PREFIX = "indices.request.cache";
+            String STORAGE_PATH = indicesService.getNodePaths()[0].indicesPath.toString() + "/request_cache";
+
+            EhCacheDiskCachingTier<Key, BytesReference> diskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>()
+                .setKeyType(Key.class)
+                .setValueType(BytesReference.class)
+                .setExpireAfterAccess(TimeValue.MAX_VALUE)
+                .setSettings(settings)
+                .setClusterSettings(clusterSettings)
+                .setThreadPoolAlias("ehcacheTest")
+                .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
+                .setStoragePath(STORAGE_PATH)
+                .setSettingPrefix(SETTING_PREFIX)
+                .setKeySerializer(new IRCKeyWriteableSerializer(this))
+                .setValueSerializer(new BytesReferenceSerializer())
+                .build();
+
+            tieredCacheServiceBuilder.setOnDiskCachingTier(diskTier);
+        }
+        tieredCacheService = tieredCacheServiceBuilder.build();
     }
 
     @Override
