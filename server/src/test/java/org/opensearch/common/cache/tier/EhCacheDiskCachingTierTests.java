@@ -325,6 +325,9 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
 
         @Override
         public String deserialize(byte[] bytes) {
+            if (bytes == null) {
+                return null;
+            }
             return new String(bytes, charset);
         }
 
