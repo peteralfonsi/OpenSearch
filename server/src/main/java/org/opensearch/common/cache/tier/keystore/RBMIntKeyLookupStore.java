@@ -120,6 +120,7 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
         this.collidedIntCounters = new HashMap<>();
         this.removalSets = new HashMap<>();
         this.mostRecentByteEstimate = 0L;
+        clusterSettings.addSettingsUpdateConsumer(INDICES_CACHE_KEYSTORE_SIZE, this::setMemSizeCap);
 
     }
 

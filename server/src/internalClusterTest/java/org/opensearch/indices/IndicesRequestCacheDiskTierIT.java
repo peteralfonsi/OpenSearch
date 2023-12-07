@@ -32,6 +32,7 @@
 
 package org.opensearch.indices;
 
+import org.opensearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.client.Client;
 import org.opensearch.cluster.metadata.IndexMetadata;
@@ -145,17 +146,26 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         ensureSearchable("index");
         SearchResponse resp;
 
-        for (int i = 0; i < 10000; i++) { // RBMIntKeyLookupStore.REFRESH_SIZE_EST_INTERVAL + 10
-            resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hellohellohellohellohellohellohellohello" + i)).get();
+        for (int i = 0; i < RBMIntKeyLookupStore.REFRESH_SIZE_EST_INTERVAL + 10; i++) { // RBMIntKeyLookupStore.REFRESH_SIZE_EST_INTERVAL + 10
+            resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + i)).get();
         }
 
         RequestCacheStats stats = client.admin().indices().prepareStats("index").setRequestCache(true).get().getTotal().getRequestCache();
         long currentKeystoreSize = stats.getDiskSpecificStats().getKeystoreWeight();
-        System.out.println("HEAP ENTRIES " + stats.getEntries(TierType.ON_HEAP));
-        System.out.println("DISK ENTRIES " + stats.getEntries(TierType.DISK));
-        System.out.println("DISK SIZE " + stats.getMemorySize(TierType.DISK));
+        assertFalse(stats.getDiskSpecificStats().getKeystoreIsFull());
+        assertTrue(currentKeystoreSize > 1000);
+        System.out.println("Keystore size " + currentKeystoreSize);
+        long newKeystoreSize = currentKeystoreSize / 2;
 
-        //client.close();
+        // change cluster setting for keystore size to a smaller value, making it report being full
+        ClusterUpdateSettingsRequest clusterSettingUpdate = new ClusterUpdateSettingsRequest();
+        clusterSettingUpdate.persistentSettings(Settings.builder().put(RBMIntKeyLookupStore.INDICES_CACHE_KEYSTORE_SIZE.getKey(), new ByteSizeValue(newKeystoreSize)));
+        assertAcked(client.admin().cluster().updateSettings(clusterSettingUpdate).actionGet());
+
+        // need to run another get() to trigger update of misc API values
+        resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + -1)).get();
+        stats = client.admin().indices().prepareStats("index").setRequestCache(true).get().getTotal().getRequestCache();
+        assertTrue(stats.getDiskSpecificStats().getKeystoreIsFull());
     }
 
     private long getCacheSizeBytes(Client client, String index, TierType tierType) {
