@@ -705,7 +705,11 @@ public final class ClusterSettings extends AbstractScopedSettings {
             RBMIntKeyLookupStore.INDICES_CACHE_KEYSTORE_SIZE,
             IndicesRequestCache.INDICES_CACHE_DISK_STALE_KEY_THRESHOLD,
             //DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING // TODO: Enable once policy PR is merged in
-            EhCacheDiskCachingTier.INDICES_CACHE_DISK_STALE_KEY_THRESHOLD
+            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_STALE_KEY_THRESHOLD,
+            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_MIN_THREADS,
+            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_MAX_THREADS,
+            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_WRITE_CONCURRENCY,
+            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_SEGMENTS
         )
     );
 }
