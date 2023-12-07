@@ -29,7 +29,7 @@ import java.util.function.Function;
  */
 public class DiskTierTookTimePolicy implements CacheTierPolicy<BytesReference> {
     public static final Setting<TimeValue> DISK_TOOKTIME_THRESHOLD_SETTING = Setting.positiveTimeSetting(
-        "index.requests.cache.disk.tooktime.threshold",
+        "indices.requests.cache.disk.tooktime.threshold",
         new TimeValue(10),
         Setting.Property.Dynamic,
         Setting.Property.NodeScope

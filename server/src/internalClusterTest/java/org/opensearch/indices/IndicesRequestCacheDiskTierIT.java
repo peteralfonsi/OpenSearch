@@ -39,6 +39,7 @@ import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
 import org.opensearch.common.cache.tier.TierType;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.index.cache.request.RequestCacheStats;
 import org.opensearch.index.cache.request.ShardRequestCache;
@@ -53,6 +54,13 @@ import static org.opensearch.test.hamcrest.OpenSearchAssertions.assertSearchResp
 
 @OpenSearchIntegTestCase.ClusterScope(scope = OpenSearchIntegTestCase.Scope.TEST, numDataNodes = 0)
 public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
+    @Override
+    protected Settings featureFlagSettings() {
+        return Settings.builder().put(super.featureFlagSettings())
+            .put(FeatureFlags.CONCURRENT_SEGMENT_SEARCH, "true")
+            .put(FeatureFlags.TIERED_CACHING, "true")
+            .build();
+    }
     public void testDiskTierStats() throws Exception {
         int heapSizeBytes = 9876;
         String node = internalCluster().startNode(
