@@ -37,6 +37,8 @@ import org.opensearch.client.Client;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.cache.tier.TierType;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.index.cache.request.RequestCacheStats;
 import org.opensearch.index.cache.request.ShardRequestCache;
@@ -51,6 +53,13 @@ import static org.opensearch.test.hamcrest.OpenSearchAssertions.assertSearchResp
 
 @OpenSearchIntegTestCase.ClusterScope(scope = OpenSearchIntegTestCase.Scope.TEST, numDataNodes = 0)
 public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
+    @Override
+    protected Settings featureFlagSettings() {
+        return Settings.builder().put(super.featureFlagSettings())
+            .put(FeatureFlags.CONCURRENT_SEGMENT_SEARCH, "true")
+            .put(FeatureFlags.TIERED_CACHING, "true")
+            .build();
+    }
     public void testDiskTierStats() throws Exception {
         int heapSizeBytes = 4729;
         String node = internalCluster().startNode(
@@ -120,7 +129,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         String node = internalCluster().startNode(
             Settings.builder()
                 .put(IndicesRequestCache.INDICES_CACHE_QUERY_SIZE.getKey(), new ByteSizeValue(heapSizeBytes))
-                .put(DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING.getKey(), TimeValue.ZERO) // allow into disk cache regardless of
+                //.put(DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING.getKey(), TimeValue.ZERO) // allow into disk cache regardless of
             // took time
         );
         Client client = client(node);
