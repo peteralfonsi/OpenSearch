@@ -723,7 +723,11 @@ public final class ClusterSettings extends AbstractScopedSettings {
         List.of(FeatureFlags.TIERED_CACHING),
         List.of(
             RBMIntKeyLookupStore.INDICES_CACHE_KEYSTORE_SIZE,
-            EhCacheDiskCachingTier.INDICES_CACHE_DISK_STALE_KEY_THRESHOLD,
+            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_STALE_KEY_THRESHOLD,
+            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_MIN_THREADS,
+            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_MAX_THREADS,
+            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_WRITE_CONCURRENCY,
+            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_SEGMENTS,
             DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING
         )
     );
