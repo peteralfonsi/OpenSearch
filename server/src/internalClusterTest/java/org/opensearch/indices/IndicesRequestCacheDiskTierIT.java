@@ -37,6 +37,7 @@ import org.opensearch.client.Client;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
 import org.opensearch.common.cache.tier.TierType;
+import org.opensearch.common.cache.tier.keystore.RBMIntKeyLookupStore;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.FeatureFlags;
@@ -143,6 +144,18 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         indexRandom(true, client.prepareIndex("index").setSource("k", "hello"));
         ensureSearchable("index");
         SearchResponse resp;
+
+        for (int i = 0; i < 10000; i++) { // RBMIntKeyLookupStore.REFRESH_SIZE_EST_INTERVAL + 10
+            resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hellohellohellohellohellohellohellohello" + i)).get();
+        }
+
+        RequestCacheStats stats = client.admin().indices().prepareStats("index").setRequestCache(true).get().getTotal().getRequestCache();
+        long currentKeystoreSize = stats.getDiskSpecificStats().getKeystoreWeight();
+        System.out.println("HEAP ENTRIES " + stats.getEntries(TierType.ON_HEAP));
+        System.out.println("DISK ENTRIES " + stats.getEntries(TierType.DISK));
+        System.out.println("DISK SIZE " + stats.getMemorySize(TierType.DISK));
+
+        //client.close();
     }
 
     private long getCacheSizeBytes(Client client, String index, TierType tierType) {

@@ -41,6 +41,9 @@ public class IRCKeyWriteableSerializer implements Serializer<IndicesRequestCache
 
     @Override
     public IndicesRequestCache.Key deserialize(byte[] bytes) {
+        if (bytes == null) {
+            return null;
+        }
         try {
             BytesStreamInput is = new BytesStreamInput(bytes, 0, bytes.length);
             return irc.new Key(is);

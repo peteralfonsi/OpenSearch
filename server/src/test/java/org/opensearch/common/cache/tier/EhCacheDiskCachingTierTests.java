@@ -10,8 +10,12 @@ package org.opensearch.common.cache.tier;
 
 import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.RemovalListener;
+import org.opensearch.common.cache.tier.keystore.RBMIntKeyLookupStore;
+import org.opensearch.common.settings.ClusterSettings;
+import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.env.NodeEnvironment;
@@ -21,9 +25,12 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
@@ -35,13 +42,19 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
     private static final String SETTING_PREFIX = "indices.request.cache";
 
     public void testBasicGetAndPut() throws IOException {
+        HashSet<Setting<?>> clusterSettingsSet = new HashSet<>();
+        for (Setting<?> s : ClusterSettings.FEATURE_FLAGGED_CLUSTER_SETTINGS.get(List.of(FeatureFlags.TIERED_CACHING))) {
+            clusterSettingsSet.add(s);
+        } // :(
         Settings settings = Settings.builder().build();
+        ClusterSettings clusterSettings =  new ClusterSettings(Settings.EMPTY, clusterSettingsSet);//new ClusterSettings(Settings.EMPTY, Set.of(RBMIntKeyLookupStore.INDICES_CACHE_KEYSTORE_SIZE))
         try (NodeEnvironment env = newNodeEnvironment(settings)) {
             EhCacheDiskCachingTier<String, String> ehCacheDiskCachingTierNew = new EhCacheDiskCachingTier.Builder<String, String>()
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setSettings(settings)
+                .setClusterSettings(clusterSettings)
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
@@ -49,7 +62,7 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .build();
-            int randomKeys = randomIntBetween(10, 100);
+            int randomKeys = 700; //randomIntBetween(10, 100);
             Map<String, String> keyValueMap = new HashMap<>();
             for (int i = 0; i < randomKeys; i++) {
                 keyValueMap.put(UUID.randomUUID().toString(), UUID.randomUUID().toString());
@@ -325,6 +338,9 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
 
         @Override
         public String deserialize(byte[] bytes) {
+            if (bytes == null) {
+                return null;
+            }
             return new String(bytes, charset);
         }
 

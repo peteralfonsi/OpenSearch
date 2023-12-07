@@ -200,6 +200,18 @@ public final class ShardRequestCache {
             return totalDiskReaches.count();
         }
 
+        public long getKeystoreWeight() {
+            return keystoreWeight;
+        }
+
+        public boolean getKeystoreIsFull() {
+            return keystoreIsFull;
+        }
+
+        public double getStaleKeyThreshold() {
+            return staleKeyThreshold;
+        }
+
         @Override
         public void addRequestStats(DiskTierRequestStats stats) {
             if (stats.getRequestReachedDisk()) {
