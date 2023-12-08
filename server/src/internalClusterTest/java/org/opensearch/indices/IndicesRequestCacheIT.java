@@ -85,7 +85,8 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
 
     @Override
     protected Settings featureFlagSettings() {
-        return Settings.builder().put(super.featureFlagSettings())
+        return Settings.builder()
+            .put(super.featureFlagSettings())
             .put(FeatureFlags.CONCURRENT_SEGMENT_SEARCH, "true")
             .put(FeatureFlags.TIERED_CACHING, "true")
             .build();

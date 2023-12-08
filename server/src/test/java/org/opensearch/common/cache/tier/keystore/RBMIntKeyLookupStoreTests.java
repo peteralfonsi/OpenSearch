@@ -67,7 +67,11 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
 
     public void testTransformationLogic() throws Exception {
         int modulo = (int) Math.pow(2, 29);
-        RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(RBMIntKeyLookupStore.KeystoreModuloValue.TWO_TO_TWENTY_NINE, 0L, DUMMY_CLUSTER_SETTINGS);
+        RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(
+            RBMIntKeyLookupStore.KeystoreModuloValue.TWO_TO_TWENTY_NINE,
+            0L,
+            DUMMY_CLUSTER_SETTINGS
+        );
         int offset = 3;
         for (int i = 0; i < 4; i++) { // after this we run into max value, but thats not a flaw with the class design
             int posValue = i * modulo + offset;
@@ -83,7 +87,11 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
             assertTrue(kls.getInternalRepresentation(value) < modulo);
             assertTrue(kls.getInternalRepresentation(value) >= 0);
         }
-        RBMIntKeyLookupStore no_modulo_kls = new RBMIntKeyLookupStore(RBMIntKeyLookupStore.KeystoreModuloValue.NONE, 0L, DUMMY_CLUSTER_SETTINGS);
+        RBMIntKeyLookupStore no_modulo_kls = new RBMIntKeyLookupStore(
+            RBMIntKeyLookupStore.KeystoreModuloValue.NONE,
+            0L,
+            DUMMY_CLUSTER_SETTINGS
+        );
         Random rand = Randomness.get();
         for (int i = 0; i < 100; i++) {
             int val = rand.nextInt();
@@ -92,9 +100,17 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
     }
 
     public void testContains() throws Exception {
-        RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(RBMIntKeyLookupStore.KeystoreModuloValue.TWO_TO_TWENTY_NINE, 0L, DUMMY_CLUSTER_SETTINGS);
-        RBMIntKeyLookupStore noModuloKls = new RBMIntKeyLookupStore(RBMIntKeyLookupStore.KeystoreModuloValue.NONE, 0L, DUMMY_CLUSTER_SETTINGS);
-        for (int i = 0; i < kls.REFRESH_SIZE_EST_INTERVAL + 1000; i++) {
+        RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(
+            RBMIntKeyLookupStore.KeystoreModuloValue.TWO_TO_TWENTY_NINE,
+            0L,
+            DUMMY_CLUSTER_SETTINGS
+        );
+        RBMIntKeyLookupStore noModuloKls = new RBMIntKeyLookupStore(
+            RBMIntKeyLookupStore.KeystoreModuloValue.NONE,
+            0L,
+            DUMMY_CLUSTER_SETTINGS
+        );
+        for (int i = 0; i < RBMIntKeyLookupStore.REFRESH_SIZE_EST_INTERVAL + 1000; i++) {
             // set upper bound > number of elements to trigger a size check, ensuring we test that too
             kls.add(i);
             assertTrue(kls.contains(i));
@@ -122,7 +138,11 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
     public void testRegenerateStore() throws Exception {
         int numToAdd = 10000000;
         Random rand = Randomness.get();
-        RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(RBMIntKeyLookupStore.KeystoreModuloValue.TWO_TO_TWENTY_NINE, 0L, DUMMY_CLUSTER_SETTINGS);
+        RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(
+            RBMIntKeyLookupStore.KeystoreModuloValue.TWO_TO_TWENTY_NINE,
+            0L,
+            DUMMY_CLUSTER_SETTINGS
+        );
         for (int i = 0; i < numToAdd; i++) {
             kls.add(i);
         }
@@ -188,7 +208,11 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
     public void testConcurrency() throws Exception {
         Random rand = Randomness.get();
         for (int j = 0; j < 5; j++) { // test with different numbers of threads
-            RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(RBMIntKeyLookupStore.KeystoreModuloValue.TWO_TO_TWENTY_NINE, 0L, DUMMY_CLUSTER_SETTINGS);
+            RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(
+                RBMIntKeyLookupStore.KeystoreModuloValue.TWO_TO_TWENTY_NINE,
+                0L,
+                DUMMY_CLUSTER_SETTINGS
+            );
             int numThreads = rand.nextInt(50) + 1;
             ThreadPoolExecutor executor = (ThreadPoolExecutor) Executors.newFixedThreadPool(numThreads);
             // In this test we want to add the first 200K numbers and check they're all correctly there.
@@ -266,7 +290,11 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
     public void testRemoveWithCollisions() throws Exception {
         int modulo = (int) Math.pow(2, 26);
         long memCap = 100L * BYTES_IN_MB;
-        RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(RBMIntKeyLookupStore.KeystoreModuloValue.TWO_TO_TWENTY_SIX, memCap, DUMMY_CLUSTER_SETTINGS);
+        RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(
+            RBMIntKeyLookupStore.KeystoreModuloValue.TWO_TO_TWENTY_SIX,
+            memCap,
+            DUMMY_CLUSTER_SETTINGS
+        );
         for (int i = 0; i < 10; i++) {
             kls.add(i);
             if (i % 2 == 1) {
@@ -309,7 +337,11 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
     }
 
     public void testNullInputs() throws Exception {
-        RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(RBMIntKeyLookupStore.KeystoreModuloValue.TWO_TO_TWENTY_NINE, 0L, DUMMY_CLUSTER_SETTINGS);
+        RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(
+            RBMIntKeyLookupStore.KeystoreModuloValue.TWO_TO_TWENTY_NINE,
+            0L,
+            DUMMY_CLUSTER_SETTINGS
+        );
         assertFalse(kls.add(null));
         assertFalse(kls.contains(null));
         assertEquals(0, (int) kls.getInternalRepresentation(null));
@@ -431,10 +463,10 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
         }
         long memSize = kls.getMemorySizeInBytes();
         assertEquals(0, kls.getMemorySizeCapInBytes());
-        kls.setMemSizeCap(new ByteSizeValue(memSize/2, ByteSizeUnit.BYTES));
+        kls.setMemSizeCap(new ByteSizeValue(memSize / 2, ByteSizeUnit.BYTES));
         // check the keystore is now full and has its lower cap
         assertTrue(kls.isFull());
-        assertEquals(memSize/2, kls.getMemorySizeCapInBytes());
+        assertEquals(memSize / 2, kls.getMemorySizeCapInBytes());
         assertFalse(kls.add(rand.nextInt()));
     }
 }

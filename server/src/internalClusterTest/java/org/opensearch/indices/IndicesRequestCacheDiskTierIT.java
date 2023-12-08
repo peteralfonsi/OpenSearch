@@ -55,11 +55,13 @@ import static org.opensearch.test.hamcrest.OpenSearchAssertions.assertSearchResp
 public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
     @Override
     protected Settings featureFlagSettings() {
-        return Settings.builder().put(super.featureFlagSettings())
+        return Settings.builder()
+            .put(super.featureFlagSettings())
             .put(FeatureFlags.CONCURRENT_SEGMENT_SEARCH, "true")
             .put(FeatureFlags.TIERED_CACHING, "true")
             .build();
     }
+
     public void testDiskTierStats() throws Exception {
         int heapSizeBytes = 4729;
         String node = internalCluster().startNode(
@@ -145,6 +147,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         indexRandom(true, client.prepareIndex("index").setSource("k", "hello"));
         ensureSearchable("index");
         SearchResponse resp;
+        assertDiskTierSpecificStats(client, "index", 2, tookTimeSoFar, tookTimeSoFar);
     }
 
     private long getCacheSizeBytes(Client client, String index, TierType tierType) {

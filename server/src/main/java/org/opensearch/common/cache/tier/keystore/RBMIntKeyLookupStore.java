@@ -33,15 +33,15 @@
 package org.opensearch.common.cache.tier.keystore;
 
 import org.opensearch.common.metrics.CounterMetric;
+import org.opensearch.common.settings.ClusterSettings;
+import org.opensearch.common.settings.Setting;
+import org.opensearch.core.common.unit.ByteSizeValue;
 
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-import org.opensearch.common.settings.ClusterSettings;
-import org.opensearch.common.settings.Setting;
-import org.opensearch.core.common.unit.ByteSizeValue;
 import org.roaringbitmap.RoaringBitmap;
 
 /**
@@ -54,7 +54,7 @@ import org.roaringbitmap.RoaringBitmap;
  */
 public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
     public static final Setting<ByteSizeValue> INDICES_CACHE_KEYSTORE_SIZE = Setting.memorySizeSetting(
-        "index.requests.cache.tiered.disk.keystore.size",
+        "indices.requests.cache.tiered.disk.keystore.size",
         "0.05%", // 5% of INDICES_CACHE_QUERY_SIZE
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
@@ -92,7 +92,7 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
     protected final Lock readLock = lock.readLock();
     protected final Lock writeLock = lock.writeLock();
     private long mostRecentByteEstimate;
-    protected static final int REFRESH_SIZE_EST_INTERVAL = 10000;
+    public static final int REFRESH_SIZE_EST_INTERVAL = 10000;
     // Refresh size estimate every X new elements. Refreshes use the RBM's internal size estimator, which takes ~0.01 ms,
     // so we don't want to do it on every get(), and it doesn't matter much if there are +- 10000 keys in this store
     // in terms of storage impact
@@ -120,7 +120,7 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
         this.collidedIntCounters = new HashMap<>();
         this.removalSets = new HashMap<>();
         this.mostRecentByteEstimate = 0L;
-
+        clusterSettings.addSettingsUpdateConsumer(INDICES_CACHE_KEYSTORE_SIZE, this::setMemSizeCap);
     }
 
     private int transform(int value) {
@@ -147,7 +147,7 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
         stats.numAddAttempts.inc();
 
         if (getSize() % REFRESH_SIZE_EST_INTERVAL == 0) {
-            mostRecentByteEstimate = getMemorySizeInBytes();
+            mostRecentByteEstimate = computeMemorySizeInBytes();
         }
         if (getMemorySizeCapInBytes() > 0 && mostRecentByteEstimate > getMemorySizeCapInBytes()) {
             stats.atCapacity.set(true);
@@ -320,6 +320,10 @@ public class RBMIntKeyLookupStore implements KeyLookupStore<Integer> {
 
     @Override
     public long getMemorySizeInBytes() {
+        return mostRecentByteEstimate;
+    }
+
+    private long computeMemorySizeInBytes() {
         double multiplier = getRBMSizeMultiplier((int) stats.size.count(), modulo);
         return (long) (rbm.getSizeInBytes() * multiplier);
     }
