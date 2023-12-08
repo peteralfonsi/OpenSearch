@@ -56,11 +56,13 @@ import static org.opensearch.test.hamcrest.OpenSearchAssertions.assertSearchResp
 public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
     @Override
     protected Settings featureFlagSettings() {
-        return Settings.builder().put(super.featureFlagSettings())
+        return Settings.builder()
+            .put(super.featureFlagSettings())
             .put(FeatureFlags.CONCURRENT_SEGMENT_SEARCH, "true")
             .put(FeatureFlags.TIERED_CACHING, "true")
             .build();
     }
+
     public void testDiskTierStats() throws Exception {
         int heapSizeBytes = 9876;
         String node = internalCluster().startNode(
@@ -119,30 +121,6 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + 3, TierType.ON_HEAP, false);
         IndicesRequestCacheIT.assertCacheState(client, "index", 2, numRequests + 1, TierType.DISK, false);
         assertDiskTierSpecificStats(client, "index", 2, tookTimeSoFar, tookTimeSoFar);
-
-    }
-
-    public void testRBMSizeSetting() throws Exception {
-        int heapSizeBytes = 0;
-        String node = internalCluster().startNode(
-            Settings.builder()
-                .put(IndicesRequestCache.INDICES_CACHE_QUERY_SIZE.getKey(), new ByteSizeValue(heapSizeBytes))
-                .put(DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING.getKey(), TimeValue.ZERO) // allow into disk cache regardless of
-            // took time
-        );
-        Client client = client(node);
-
-        Settings.Builder indicesSettingBuilder = Settings.builder()
-            .put(IndicesRequestCache.INDEX_CACHE_REQUEST_ENABLED_SETTING.getKey(), true)
-            .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 1)
-            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0);
-
-        assertAcked(
-            client.admin().indices().prepareCreate("index").setMapping("k", "type=keyword").setSettings(indicesSettingBuilder).get()
-        );
-        indexRandom(true, client.prepareIndex("index").setSource("k", "hello"));
-        ensureSearchable("index");
-        SearchResponse resp;
     }
 
     private long getCacheSizeBytes(Client client, String index, TierType tierType) {

@@ -16,8 +16,8 @@ import org.opensearch.common.cache.tier.keystore.RBMIntKeyLookupStore;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
-import org.opensearch.common.settings.Settings;
 import org.opensearch.common.settings.Setting.Property;
+import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 
 import java.io.File;
@@ -46,7 +46,6 @@ import org.ehcache.expiry.ExpiryPolicy;
 import org.ehcache.impl.config.store.disk.OffHeapDiskStoreConfiguration;
 import org.ehcache.spi.serialization.SerializerException;
 
-
 /**
  * An ehcache-based disk tier implementation.
  * @param <K> The key type of cache entries
@@ -63,14 +62,18 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     // Ehcache disk write minimum threads for its pool
     public static final Setting<Integer> REQUEST_CACHE_DISK_MIN_THREADS = Setting.intSetting(
         "indices.requests.cache.tiered.disk.ehcache.min_threads",
-        2, 1, 5,
+        2,
+        1,
+        5,
         Property.NodeScope
     );
 
     // Ehcache disk write maximum threads for its pool
     public static final Setting<Integer> REQUEST_CACHE_DISK_MAX_THREADS = Setting.intSetting(
         "indices.requests.cache.tiered.disk.ehcache.max_threads",
-        2, 1, 20,
+        2,
+        1,
+        20,
         Property.NodeScope
     );
 
@@ -80,7 +83,9 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     // queue ie write concurrency is 1. Check OffHeapDiskStoreConfiguration and DiskWriteThreadPool.
     public static final Setting<Integer> REQUEST_CACHE_DISK_WRITE_CONCURRENCY = Setting.intSetting(
         "indices.requests.cache.tiered.disk.ehcache.write_concurrency",
-        2, 1, 3,
+        2,
+        1,
+        3,
         Property.NodeScope
     );
 
@@ -88,7 +93,9 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     // will hold that many file pointers.
     public static final Setting<Integer> REQUEST_CACHE_DISK_SEGMENTS = Setting.intSetting(
         "indices.requests.cache.tiered.disk.ehcache.segments",
-        16, 1, 32,
+        16,
+        1,
+        32,
         Property.NodeScope
     );
 
@@ -144,7 +151,6 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         this.clusterSettings = Objects.requireNonNull(builder.clusterSettings, "ClusterSettings object shouldn't be null");
         Objects.requireNonNull(builder.settingPrefix, "Setting prefix shouldn't be null");
 
-
         // In test cases, there might be leftover cache managers and caches hanging around, from nodes created in the test case setup
         // Destroy them before recreating them
         close();
@@ -163,7 +169,11 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
                 PooledExecutionServiceConfigurationBuilder.newPooledExecutionServiceConfigurationBuilder()
                     .defaultPool(THREAD_POOL_ALIAS_PREFIX + "Default", 1, 3) // Default pool used for other tasks like
                     // event listeners
-                    .pool(this.threadPoolAlias, clusterSettings.get(REQUEST_CACHE_DISK_MIN_THREADS), clusterSettings.get(REQUEST_CACHE_DISK_MAX_THREADS))
+                    .pool(
+                        this.threadPoolAlias,
+                        clusterSettings.get(REQUEST_CACHE_DISK_MIN_THREADS),
+                        clusterSettings.get(REQUEST_CACHE_DISK_MAX_THREADS)
+                    )
                     .build()
             )
             .build(true);
@@ -303,7 +313,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
 
     private void setStaleKeyThreshold(double newThreshold) {
         return;
-        //TODO: Fill in once Kiran's code is merged
+        // TODO: Fill in once Kiran's code is merged
     }
 
     /**

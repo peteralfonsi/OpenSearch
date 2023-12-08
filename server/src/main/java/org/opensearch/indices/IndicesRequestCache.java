@@ -43,7 +43,6 @@ import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.tier.BytesReferenceSerializer;
 import org.opensearch.common.cache.tier.CachePolicyInfoWrapper;
 import org.opensearch.common.cache.tier.CacheValue;
-import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
 import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
 import org.opensearch.common.cache.tier.OnHeapCachingTier;
 import org.opensearch.common.cache.tier.OpenSearchOnHeapCache;
@@ -143,9 +142,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         };
 
         // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
-        TieredCacheSpilloverStrategyService.Builder<Key, BytesReference> tieredCacheServiceBuilder = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>()
-            .setOnHeapCachingTier(openSearchOnHeapCache)
-            .setTieredCacheEventListener(this);
+        TieredCacheSpilloverStrategyService.Builder<Key, BytesReference> tieredCacheServiceBuilder =
+            new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>().setOnHeapCachingTier(openSearchOnHeapCache)
+                .setTieredCacheEventListener(this);
 
         if (FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING)) {
             // enabling this for testing purposes. Remove/tweak!!
@@ -153,8 +152,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             String SETTING_PREFIX = "indices.request.cache";
             String STORAGE_PATH = indicesService.getNodePaths()[0].indicesPath.toString() + "/request_cache";
 
-            EhCacheDiskCachingTier<Key, BytesReference> diskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>()
-                .setKeyType(Key.class)
+            EhCacheDiskCachingTier<Key, BytesReference> diskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>().setKeyType(
+                Key.class
+            )
                 .setValueType(BytesReference.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setSettings(settings)
