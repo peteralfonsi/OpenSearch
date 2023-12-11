@@ -148,7 +148,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
 
         if (FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING)) {
             // enabling this for testing purposes. Remove/tweak!!
-            long CACHE_SIZE_IN_BYTES = 1000000L;
+            long CACHE_SIZE_IN_BYTES = 10000000000L; // 10 GB - change when integrating Sagar's code
             String SETTING_PREFIX = "indices.request.cache";
             String STORAGE_PATH = indicesService.getNodePaths()[0].indicesPath.toString() + "/request_cache";
 

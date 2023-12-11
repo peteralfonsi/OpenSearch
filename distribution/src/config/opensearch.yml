@@ -133,10 +133,10 @@ ${path.logs}
 # opensearch.experimental.feature.tiered_caching.enabled: false
 #
 # Settings related to tiered caching:
-# index.requests.cache.tiered.disk.keystore.size: 0.05%
-# index.requests.cache.tiered.disk.stale_cleanup_threshold: 0.5
-# indices.requests.cache.tiered.disk.ehcache.min_threads: 2
-# indices.requests.cache.tiered.disk.ehcache.max_threads: 2
-# indices.requests.cache.tiered.disk.ehcache.write_concurrency: 2
-# indices.requests.cache.tiered.disk.ehcache.segments: 16
+#index.requests.cache.tiered.disk.keystore.size: 0.05%
+#index.requests.cache.tiered.disk.stale_cleanup_threshold: 0.5
+#indices.requests.cache.tiered.disk.ehcache.min_threads: 2
+#indices.requests.cache.tiered.disk.ehcache.max_threads: 2
+#indices.requests.cache.tiered.disk.ehcache.write_concurrency: 2
+#indices.requests.cache.tiered.disk.ehcache.segments: 16
 #
