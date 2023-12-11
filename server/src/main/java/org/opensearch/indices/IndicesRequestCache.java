@@ -43,7 +43,6 @@ import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.tier.BytesReferenceSerializer;
 import org.opensearch.common.cache.tier.CachePolicyInfoWrapper;
 import org.opensearch.common.cache.tier.CacheValue;
-import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
 import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
 import org.opensearch.common.cache.tier.OnHeapCachingTier;
 import org.opensearch.common.cache.tier.OpenSearchOnHeapCache;
@@ -58,6 +57,7 @@ import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.common.util.concurrent.ConcurrentCollections;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -101,6 +101,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     /**
      * A setting to enable or disable request caching on an index level. Its dynamic by default
      * since we are checking on the cluster state IndexMetadata always.
+     * Note that FeatureFlags.TIERED_CACHING must also be on to enable tiered caching.
      */
     public static final Setting<Boolean> INDEX_CACHE_REQUEST_ENABLED_SETTING = Setting.boolSetting(
         "index.requests.cache.enable",
@@ -171,20 +172,10 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
                 throw new RuntimeException(e);
             }
         };
-        // enabling this for testing purposes. Remove/tweak!!
-        EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = getDefaultDiskTier(settings);
 
-        // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
-        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>().setOnHeapCachingTier(
-            openSearchOnHeapCache
-        )
-            .setOnDiskCachingTier(ehcacheDiskTier)
-            .setTieredCacheEventListener(this)
-            .withPolicy(new DiskTierTookTimePolicy(settings, clusterSettings, transformationFunction))
-            .build();
-        this.indicesService = indicesService;
-        this.settings = settings;
-        clusterSettings.addSettingsUpdateConsumer(INDICES_CACHE_DISK_TIER_ENABLED, this::toggleDiskTierEnabled);
+        if (FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING) && ) {
+            EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = getDefaultDiskTier(settings);
+        }
     }
 
     @Override
@@ -489,7 +480,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         String SETTING_PREFIX = "indices.request.cache";
         long CACHE_SIZE_IN_BYTES = INDICES_CACHE_DISK_TIER_SIZE.get(settings).getBytes();
         String STORAGE_PATH = indicesService.getNodePaths()[0].indicesPath.toString() + "/request_cache";
-        long keystoreMaxWeight = INDICES_CACHE_KEYSTORE_SIZE.get(settings).getBytes();
 
         EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>()
             .setKeyType(Key.class)
@@ -502,7 +492,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             .setSettingPrefix(SETTING_PREFIX)
             .setKeySerializer(new IRCKeyWriteableSerializer(this))
             .setValueSerializer(new BytesReferenceSerializer())
-            .setKeyStoreMaxWeightInBytes(keystoreMaxWeight)
             .build();
         return ehcacheDiskTier;
     }
