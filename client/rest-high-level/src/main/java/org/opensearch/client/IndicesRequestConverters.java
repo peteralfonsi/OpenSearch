@@ -263,6 +263,8 @@ final class IndicesRequestConverters {
         parameters.putParam("fielddata", Boolean.toString(clearIndicesCacheRequest.fieldDataCache()));
         parameters.putParam("file", Boolean.toString(clearIndicesCacheRequest.fileCache()));
         parameters.putParam("request", Boolean.toString(clearIndicesCacheRequest.requestCache()));
+        parameters.putParam("requestOnDisk", Boolean.toString(clearIndicesCacheRequest.requestCacheOnDisk()));
+        parameters.putParam("requestOnHeap", Boolean.toString(clearIndicesCacheRequest.requestCacheOnHeap()));
         parameters.putParam("fields", String.join(",", clearIndicesCacheRequest.fields()));
         request.addParameters(parameters.asMap());
         return request;
