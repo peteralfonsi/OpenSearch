@@ -33,6 +33,7 @@
 package org.opensearch.action.admin.indices.cache.clear;
 
 import org.opensearch.Version;
+import org.opensearch.action.InputValidator;
 import org.opensearch.action.support.broadcast.BroadcastRequest;
 import org.opensearch.core.common.Strings;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -45,7 +46,7 @@ import java.io.IOException;
  *
  * @opensearch.internal
  */
-public class ClearIndicesCacheRequest extends BroadcastRequest<ClearIndicesCacheRequest> {
+public class ClearIndicesCacheRequest extends BroadcastRequest<ClearIndicesCacheRequest> implements InputValidator {
 
     private boolean queryCache = false;
     private boolean fieldDataCache = false;
@@ -146,6 +147,15 @@ public class ClearIndicesCacheRequest extends BroadcastRequest<ClearIndicesCache
         out.writeBoolean(requestCacheOnHeap);
         if (out.getVersion().onOrAfter(Version.V_2_8_0)) {
             out.writeBoolean(fileCache);
+        }
+    }
+
+    public void validateInput() {
+        if (requestCache && requestCacheOnDisk) {
+            throw new IllegalArgumentException("Invalid parameters: cannot have both requestCache and requestCacheOnDisk set to true");
+        }
+        if (requestCache && requestCacheOnHeap) {
+            throw new IllegalArgumentException("Invalid parameters: cannot have both requestCache and requestCacheOnHeap set to true");
         }
     }
 }
