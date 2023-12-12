@@ -131,9 +131,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
 
     public static final Setting<ByteSizeValue> INDICES_CACHE_DISK_TIER_SIZE = Setting.memorySizeSetting(
         "index.requests.cache.tiered.disk.size",
-        new ByteSizeValue(10, ByteSizeUnit.GB), // TODO: This is a random value - what should it be??
+        new ByteSizeValue(100, ByteSizeUnit.MB),
         Property.NodeScope
-    );
+    ); // TODO: This is 1% of the minimum EBS size for most EC2 instances. In future set to 1% of actual disk size if possible
 
     public static final Setting<Double> INDICES_CACHE_DISK_STALE_KEY_THRESHOLD = Setting.doubleSetting(
         "index.requests.cache.tiered.disk.stale_cleanup_threshold",
