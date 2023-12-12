@@ -130,6 +130,8 @@ public class TransportClearIndicesCacheAction extends TransportBroadcastByNodeAc
             request.queryCache(),
             request.fieldDataCache(),
             request.requestCache(),
+            request.requestCacheOnDisk(),
+            request.requestCacheOnHeap(),
             request.fields()
         );
         return EmptyResult.INSTANCE;

@@ -1959,13 +1959,31 @@ public class IndicesService extends AbstractLifecycleComponent
     /**
      * Clears the caches for the given shard id if the shard is still allocated on this node
      */
-    public void clearIndexShardCache(ShardId shardId, boolean queryCache, boolean fieldDataCache, boolean requestCache, String... fields) {
+    public void clearIndexShardCache(
+        ShardId shardId,
+        boolean queryCache,
+        boolean fieldDataCache,
+        boolean requestCache,
+        boolean requestCacheOnDisk,
+        boolean requestCacheOnHeap,
+        String... fields) {
         final IndexService service = indexService(shardId.getIndex());
-        if (service != null) {
-            IndexShard shard = service.getShardOrNull(shardId.id());
-            final boolean clearedAtLeastOne = service.clearCaches(queryCache, fieldDataCache, fields);
-            if ((requestCache || (clearedAtLeastOne == false && fields.length == 0)) && shard != null) {
-                indicesRequestCache.clear(new IndexShardCacheEntity(shard));
+        if (service == null) {
+            return;
+        }
+        IndexShard shard = service.getShardOrNull(shardId.id());
+        final boolean clearedAtLeastOne = service.clearCaches(queryCache, fieldDataCache, fields);
+
+        if ((requestCache || (clearedAtLeastOne == false && fields.length == 0)) && shard != null) {
+            IndexShardCacheEntity indexShardCacheEntity = new IndexShardCacheEntity(shard);
+            if(requestCacheOnDisk && requestCacheOnHeap) {
+                indicesRequestCache.clear(indexShardCacheEntity);
+            } else if(requestCacheOnDisk) {
+                indicesRequestCache.clearDiskOnly(indexShardCacheEntity);
+            } else if (requestCacheOnHeap) {
+                indicesRequestCache.clearHeapOnly(indexShardCacheEntity);
+            } else {
+                indicesRequestCache.clear(indexShardCacheEntity);
             }
         }
     }
