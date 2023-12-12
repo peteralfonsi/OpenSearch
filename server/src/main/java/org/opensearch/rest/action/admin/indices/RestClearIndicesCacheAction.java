@@ -66,12 +66,17 @@ public class RestClearIndicesCacheAction extends BaseRestHandler {
 
     @Override
     public RestChannelConsumer prepareRequest(final RestRequest request, final NodeClient client) throws IOException {
-        ClearIndicesCacheRequest clearIndicesCacheRequest = new ClearIndicesCacheRequest(
-            Strings.splitStringByCommaToArray(request.param("index"))
-        );
-        clearIndicesCacheRequest.indicesOptions(IndicesOptions.fromRequest(request, clearIndicesCacheRequest.indicesOptions()));
-        fromRequest(request, clearIndicesCacheRequest);
-        return channel -> client.admin().indices().clearCache(clearIndicesCacheRequest, new RestToXContentListener<>(channel));
+        try {
+            ClearIndicesCacheRequest clearIndicesCacheRequest = new ClearIndicesCacheRequest(
+                Strings.splitStringByCommaToArray(request.param("index"))
+            );
+            clearIndicesCacheRequest.indicesOptions(IndicesOptions.fromRequest(request, clearIndicesCacheRequest.indicesOptions()));
+            fromRequest(request, clearIndicesCacheRequest);
+            clearIndicesCacheRequest.validateInput();
+            return channel -> client.admin().indices().clearCache(clearIndicesCacheRequest, new RestToXContentListener<>(channel));
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Invalid input", e);
+        }
     }
 
     @Override
@@ -82,6 +87,8 @@ public class RestClearIndicesCacheAction extends BaseRestHandler {
     public static ClearIndicesCacheRequest fromRequest(final RestRequest request, ClearIndicesCacheRequest clearIndicesCacheRequest) {
         clearIndicesCacheRequest.queryCache(request.paramAsBoolean("query", clearIndicesCacheRequest.queryCache()));
         clearIndicesCacheRequest.requestCache(request.paramAsBoolean("request", clearIndicesCacheRequest.requestCache()));
+        clearIndicesCacheRequest.requestCacheOnDisk(request.paramAsBoolean("requestCacheOnDisk", clearIndicesCacheRequest.requestCacheOnDisk()));
+        clearIndicesCacheRequest.requestCacheOnHeap(request.paramAsBoolean("requestCacheOnHeap", clearIndicesCacheRequest.requestCacheOnHeap()));
         clearIndicesCacheRequest.fieldDataCache(request.paramAsBoolean("fielddata", clearIndicesCacheRequest.fieldDataCache()));
         clearIndicesCacheRequest.fileCache(request.paramAsBoolean("file", clearIndicesCacheRequest.fileCache()));
         clearIndicesCacheRequest.fields(request.paramAsStringArray("fields", clearIndicesCacheRequest.fields()));
