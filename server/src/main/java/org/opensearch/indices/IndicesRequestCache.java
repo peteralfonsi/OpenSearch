@@ -43,6 +43,8 @@ import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.tier.BytesReferenceSerializer;
 import org.opensearch.common.cache.tier.CachePolicyInfoWrapper;
 import org.opensearch.common.cache.tier.CacheValue;
+import org.opensearch.common.cache.tier.DiskTierProvider;
+import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
 import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
 import org.opensearch.common.cache.tier.OnHeapCachingTier;
 import org.opensearch.common.cache.tier.OpenSearchOnHeapCache;
@@ -94,14 +96,14 @@ import java.util.function.Function;
  *
  * @opensearch.internal
  */
-public final class IndicesRequestCache implements TieredCacheEventListener<IndicesRequestCache.Key, BytesReference>, Closeable {
+public final class IndicesRequestCache implements TieredCacheEventListener<IndicesRequestCache.Key, BytesReference>, Closeable, DiskTierProvider<IndicesRequestCache.Key, BytesReference> {
 
     private static final Logger logger = LogManager.getLogger(IndicesRequestCache.class);
 
     /**
      * A setting to enable or disable request caching on an index level. Its dynamic by default
      * since we are checking on the cluster state IndexMetadata always.
-     * Note that FeatureFlags.TIERED_CACHING must also be on to enable tiered caching.
+     *
      */
     public static final Setting<Boolean> INDEX_CACHE_REQUEST_ENABLED_SETTING = Setting.boolSetting(
         "index.requests.cache.enable",
@@ -120,6 +122,11 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         Property.NodeScope
     );
 
+    /**
+     * A setting to dynamically enable/disable the disk tier. Note that FeatureFlags.TIERED_CACHING, which is static,
+     * must also be true to enable this and all the below settings.
+     */
+
     public static final Setting<Boolean> INDICES_CACHE_DISK_TIER_ENABLED = Setting.boolSetting(
         "index.requests.cache.tiered.disk.enable",
         false,
@@ -129,7 +136,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
 
     public static final Setting<ByteSizeValue> INDICES_CACHE_DISK_TIER_SIZE = Setting.memorySizeSetting(
         "index.requests.cache.tiered.disk.size",
-        new ByteSizeValue(1, ByteSizeUnit.GB), // TODO: This is a random value - what should it be??
+        new ByteSizeValue(10, ByteSizeUnit.GB), // TODO: This is a random value - what should it be??
         Property.NodeScope
     );
 
@@ -154,11 +161,15 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     private final TieredCacheService<Key, BytesReference> tieredCacheService;
     private final IndicesService indicesService;
     private final Settings settings;
+    private final ClusterSettings clusterSettings;
 
     IndicesRequestCache(Settings settings, IndicesService indicesService, ClusterSettings clusterSettings) {
         this.size = INDICES_CACHE_QUERY_SIZE.get(settings);
         this.expire = INDICES_CACHE_QUERY_EXPIRE.exists(settings) ? INDICES_CACHE_QUERY_EXPIRE.get(settings) : null;
         long sizeInBytes = size.getBytes();
+        this.indicesService = indicesService;
+        this.settings = settings;
+        this.clusterSettings = clusterSettings;
 
         // Initialize onHeap cache tier first.
         OnHeapCachingTier<Key, BytesReference> openSearchOnHeapCache = new OpenSearchOnHeapCache.Builder<Key, BytesReference>().setWeigher(
@@ -173,9 +184,22 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             }
         };
 
-        if (FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING) && ) {
-            EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = getDefaultDiskTier(settings);
+        // Initialize tiered cache service.
+        TieredCacheSpilloverStrategyService.Builder<Key, BytesReference> tieredCacheServiceBuilder =
+            new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>().setOnHeapCachingTier(openSearchOnHeapCache)
+                .setTieredCacheEventListener(this);
+
+        if (FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING)) {
+            if (clusterSettings.get(INDICES_CACHE_DISK_TIER_ENABLED)) {
+                EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = getDiskTier();
+                tieredCacheServiceBuilder.setOnDiskCachingTier(ehcacheDiskTier);
+            }
+            // if the disk tier dynamic setting is disabled, still provide the necessary things to turn it on
+            tieredCacheServiceBuilder.setDiskTierProvider(this);
+            tieredCacheServiceBuilder.withPolicy(new DiskTierTookTimePolicy(settings, clusterSettings, transformationFunction));
         }
+        tieredCacheService = tieredCacheServiceBuilder.build();
+
     }
 
     @Override
@@ -473,19 +497,22 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
 
     /**
      * Creates a new disk tier instance. Should only be run if the instance will actually be used!
-     * @param settings The settings to use
+     * Otherwise, it may not be closed properly.
      * @return A new disk tier instance
      */
-    public EhCacheDiskCachingTier<Key, BytesReference> getDefaultDiskTier(Settings settings) {
+    @Override
+    public EhCacheDiskCachingTier<Key, BytesReference> getDiskTier() {
+        assert FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING);
         String SETTING_PREFIX = "indices.request.cache";
         long CACHE_SIZE_IN_BYTES = INDICES_CACHE_DISK_TIER_SIZE.get(settings).getBytes();
         String STORAGE_PATH = indicesService.getNodePaths()[0].indicesPath.toString() + "/request_cache";
 
-        EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>()
+        return new EhCacheDiskCachingTier.Builder<Key, BytesReference>()
             .setKeyType(Key.class)
             .setValueType(BytesReference.class)
             .setExpireAfterAccess(TimeValue.MAX_VALUE) // TODO: Is this meant to be the same as IRC expire or different?
             .setSettings(settings)
+            .setClusterSettings(clusterSettings)
             .setThreadPoolAlias("ehcacheThreadpool")
             .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
             .setStoragePath(STORAGE_PATH)
@@ -493,24 +520,5 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             .setKeySerializer(new IRCKeyWriteableSerializer(this))
             .setValueSerializer(new BytesReferenceSerializer())
             .build();
-        return ehcacheDiskTier;
-    }
-
-    /**
-     * A function to run when disk tier enabled setting (IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED)
-     * is enabled/disabled dynamically.
-     * This function can't go in the TieredCacheSpilloverStrategyService because of issues with generics.
-     * @param enableDiskTier the new value of the enable disk tier setting
-     */
-    private void toggleDiskTierEnabled(boolean enableDiskTier) {
-        if (enableDiskTier && tieredCacheService.getDiskCachingTier().isEmpty()) {
-            // If no disk tier existed before, create one now. Otherwise do nothing
-            EhCacheDiskCachingTier<Key, BytesReference> diskCachingTier = getDefaultDiskTier(settings);
-            tieredCacheService.addDiskTier(diskCachingTier);
-
-        } else if (!enableDiskTier && tieredCacheService.getDiskCachingTier().isPresent()){
-            // If a disk tier existed before, delete it (losing all the cached values). Otherwise do nothing
-            tieredCacheService.removeDiskTier();
-        }
     }
 }

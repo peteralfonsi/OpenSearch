@@ -13,6 +13,7 @@ import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.indices.IndicesRequestCache;
 import org.opensearch.indices.IndicesService;
 
@@ -44,14 +45,22 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
      */
     private List<CachingTier<K, V>> cachingTierList;
     private final List<CacheTierPolicy<V>> policies;
+    private boolean diskTierInUse; // True when we are using the disk tier, false when it is deactivated but not deleted
+    private DiskTierProvider<K, V> diskTierProvider; // Used to obtain new instances of DiskTier when the setting is dynamically turned on
 
     private TieredCacheSpilloverStrategyService(Builder<K, V> builder) {
         this.onHeapCachingTier = Objects.requireNonNull(builder.onHeapCachingTier);
         this.diskCachingTier = Optional.ofNullable(builder.diskCachingTier);
+        diskTierInUse = diskCachingTier.isPresent();
         this.tieredCacheEventListener = Objects.requireNonNull(builder.tieredCacheEventListener);
         this.cachingTierList = this.diskCachingTier.map(diskTier -> Arrays.asList(onHeapCachingTier, diskTier))
             .orElse(List.of(onHeapCachingTier));
         this.policies = Objects.requireNonNull(builder.policies);
+        ClusterSettings clusterSettings = Objects.requireNonNull(builder.clusterSettings);
+        if (FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING)) {
+            clusterSettings.addSettingsUpdateConsumer(IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED, this::toggleDiskTierEnabled);
+            this.diskTierProvider = Objects.requireNonNull(builder.diskTierProvider);
+        }
         setRemovalListeners();
     }
 
@@ -200,20 +209,56 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
     /**
      * Dynamically add a new disk tier.
      */
-    public void addDiskTier(DiskCachingTier<K, V> newTier) {
-        assert getDiskCachingTier().isEmpty();
+    private void addNewDiskTier(DiskCachingTier<K, V> newTier) {
+        assert cachingTierList.size() == 1 && diskCachingTier.isEmpty();
+        // list only contains heap tier, and there is no inactive disk tier
         diskCachingTier = Optional.of(newTier);
         cachingTierList = List.of(onHeapCachingTier, diskCachingTier.get());
+        diskTierInUse = true;
     }
 
     /**
-     * Dynamically remove an existing disk tier.
+     * Dynamically reenable an existing disk tier that has been disabled but not deleted.
      */
-    public void removeDiskTier() {
-        assert getDiskCachingTier().isPresent();
-        diskCachingTier.get().close();
-        diskCachingTier = Optional.empty();
+    private void enableInactiveDiskTier() {
+        assert cachingTierList.size() == 1 && diskCachingTier.isPresent();
+        // list only contains heap tier, and there is an inactive disk tier we can reactivate
+        cachingTierList = List.of(onHeapCachingTier, diskCachingTier.get());
+        diskTierInUse = true;
+    }
+
+    /**
+     * Dynamically disable an existing disk tier.
+     */
+    private void disableDiskTier() {
+        // We want to stop searching in or adding to the disk tier, but we don't delete its contents until cache clear API is run.
+        // This is consistent with the heap tier's behavior.
+        // To do this, we remove the disk tier from cachingTierList but not from diskCachingTier.
+        assert cachingTierList.size() == 2 && diskTierInUse; // Contains both heap tier and disk tier
         cachingTierList = List.of(onHeapCachingTier);
+        diskTierInUse = false; // disk tier is now inactive
+    }
+
+    /**
+     * A function to run when disk tier enabled setting (IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED)
+     * is enabled/disabled dynamically.
+     * @param enableDiskTier the new value of the enable disk tier setting
+     */
+    private void toggleDiskTierEnabled(boolean enableDiskTier) {
+        if (enableDiskTier && !diskTierInUse) {
+            // Not currently using a disk tier.
+            if (diskCachingTier.isPresent()) {
+                // There is a deactivated disk tier already instantiated. Reactivate this one rather than creating a new one
+                enableInactiveDiskTier();
+            } else {
+                // There is no disk tier to reactivate, create a new one now.
+                DiskCachingTier<K, V> newTier = diskTierProvider.getDiskTier();
+                addNewDiskTier(newTier);
+            }
+        } else if (!enableDiskTier && diskTierInUse) {
+            // If a disk tier existed before, stop using it. Do not delete it or its contents until cache clear API is run
+            disableDiskTier();
+        }
     }
 
     /**
@@ -226,6 +271,8 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
         private DiskCachingTier<K, V> diskCachingTier;
         private TieredCacheEventListener<K, V> tieredCacheEventListener;
         private ArrayList<CacheTierPolicy<V>> policies = new ArrayList<>();
+        private ClusterSettings clusterSettings;
+        private DiskTierProvider<K, V> diskTierProvider;
 
         public Builder() {}
 
@@ -252,6 +299,16 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
         // Add multiple policies at once
         public Builder<K, V> withPolicies(List<CacheTierPolicy<V>> policiesList) {
             this.policies.addAll(policiesList);
+            return this;
+        }
+
+        public Builder<K, V> setClusterSettings(ClusterSettings clusterSettings) {
+            this.clusterSettings = clusterSettings;
+            return this;
+        }
+
+        public Builder<K, V> setDiskTierProvider(DiskTierProvider<K, V> provider) {
+            this.diskTierProvider = provider;
             return this;
         }
 
