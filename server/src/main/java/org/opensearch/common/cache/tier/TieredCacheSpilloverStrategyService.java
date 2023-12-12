@@ -200,7 +200,7 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
      * Dynamically add a new disk tier.
      */
     private void addNewDiskTier(DiskCachingTier<K, V> newTier) {
-        assert cachingTierList.size() == 1 && diskCachingTier.isEmpty();
+        assert cachingTierList.size() == 1 && diskCachingTier.isEmpty() && !diskTierInUse;
         // list only contains heap tier, and there is no inactive disk tier
         diskCachingTier = Optional.of(newTier);
         cachingTierList = List.of(onHeapCachingTier, diskCachingTier.get());
@@ -211,7 +211,7 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
      * Dynamically reenable an existing disk tier that has been disabled but not deleted.
      */
     private void enableInactiveDiskTier() {
-        assert cachingTierList.size() == 1 && diskCachingTier.isPresent();
+        assert cachingTierList.size() == 1 && diskCachingTier.isPresent() && !diskTierInUse;
         // list only contains heap tier, and there is an inactive disk tier we can reactivate
         cachingTierList = List.of(onHeapCachingTier, diskCachingTier.get());
         diskTierInUse = true;
