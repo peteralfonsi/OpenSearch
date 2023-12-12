@@ -702,6 +702,8 @@ public final class ClusterSettings extends AbstractScopedSettings {
         List.of(TelemetrySettings.TRACER_ENABLED_SETTING, TelemetrySettings.TRACER_SAMPLER_PROBABILITY),
         List.of(FeatureFlags.TIERED_CACHING),
         List.of(
+            IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED,
+            IndicesRequestCache.INDICES_CACHE_DISK_TIER_SIZE,
             RBMIntKeyLookupStore.INDICES_CACHE_KEYSTORE_SIZE,
             IndicesRequestCache.INDICES_CACHE_DISK_STALE_KEY_THRESHOLD,
             //DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING // TODO: Enable once policy PR is merged in
