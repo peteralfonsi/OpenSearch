@@ -1300,6 +1300,14 @@ public class IndicesClientDocumentationIT extends OpenSearchRestHighLevelClientT
             request.requestCache(true); // <1>
             // end::clear-cache-request-request
 
+            // tag::clear-cache-request-onDisk
+            request.requestCacheOnDisk(true); // <1>
+            // end::clear-cache-request-onDisk
+
+            // tag::clear-cache-request-onHeap
+            request.requestCacheOnHeap(true); // <1>
+            // end::clear-cache-request-onHeap
+
             // tag::clear-cache-request-fielddata
             request.fieldDataCache(true); // <1>
             // end::clear-cache-request-fielddata

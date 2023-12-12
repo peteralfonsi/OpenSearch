@@ -195,6 +195,86 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         assertEquals(0, entries);
     }
 
+    public void testDiskTierInvalidationByCleanCacheAPI_DiskOnly() throws Exception {
+        int cleanupIntervalInMillis = 10_000_000; // setting this intentionally high so that we don't get background cleanups
+        int heapSizeBytes = 9876;
+        String node = internalCluster().startNode(
+            Settings.builder()
+                .put(IndicesService.INDICES_REQUEST_CACHE_DISK_CLEAN_INTERVAL_SETTING.getKey(), TimeValue.timeValueMillis(cleanupIntervalInMillis))
+                .put(IndicesService.INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING.getKey(), "0%")
+                .put(IndicesRequestCache.INDICES_CACHE_QUERY_SIZE.getKey(), new ByteSizeValue(heapSizeBytes))
+                .put(DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING.getKey(), TimeValue.ZERO) // allow into disk cache regardless of took time
+        );
+        Client client = client(node);
+
+        Settings.Builder indicesSettingBuilder = Settings.builder()
+            .put(IndicesRequestCache.INDEX_CACHE_REQUEST_ENABLED_SETTING.getKey(), true)
+            .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 1)
+            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0);
+
+        assertAcked(
+            client.admin().indices().prepareCreate("index").setMapping("k", "type=keyword").setSettings(indicesSettingBuilder).get()
+        );
+
+        indexRandom(true, client.prepareIndex("index").setSource("k", "hello"));
+        ensureSearchable("index");
+        SearchResponse resp;
+
+        resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + 0)).get();
+        int requestSize = (int) getCacheSizeBytes(client, "index", TierType.ON_HEAP);
+        assertTrue(heapSizeBytes > requestSize);
+        // If this fails, increase heapSizeBytes! We can't adjust it after getting the size of one query
+        // as the cache size setting is not dynamic
+        int numOnDisk = 2;
+        int numRequests = heapSizeBytes / requestSize + numOnDisk;
+        RequestCacheStats requestCacheStats = client.admin()
+            .indices()
+            .prepareStats("index")
+            .setRequestCache(true)
+            .get()
+            .getTotal()
+            .getRequestCache();
+        for (int i = 1; i < numRequests; i++) {
+            requestCacheStats = client.admin()
+                .indices()
+                .prepareStats("index")
+                .setRequestCache(true)
+                .get()
+                .getTotal()
+                .getRequestCache();
+            resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + i)).get();
+            assertSearchResponse(resp);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.ON_HEAP, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.DISK, false);
+        }
+
+        requestCacheStats = client.admin()
+            .indices()
+            .prepareStats("index")
+            .setRequestCache(true)
+            .get()
+            .getTotal()
+            .getRequestCache();
+
+        long entries = requestCacheStats.getEntries(TierType.DISK);
+        // make sure we have 2 entries in disk.
+        assertEquals(2, entries);
+
+        // call clear cache api
+        client.admin().indices().prepareClearCache().setIndices("index").setRequestCacheOnDisk(true).get();
+        // fetch the stats again
+        requestCacheStats = client.admin()
+            .indices()
+            .prepareStats("index")
+            .setRequestCache(true)
+            .get()
+            .getTotal()
+            .getRequestCache();
+        entries = requestCacheStats.getEntries(TierType.DISK);
+        // make sure we have 0 entries in disk.
+        assertEquals(0, entries);
+    }
+
     // When entire disk tier is stale, test whether cache cleaner cleans up everything from disk
     public void testDiskTierInvalidationByCacheCleanerEntireDiskTier() throws Exception {
         int thresholdInMillis = 4_000;

@@ -884,6 +884,94 @@ public class IndicesClientIT extends OpenSearchRestHighLevelClientTestCase {
         }
     }
 
+    public void testClearRequestCacheOnDisk() throws IOException {
+        {
+            String index = "index";
+            Settings settings = Settings.builder().put("number_of_shards", 1).put("number_of_replicas", 0).build();
+            createIndex(index, settings);
+            ClearIndicesCacheRequest clearCacheRequest = new ClearIndicesCacheRequest(index);
+            clearCacheRequest.requestCacheOnDisk(true);
+            ClearIndicesCacheResponse clearCacheResponse = execute(
+                clearCacheRequest,
+                highLevelClient().indices()::clearCache,
+                highLevelClient().indices()::clearCacheAsync
+            );
+            assertThat(clearCacheResponse.getTotalShards(), equalTo(1));
+            assertThat(clearCacheResponse.getSuccessfulShards(), equalTo(1));
+            assertThat(clearCacheResponse.getFailedShards(), equalTo(0));
+            assertThat(clearCacheResponse.getShardFailures(), equalTo(BroadcastResponse.EMPTY));
+        }
+        {
+            String nonExistentIndex = "non_existent_index";
+            assertFalse(indexExists(nonExistentIndex));
+            ClearIndicesCacheRequest clearCacheRequest = new ClearIndicesCacheRequest(nonExistentIndex);
+            OpenSearchException exception = expectThrows(
+                OpenSearchException.class,
+                () -> execute(clearCacheRequest, highLevelClient().indices()::clearCache, highLevelClient().indices()::clearCacheAsync)
+            );
+            assertEquals(RestStatus.NOT_FOUND, exception.status());
+        }
+    }
+
+    public void testClearRequestCacheOnHeap() throws IOException {
+        {
+            String index = "index";
+            Settings settings = Settings.builder().put("number_of_shards", 1).put("number_of_replicas", 0).build();
+            createIndex(index, settings);
+            ClearIndicesCacheRequest clearCacheRequest = new ClearIndicesCacheRequest(index);
+            clearCacheRequest.requestCacheOnHeap(true);
+            ClearIndicesCacheResponse clearCacheResponse = execute(
+                clearCacheRequest,
+                highLevelClient().indices()::clearCache,
+                highLevelClient().indices()::clearCacheAsync
+            );
+            assertThat(clearCacheResponse.getTotalShards(), equalTo(1));
+            assertThat(clearCacheResponse.getSuccessfulShards(), equalTo(1));
+            assertThat(clearCacheResponse.getFailedShards(), equalTo(0));
+            assertThat(clearCacheResponse.getShardFailures(), equalTo(BroadcastResponse.EMPTY));
+        }
+        {
+            String nonExistentIndex = "non_existent_index";
+            assertFalse(indexExists(nonExistentIndex));
+            ClearIndicesCacheRequest clearCacheRequest = new ClearIndicesCacheRequest(nonExistentIndex);
+            OpenSearchException exception = expectThrows(
+                OpenSearchException.class,
+                () -> execute(clearCacheRequest, highLevelClient().indices()::clearCache, highLevelClient().indices()::clearCacheAsync)
+            );
+            assertEquals(RestStatus.NOT_FOUND, exception.status());
+        }
+    }
+
+    public void testClearRequestCacheOnHeapAndOnDisk() throws IOException {
+        {
+            String index = "index";
+            Settings settings = Settings.builder().put("number_of_shards", 1).put("number_of_replicas", 0).build();
+            createIndex(index, settings);
+            ClearIndicesCacheRequest clearCacheRequest = new ClearIndicesCacheRequest(index);
+            clearCacheRequest.requestCacheOnDisk(true);
+            clearCacheRequest.requestCacheOnHeap(true);
+            ClearIndicesCacheResponse clearCacheResponse = execute(
+                clearCacheRequest,
+                highLevelClient().indices()::clearCache,
+                highLevelClient().indices()::clearCacheAsync
+            );
+            assertThat(clearCacheResponse.getTotalShards(), equalTo(1));
+            assertThat(clearCacheResponse.getSuccessfulShards(), equalTo(1));
+            assertThat(clearCacheResponse.getFailedShards(), equalTo(0));
+            assertThat(clearCacheResponse.getShardFailures(), equalTo(BroadcastResponse.EMPTY));
+        }
+        {
+            String nonExistentIndex = "non_existent_index";
+            assertFalse(indexExists(nonExistentIndex));
+            ClearIndicesCacheRequest clearCacheRequest = new ClearIndicesCacheRequest(nonExistentIndex);
+            OpenSearchException exception = expectThrows(
+                OpenSearchException.class,
+                () -> execute(clearCacheRequest, highLevelClient().indices()::clearCache, highLevelClient().indices()::clearCacheAsync)
+            );
+            assertEquals(RestStatus.NOT_FOUND, exception.status());
+        }
+    }
+
     public void testForceMerge() throws IOException {
         {
             String index = "index";
