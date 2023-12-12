@@ -173,8 +173,10 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
 
         // Initialize tiered cache service.
         TieredCacheSpilloverStrategyService.Builder<Key, BytesReference> tieredCacheServiceBuilder =
-            new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>().setOnHeapCachingTier(openSearchOnHeapCache)
-                .setTieredCacheEventListener(this);
+            new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>()
+                .setOnHeapCachingTier(openSearchOnHeapCache)
+                .setTieredCacheEventListener(this)
+                .setClusterSettings(clusterSettings);
 
         if (FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING)) {
             if (clusterSettings.get(INDICES_CACHE_DISK_TIER_ENABLED)) {

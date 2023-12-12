@@ -731,4 +731,15 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .getRequestCache();
         assertEquals(expectedEntries, requestCacheStats.getEntries(tierType));
     }
+
+    protected static void assertNumEvictions(Client client, String index, long expectedEvictions, TierType tierType) {
+        RequestCacheStats requestCacheStats = client.admin()
+            .indices()
+            .prepareStats(index)
+            .setRequestCache(true)
+            .get()
+            .getTotal()
+            .getRequestCache();
+        assertEquals(expectedEvictions, requestCacheStats.getEvictions(tierType));
+    }
 }
