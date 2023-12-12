@@ -146,7 +146,7 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
         if (RemovalReason.EVICTED.equals(notification.getRemovalReason())) {
             switch (notification.getTierType()) {
                 case ON_HEAP:
-                    if (checkPolicies(notification.getValue())) {
+                    if (checkPolicies(notification.getValue()) && diskTierInUse) {
                         diskCachingTier.ifPresent(diskTier -> {
                             diskTier.put(notification.getKey(), notification.getValue());
                             tieredCacheEventListener.onCached(notification.getKey(), notification.getValue(), TierType.DISK);
