@@ -205,16 +205,32 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     void clear(CacheEntity entity) {
+        clear(entity, true, true);
+    }
+
+    void clearDiskOnly(CacheEntity entity) {
+        clear(entity, false, true);
+    }
+
+    void clearHeapOnly(CacheEntity entity) {
+        clear(entity, true, false);
+    }
+
+    private void clear(CacheEntity entity, boolean cleanHeap, boolean cleanDisk) {
         CleanupKey cleanupKey = new CleanupKey(entity, null);
         keysToClean.put(cleanupKey, new CleanupStatus());
         updateStaleKeysInDiskCount(cleanupKey);
-        cleanCache();
+        if (cleanHeap) {
+            cleanCache();
+        }
+        if (cleanDisk) {
         /*
         this would be triggered by the cache clear API call
         we need to make sure we clean the disk cache as well
         hence passing threshold as 0
         */
-        cleanDiskCache(0);
+            cleanDiskCache(0);
+        }
     }
 
     @Override
