@@ -489,6 +489,142 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         assertEquals(0, cache.numRegisteredCloseListeners());
     }
 
+    // Invalidating Heap Only should clean up Heap
+    public void testInvalidateHeapOnly() throws Exception {
+        ShardRequestCache requestCacheStats = new ShardRequestCache();
+        ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
+        IndicesRequestCache cache = new IndicesRequestCache(
+            Settings.EMPTY,
+            getInstanceFromNode(IndicesService.class),
+            dummyClusterSettings
+        );
+        Directory dir = newDirectory();
+        IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig());
+
+        writer.addDocument(newDoc(0, "foo"));
+        DirectoryReader reader = OpenSearchDirectoryReader.wrap(DirectoryReader.open(writer), new ShardId("foo", "bar", 1));
+        TermQueryBuilder termQuery = new TermQueryBuilder("id", "0");
+        BytesReference termBytes = XContentHelper.toXContent(termQuery, MediaTypeRegistry.JSON, false);
+        IndexShard indexShard = getIndexShardCache();
+
+        // initial cache
+        TestEntity entity = new TestEntity(requestCacheStats, indexShard);
+        Loader loader = new Loader(reader, 0);
+        BytesReference value = cache.getOrCompute(entity, loader, reader, termBytes);
+        assertEquals("foo", value.streamInput().readString());
+        assertEquals(0, requestCacheStats.stats().getHitCount());
+        assertEquals(1, requestCacheStats.stats().getMissCount());
+        assertEquals(0, requestCacheStats.stats().getEvictions());
+        assertFalse(loader.loadedFromCache);
+        assertEquals(1, cache.count());
+
+        // cache hit
+        entity = new TestEntity(requestCacheStats, indexShard);
+        loader = new Loader(reader, 0);
+        value = cache.getOrCompute(entity, loader, reader, termBytes);
+        assertEquals("foo", value.streamInput().readString());
+        assertEquals(1, requestCacheStats.stats().getHitCount());
+        assertEquals(1, requestCacheStats.stats().getMissCount());
+        assertEquals(0, requestCacheStats.stats().getEvictions());
+        assertTrue(loader.loadedFromCache);
+        assertEquals(1, cache.count());
+        assertTrue(requestCacheStats.stats().getMemorySize().bytesAsInt() > value.length());
+        assertEquals(1, cache.numRegisteredCloseListeners());
+
+        // load again after invalidate
+        entity = new TestEntity(requestCacheStats, indexShard);
+        loader = new Loader(reader, 0);
+        cache.invalidate(entity, reader, termBytes);
+        value = cache.getOrCompute(entity, loader, reader, termBytes);
+        assertEquals("foo", value.streamInput().readString());
+        assertEquals(1, requestCacheStats.stats().getHitCount());
+        assertEquals(2, requestCacheStats.stats().getMissCount());
+        assertEquals(0, requestCacheStats.stats().getEvictions());
+        assertFalse(loader.loadedFromCache);
+        assertEquals(1, cache.count());
+        assertTrue(requestCacheStats.stats().getMemorySize().bytesAsInt() > value.length());
+        assertEquals(1, cache.numRegisteredCloseListeners());
+
+        cache.clearHeapOnly(entity);
+
+        assertEquals(1, requestCacheStats.stats().getHitCount());
+        assertEquals(2, requestCacheStats.stats().getMissCount());
+        assertEquals(0, requestCacheStats.stats().getEvictions());
+        assertEquals(0, cache.count());
+        assertEquals(0, requestCacheStats.stats().getMemorySize().bytesAsInt());
+
+        IOUtils.close(reader, writer, dir, cache);
+        assertEquals(0, cache.numRegisteredCloseListeners());
+    }
+
+    // Invalidating Disk Only should not clean up Heap
+    public void testInvalidateDiskOnly() throws Exception {
+        ShardRequestCache requestCacheStats = new ShardRequestCache();
+        ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
+        IndicesRequestCache cache = new IndicesRequestCache(
+            Settings.EMPTY,
+            getInstanceFromNode(IndicesService.class),
+            dummyClusterSettings
+        );
+        Directory dir = newDirectory();
+        IndexWriter writer = new IndexWriter(dir, newIndexWriterConfig());
+
+        writer.addDocument(newDoc(0, "foo"));
+        DirectoryReader reader = OpenSearchDirectoryReader.wrap(DirectoryReader.open(writer), new ShardId("foo", "bar", 1));
+        TermQueryBuilder termQuery = new TermQueryBuilder("id", "0");
+        BytesReference termBytes = XContentHelper.toXContent(termQuery, MediaTypeRegistry.JSON, false);
+        IndexShard indexShard = getIndexShardCache();
+
+        // initial cache
+        TestEntity entity = new TestEntity(requestCacheStats, indexShard);
+        Loader loader = new Loader(reader, 0);
+        BytesReference value = cache.getOrCompute(entity, loader, reader, termBytes);
+        assertEquals("foo", value.streamInput().readString());
+        assertEquals(0, requestCacheStats.stats().getHitCount());
+        assertEquals(1, requestCacheStats.stats().getMissCount());
+        assertEquals(0, requestCacheStats.stats().getEvictions());
+        assertFalse(loader.loadedFromCache);
+        assertEquals(1, cache.count());
+
+        // cache hit
+        entity = new TestEntity(requestCacheStats, indexShard);
+        loader = new Loader(reader, 0);
+        value = cache.getOrCompute(entity, loader, reader, termBytes);
+        assertEquals("foo", value.streamInput().readString());
+        assertEquals(1, requestCacheStats.stats().getHitCount());
+        assertEquals(1, requestCacheStats.stats().getMissCount());
+        assertEquals(0, requestCacheStats.stats().getEvictions());
+        assertTrue(loader.loadedFromCache);
+        assertEquals(1, cache.count());
+        assertTrue(requestCacheStats.stats().getMemorySize().bytesAsInt() > value.length());
+        assertEquals(1, cache.numRegisteredCloseListeners());
+
+        // load again after invalidate
+        entity = new TestEntity(requestCacheStats, indexShard);
+        loader = new Loader(reader, 0);
+        cache.invalidate(entity, reader, termBytes);
+        value = cache.getOrCompute(entity, loader, reader, termBytes);
+        assertEquals("foo", value.streamInput().readString());
+        assertEquals(1, requestCacheStats.stats().getHitCount());
+        assertEquals(2, requestCacheStats.stats().getMissCount());
+        assertEquals(0, requestCacheStats.stats().getEvictions());
+        assertFalse(loader.loadedFromCache);
+        assertEquals(1, cache.count());
+        assertTrue(requestCacheStats.stats().getMemorySize().bytesAsInt() > value.length());
+        assertEquals(1, cache.numRegisteredCloseListeners());
+
+        cache.clearDiskOnly(entity);
+
+        assertEquals(1, requestCacheStats.stats().getHitCount());
+        assertEquals(2, requestCacheStats.stats().getMissCount());
+        assertEquals(0, requestCacheStats.stats().getEvictions());
+        assertEquals(1, cache.count());
+        assertTrue(requestCacheStats.stats().getMemorySize().bytesAsInt() > 0);
+
+        IOUtils.close(reader, writer, dir, cache);
+        assertEquals(0, cache.numRegisteredCloseListeners());
+    }
+
     public void testEqualsKey() throws IOException {
         IndexShard trueBoolean = getIndexShardCache();
         IndexShard falseBoolean = getIndexShardCache();

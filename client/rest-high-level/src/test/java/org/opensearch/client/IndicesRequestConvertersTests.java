@@ -597,6 +597,14 @@ public class IndicesRequestConvertersTests extends OpenSearchTestCase {
             expectedParams.put("fields", String.join(",", clearIndicesCacheRequest.fields()));
         }
         if (OpenSearchTestCase.randomBoolean()) {
+            clearIndicesCacheRequest.requestCacheOnDisk(OpenSearchTestCase.randomBoolean());
+        }
+        expectedParams.put("requestOnDisk", Boolean.toString(clearIndicesCacheRequest.requestCacheOnDisk()));
+        if (OpenSearchTestCase.randomBoolean()) {
+            clearIndicesCacheRequest.requestCacheOnHeap(OpenSearchTestCase.randomBoolean());
+        }
+        expectedParams.put("requestOnHeap", Boolean.toString(clearIndicesCacheRequest.requestCacheOnHeap()));
+        if (OpenSearchTestCase.randomBoolean()) {
             clearIndicesCacheRequest.fileCache(OpenSearchTestCase.randomBoolean());
         }
         expectedParams.put("file", Boolean.toString(clearIndicesCacheRequest.fileCache()));
