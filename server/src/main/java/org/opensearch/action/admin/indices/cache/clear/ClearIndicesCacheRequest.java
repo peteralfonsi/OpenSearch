@@ -51,6 +51,8 @@ public class ClearIndicesCacheRequest extends BroadcastRequest<ClearIndicesCache
     private boolean fieldDataCache = false;
     private boolean requestCache = false;
     private boolean fileCache = false;
+    private boolean requestCacheOnDisk = false;
+    private boolean requestCacheOnHeap = false;
     private String[] fields = Strings.EMPTY_ARRAY;
 
     public ClearIndicesCacheRequest(StreamInput in) throws IOException {
@@ -59,6 +61,8 @@ public class ClearIndicesCacheRequest extends BroadcastRequest<ClearIndicesCache
         fieldDataCache = in.readBoolean();
         fields = in.readStringArray();
         requestCache = in.readBoolean();
+        requestCacheOnDisk = in.readBoolean();
+        requestCacheOnHeap = in.readBoolean();
         if (in.getVersion().onOrAfter(Version.V_2_8_0)) {
             fileCache = in.readBoolean();
         }
@@ -81,8 +85,26 @@ public class ClearIndicesCacheRequest extends BroadcastRequest<ClearIndicesCache
         return this.requestCache;
     }
 
+    public boolean requestCacheOnDisk() {
+        return this.requestCacheOnDisk;
+    }
+
+    public boolean requestCacheOnHeap() {
+        return this.requestCacheOnHeap;
+    }
+
     public ClearIndicesCacheRequest requestCache(boolean requestCache) {
         this.requestCache = requestCache;
+        return this;
+    }
+
+    public ClearIndicesCacheRequest requestCacheOnDisk(boolean requestCacheOnDisk) {
+        this.requestCacheOnDisk = requestCacheOnDisk;
+        return this;
+    }
+
+    public ClearIndicesCacheRequest requestCacheOnHeap(boolean requestCacheOnHeap) {
+        this.requestCacheOnHeap = requestCacheOnHeap;
         return this;
     }
 
@@ -120,6 +142,8 @@ public class ClearIndicesCacheRequest extends BroadcastRequest<ClearIndicesCache
         out.writeBoolean(fieldDataCache);
         out.writeStringArrayNullable(fields);
         out.writeBoolean(requestCache);
+        out.writeBoolean(requestCacheOnDisk);
+        out.writeBoolean(requestCacheOnHeap);
         if (out.getVersion().onOrAfter(Version.V_2_8_0)) {
             out.writeBoolean(fileCache);
         }

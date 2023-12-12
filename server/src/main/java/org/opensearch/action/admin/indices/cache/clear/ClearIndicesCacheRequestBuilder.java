@@ -59,6 +59,16 @@ public class ClearIndicesCacheRequestBuilder extends BroadcastOperationRequestBu
         return this;
     }
 
+    public ClearIndicesCacheRequestBuilder setRequestCacheOnDisk(boolean requestCacheOnDisk) {
+        request.requestCacheOnDisk(requestCacheOnDisk);
+        return this;
+    }
+
+    public ClearIndicesCacheRequestBuilder setRequestCacheOnHeap(boolean requestCacheOnHeap) {
+        request.requestCacheOnHeap(requestCacheOnHeap);
+        return this;
+    }
+
     public ClearIndicesCacheRequestBuilder setFileCache(boolean fileCache) {
         request.fileCache(fileCache);
         return this;
