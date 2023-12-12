@@ -140,7 +140,6 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
 
         // Set IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED = false. Nothing should happen
         setDiskCacheEnabled(client, false);
-        // insert check for diskTierEnabled here once I add that to API
 
         // Set IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED = true, creating a new disk tier
         setDiskCacheEnabled(client, true);
@@ -161,19 +160,17 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         assertSearchResponse(resp);
         IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + numOnDisk + 1, TierType.ON_HEAP, false);
         IndicesRequestCacheIT.assertCacheState(client, "index", 1, numOnDisk, TierType.DISK, false);
-        // assert disk tier in use - future
 
         // Set IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED = true. Nothing should happen
         setDiskCacheEnabled(client, true);
-        // insert check here in future
 
         // Set IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED = false. The disk tier should be deactivated but not deleted
         setDiskCacheEnabled(client, false);
         IndicesRequestCacheIT.assertNumCacheEntries(client, "index", numOnDisk, TierType.DISK);
-        // assert disk tier not in use - future
 
         // Make some new requests. These should cause evictions from the heap tier (numEvicted + numOnDisk through numEvicted + numOnDisk + numNewRequests), but not reach the deactivated disk tier
         int numNewRequests = 5;
+        assertTrue(numNewRequests > 3); // necessary for checks later in the test
         for (int i = numRequests + numOnDisk; i < numRequests + numOnDisk + numNewRequests; i++) {
             resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + i)).get();
             assertSearchResponse(resp);
