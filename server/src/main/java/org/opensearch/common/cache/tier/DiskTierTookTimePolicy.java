@@ -30,7 +30,7 @@ import java.util.function.Function;
 public class DiskTierTookTimePolicy implements CacheTierPolicy<BytesReference> {
     public static final Setting<TimeValue> DISK_TOOKTIME_THRESHOLD_SETTING = Setting.positiveTimeSetting(
         "indices.requests.cache.disk.tooktime.threshold",
-        new TimeValue(10),
+        TimeValue.ZERO,
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
     ); // Set this to TimeValue.ZERO to let all data through
