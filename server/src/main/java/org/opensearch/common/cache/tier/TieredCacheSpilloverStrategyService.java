@@ -118,6 +118,10 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
         for (CachingTier<K, V> cachingTier : cachingTierList) {
             cachingTier.invalidateAll();
         }
+        if (!diskTierInUse && diskCachingTier.isPresent()) {
+            // Invalidate all keys in an inactive disk tier as well
+            diskCachingTier.get().invalidateAll();
+        }
     }
 
     /**
