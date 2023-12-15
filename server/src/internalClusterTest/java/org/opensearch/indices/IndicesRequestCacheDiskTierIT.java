@@ -266,7 +266,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         client().prepareIndex("index").setId("1").setSource("k", "good bye");
         ensureSearchable("index");
 
-        for (int i = 0; i < 6; i++) { // index 5 items with the new readerCacheKeyId
+        for (int i = 0; i < 6; i++) { // index 6 items with the new readerCacheKeyId
             client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + i)).get();
         }
 
