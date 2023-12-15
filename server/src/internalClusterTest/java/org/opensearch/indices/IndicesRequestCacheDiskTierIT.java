@@ -218,61 +218,27 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
 
         indexRandom(true, client.prepareIndex("index").setSource("k", "hello"));
         ensureSearchable("index");
-        SearchResponse resp;
-
-        resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + 0)).get();
+        client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + 0)).get();
         int requestSize = (int) getCacheSizeBytes(client, "index", TierType.ON_HEAP);
         assertTrue(heapSizeBytes > requestSize);
         // If this fails, increase heapSizeBytes! We can't adjust it after getting the size of one query
         // as the cache size setting is not dynamic
         int numOnDisk = 2;
         int numRequests = heapSizeBytes / requestSize + numOnDisk;
-        RequestCacheStats requestCacheStats = client.admin()
-            .indices()
-            .prepareStats("index")
-            .setRequestCache(true)
-            .get()
-            .getTotal()
-            .getRequestCache();
         for (int i = 1; i < numRequests; i++) {
-            requestCacheStats = client.admin()
-                .indices()
-                .prepareStats("index")
-                .setRequestCache(true)
-                .get()
-                .getTotal()
-                .getRequestCache();
-            resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + i)).get();
+            SearchResponse resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + i)).get();
             assertSearchResponse(resp);
             IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.ON_HEAP, false);
             IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.DISK, false);
         }
-
-        requestCacheStats = client.admin()
-            .indices()
-            .prepareStats("index")
-            .setRequestCache(true)
-            .get()
-            .getTotal()
-            .getRequestCache();
-
-        long entries = requestCacheStats.getEntries(TierType.DISK);
         // make sure we have 2 entries in disk.
-        assertEquals(2, entries);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 2, TierType.DISK);
 
         // call clear cache api
         client.admin().indices().prepareClearCache().setIndices("index").setRequestCacheOnDisk(true).get();
-        // fetch the stats again
-        requestCacheStats = client.admin()
-            .indices()
-            .prepareStats("index")
-            .setRequestCache(true)
-            .get()
-            .getTotal()
-            .getRequestCache();
-        entries = requestCacheStats.getEntries(TierType.DISK);
+
         // make sure we have 0 entries in disk.
-        assertEquals(0, entries);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 0, TierType.DISK);
     }
 
     // When entire disk tier is stale, test whether cache cleaner cleans up everything from disk
