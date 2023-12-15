@@ -17,7 +17,7 @@ public class ClearIndicesCacheRequestTest extends OpenSearchTestCase {
     request.requestCache(true);
     request.requestCacheOnHeap(true);
     Exception e = assertThrows(IllegalArgumentException.class, request::validateInput);
-    assertTrue(e.getMessage().contains("Invalid parameters: cannot have both requestCache and requestCacheOnHeap set to true"));
+    assertTrue(e.getMessage().contains("Invalid parameters: cannot have both request and requestCacheOnHeap set to true"));
   }
 
   public void testValidateInputCacheAndOnDisk() {
@@ -25,7 +25,7 @@ public class ClearIndicesCacheRequestTest extends OpenSearchTestCase {
     request.requestCache(true);
     request.requestCacheOnDisk(true);
     Exception e = assertThrows(IllegalArgumentException.class, request::validateInput);
-    assertTrue(e.getMessage().contains("Invalid parameters: cannot have both requestCache and requestCacheOnDisk set to true"));
+    assertTrue(e.getMessage().contains("Invalid parameters: cannot have both request and requestCacheOnDisk set to true"));
   }
 
   public void testValidateInputCacheOnHeapAndOnDisk() {

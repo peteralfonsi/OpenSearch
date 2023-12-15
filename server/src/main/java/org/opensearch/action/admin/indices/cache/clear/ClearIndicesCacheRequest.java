@@ -160,10 +160,10 @@ public class ClearIndicesCacheRequest extends BroadcastRequest<ClearIndicesCache
 
     public void validateInput() {
         if (requestCache && requestCacheOnDisk) {
-            throw new IllegalArgumentException("Invalid parameters: cannot have both requestCache and requestCacheOnDisk set to true");
+            throw new IllegalArgumentException("Invalid parameters: cannot have both request and requestCacheOnDisk set to true");
         }
         if (requestCache && requestCacheOnHeap) {
-            throw new IllegalArgumentException("Invalid parameters: cannot have both requestCache and requestCacheOnHeap set to true");
+            throw new IllegalArgumentException("Invalid parameters: cannot have both request and requestCacheOnHeap set to true");
         }
     }
 }
