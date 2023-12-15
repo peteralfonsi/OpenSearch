@@ -128,27 +128,27 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      */
 
     public static final Setting<Boolean> INDICES_CACHE_DISK_TIER_ENABLED = Setting.boolSetting(
-        "index.requests.cache.tiered.disk.enable",
+        "indices.requests.cache.tiered.disk.enable",
         false,
         Property.Dynamic,
         Property.NodeScope
     );
 
     public static final Setting<ByteSizeValue> INDICES_CACHE_DISK_TIER_SIZE = Setting.memorySizeSetting(
-        "index.requests.cache.tiered.disk.size",
+        "indices.requests.cache.tiered.disk.size",
         new ByteSizeValue(100, ByteSizeUnit.MB),
         Property.NodeScope
     ); // TODO: This is 1% of the minimum EBS size for most EC2 instances. In future set to 1% of actual disk size if possible
 
     public static final Setting<Double> INDICES_CACHE_DISK_STALE_KEY_THRESHOLD = Setting.doubleSetting(
-        "index.requests.cache.tiered.disk.stale_cleanup_threshold",
+        "indices.requests.cache.tiered.disk.stale_cleanup_threshold",
         0.5,
         Property.Dynamic,
         Property.NodeScope
     );
 
     public static final Setting<ByteSizeValue> INDICES_CACHE_KEYSTORE_SIZE = Setting.memorySizeSetting(
-        "index.requests.cache.tiered.disk.keystore.size",
+        "indices.requests.cache.tiered.disk.keystore.size",
         "0.05%", // 5% of INDICES_CACHE_QUERY_SIZE
         Property.Dynamic,
         Property.NodeScope
