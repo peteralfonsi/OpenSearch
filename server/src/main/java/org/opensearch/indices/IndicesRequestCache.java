@@ -637,7 +637,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         if (totalKeysInDiskCache == 0 || staleKeysInDiskCount.get() == 0) {
             return 0;
         }
-        return ((double) staleKeysInDiskCount.get() / totalKeysInDiskCache) * 100;
+        return ((double) staleKeysInDiskCount.get() / totalKeysInDiskCache);
     }
 
     synchronized void cleanUpKeys(
@@ -649,7 +649,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             CleanupKey cleanupKey = new CleanupKey(key.entity, key.readerCacheKeyId);
             if (currentFullClean.contains(key.entity.getCacheIdentity()) || currentKeysToClean.contains(cleanupKey)) {
                 cachingTier.invalidate(key);
-                staleKeysInDiskCount.decrementAndGet();
+                if(cachingTier.getTierType() == TierType.DISK) {
+                    staleKeysInDiskCount.decrementAndGet();
+                }
             }
         }
     }
