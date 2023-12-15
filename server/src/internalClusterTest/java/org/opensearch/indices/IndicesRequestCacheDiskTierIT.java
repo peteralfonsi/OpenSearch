@@ -239,6 +239,8 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
 
         // make sure we have 0 entries in disk.
         IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 0, TierType.DISK);
+        // make sure we have entries on-heap were not deleted
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 14, TierType.ON_HEAP);
     }
 
     // When entire disk tier is stale, test whether cache cleaner cleans up everything from disk
