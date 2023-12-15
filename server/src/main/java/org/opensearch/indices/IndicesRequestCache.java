@@ -526,12 +526,29 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      * Logic to clean up in-memory cache.
      */
     synchronized void cleanCache() {
+        cleanCache(TierType.ON_HEAP);
+        tieredCacheService.getOnHeapCachingTier().refresh();
+    }
+
+    /**
+     * Logic to clean up disk based cache.
+     * <p>
+     * TODO: cleanDiskCache is very specific to disk caching tier. We can refactor this to be more generic.
+     */
+    synchronized void cleanDiskCache(double diskCachesCleanThresholdPercent) {
+        if (!canSkipDiskCacheCleanup(diskCachesCleanThresholdPercent)) {
+            cleanCache(TierType.DISK);
+        }
+    }
+
+    private synchronized void cleanCache(TierType cacheType) {
         final Set<CleanupKey> currentKeysToClean = new HashSet<>();
         final Set<Object> currentFullClean = new HashSet<>();
-        /*
-        Stores the keys that need to be removed from keysToClean
-        This is done to avoid ConcurrentModificationException
-        */
+
+            /*
+            Stores the keys that need to be removed from keysToClean
+            This is done to avoid ConcurrentModificationException
+            */
         final Set<CleanupKey> keysCleanedFromAllCaches = new HashSet<>();
 
         for (Map.Entry<CleanupKey, CleanupStatus> entry : keysToClean.entrySet()) {
@@ -543,14 +560,20 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
                 continue;
             }
 
-            if (cleanupStatus.cleanedInHeap) continue;
+            if (cacheType == TierType.ON_HEAP && cleanupStatus.cleanedInHeap) continue;
+            if (cacheType == TierType.DISK && cleanupStatus.cleanedOnDisk) continue;
 
             if (needsFullClean(cleanupKey)) {
                 currentFullClean.add(cleanupKey.entity.getCacheIdentity());
             } else {
                 currentKeysToClean.add(cleanupKey);
             }
-            cleanupStatus.cleanedInHeap = true;
+
+            if (cacheType == TierType.ON_HEAP) {
+                cleanupStatus.cleanedInHeap = true;
+            } else if (cacheType == TierType.DISK) {
+                cleanupStatus.cleanedOnDisk = true;
+            }
         }
 
         // Remove keys that have been cleaned from all caches
@@ -561,68 +584,41 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             return;
         }
 
+        CachingTier<Key, BytesReference> cachingTier;
+
+        if (cacheType == TierType.ON_HEAP) {
+            cachingTier = tieredCacheService.getOnHeapCachingTier();
+        } else {
+            cachingTier = tieredCacheService.getDiskCachingTier().get();
+        }
+
         cleanUpKeys(
-            tieredCacheService.getOnHeapCachingTier(),
+            cachingTier,
             currentKeysToClean,
             currentFullClean
         );
-        tieredCacheService.getOnHeapCachingTier().refresh();
     }
 
-    /**
-     * Logic to clean up disk based cache.
-     * <p>
-     * TODO: cleanDiskCache is very specific to disk caching tier. We can refactor this to be more generic.
-     */
-    synchronized void cleanDiskCache(double diskCachesCleanThresholdPercent) {
-        tieredCacheService.getDiskCachingTier().ifPresent(diskCachingTier -> {
-            if (diskCachingTier.count() == 0 || diskCleanupKeysPercentage() < diskCachesCleanThresholdPercent) {
-                if (logger.isDebugEnabled()) {
-                    logger.debug("Skipping disk cache keys cleanup");
-                    return;
-                }
+    private synchronized boolean canSkipDiskCacheCleanup(double diskCachesCleanThresholdPercent) {
+        if (tieredCacheService.getDiskCachingTier().isEmpty()) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Skipping disk cache keys cleanup since disk caching tier is not present");
             }
-            // Categorize keys to be cleaned into currentKeysToClean and currentFullClean
-            final Set<CleanupKey> currentKeysToClean = new HashSet<>();
-            final Set<Object> currentFullClean = new HashSet<>();
-
-            /*
-            Stores the keys that need to be removed from keysToClean
-            This is done to avoid ConcurrentModificationException
-            */
-            final Set<CleanupKey> keysCleanedFromAllCaches = new HashSet<>();
-
-            for (Map.Entry<CleanupKey, CleanupStatus> entry : keysToClean.entrySet()) {
-                CleanupKey cleanupKey = entry.getKey();
-                CleanupStatus cleanupStatus = entry.getValue();
-
-                if (cleanupStatus.cleanedInHeap && cleanupStatus.cleanedOnDisk) {
-                    keysCleanedFromAllCaches.add(cleanupKey);
-                    continue;
-                }
-
-                if (cleanupStatus.cleanedOnDisk) continue;
-
-                if (needsFullClean(cleanupKey)) {
-                    currentFullClean.add(cleanupKey.entity.getCacheIdentity());
-                } else {
-                    currentKeysToClean.add(cleanupKey);
-                }
-                cleanupStatus.cleanedOnDisk = true;
+            return true;
+        }
+        if (tieredCacheService.getDiskCachingTier().get().count() == 0) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Skipping disk cache keys cleanup since disk caching tier is empty");
             }
-
-            // Remove keys that have been cleaned from all caches
-            keysToClean.keySet().removeAll(keysCleanedFromAllCaches);
-
-            // Early exit if no cleanup is needed
-            if (currentKeysToClean.isEmpty() && currentFullClean.isEmpty()) {
-                return;
+            return true;
+        }
+        if (diskCleanupKeysPercentage() < diskCachesCleanThresholdPercent) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Skipping disk cache keys cleanup since the percentage of stale keys in disk cache is less than the threshold");
             }
-            cleanUpKeys(
-                tieredCacheService.getDiskCachingTier().get(),
-                currentKeysToClean,
-                currentFullClean);
-        });
+            return true;
+        }
+        return false;
     }
 
     synchronized double diskCleanupKeysPercentage() {
