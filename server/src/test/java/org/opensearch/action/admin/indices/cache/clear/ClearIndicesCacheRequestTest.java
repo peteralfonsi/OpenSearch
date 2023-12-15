@@ -8,11 +8,9 @@
 
 package org.opensearch.action.admin.indices.cache.clear;
 
-import junit.framework.TestCase;
+import org.opensearch.test.OpenSearchTestCase;
 
-import static org.junit.Assert.assertThrows;
-
-public class ClearIndicesCacheRequestTest extends TestCase {
+public class ClearIndicesCacheRequestTest extends OpenSearchTestCase {
 
   public void testValidateInputCacheAndOnHeap() {
     ClearIndicesCacheRequest request = new ClearIndicesCacheRequest();
