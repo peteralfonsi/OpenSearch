@@ -211,7 +211,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         Instant end = Instant.now();
         long elapsedTimeMillis = Duration.between(start, end).toMillis();
         // if this test is flaky, increase the sleep time.
-        long sleepTime = (thresholdInMillis - elapsedTimeMillis) + 1_000;
+        long sleepTime = (thresholdInMillis - elapsedTimeMillis) + 1_500;
         Thread.sleep(sleepTime);
 
         // by now cache cleaner would have run and cleaned up stale keys
@@ -274,7 +274,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         Instant end = Instant.now();
         long elapsedTimeMillis = Duration.between(start, end).toMillis();
         // if this test is flaky, increase the sleep time.
-        long sleepTime = (thresholdInMillis - elapsedTimeMillis) + 5_000;
+        long sleepTime = (thresholdInMillis - elapsedTimeMillis) + 1_500;
         Thread.sleep(sleepTime);
 
         // make sure we have 5 entries in disk.
