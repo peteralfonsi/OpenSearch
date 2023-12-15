@@ -257,6 +257,11 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             return;
         }
         IndexShard indexShard = (IndexShard)cleanupKey.entity.getCacheIdentity();
+        if(indexShard == null) {
+            logger.warn("IndexShard is null for CleanupKey: {} while cleaning tier : {}",
+                cleanupKey.readerCacheKeyId, tierType.getStringValue());
+            return;
+        }
         ShardId shardId = indexShard.shardId();
 
         diskCleanupKeyToCountMap
@@ -275,6 +280,10 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      */
     private void updateStaleKeysInDiskCount(CleanupKey cleanupKey) {
         IndexShard indexShard = (IndexShard) cleanupKey.entity.getCacheIdentity();
+        if(indexShard == null) {
+            logger.warn("IndexShard is null for CleanupKey: {}",  cleanupKey.readerCacheKeyId);
+            return;
+        }
         ShardId shardId = indexShard.shardId();
 
         ConcurrentMap<String, Integer> countMap = diskCleanupKeyToCountMap.get(shardId);
