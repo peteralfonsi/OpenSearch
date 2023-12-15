@@ -53,6 +53,17 @@ public class RBMIntKeyLookupStoreTests extends OpenSearchTestCase {
     final int BYTES_IN_MB = 1048576;
     ClusterSettings DUMMY_CLUSTER_SETTINGS = new ClusterSettings(Settings.EMPTY, Set.of(RBMIntKeyLookupStore.INDICES_CACHE_KEYSTORE_SIZE));
 
+    public void testQuickSizeTest() {
+        int numToAdd = 1000000;
+        RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(DUMMY_CLUSTER_SETTINGS);
+        Random rand = Randomness.get();
+        for (int i = 0; i < numToAdd; i++) {
+            kls.add(rand.nextInt());
+        }
+        System.out.println(kls.getMemorySizeInBytes());
+        System.out.println(kls.isFull());
+    }
+
     public void testInit() {
         long memCap = 100 * BYTES_IN_MB;
         RBMIntKeyLookupStore kls = new RBMIntKeyLookupStore(memCap, DUMMY_CLUSTER_SETTINGS);
