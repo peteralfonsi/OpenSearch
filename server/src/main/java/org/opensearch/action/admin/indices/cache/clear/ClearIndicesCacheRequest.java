@@ -62,8 +62,12 @@ public class ClearIndicesCacheRequest extends BroadcastRequest<ClearIndicesCache
         fieldDataCache = in.readBoolean();
         fields = in.readStringArray();
         requestCache = in.readBoolean();
-        requestCacheOnDisk = in.readBoolean();
-        requestCacheOnHeap = in.readBoolean();
+        if (in.getVersion().onOrAfter(Version.V_2_12_0)) {
+            requestCacheOnDisk = in.readBoolean();
+        }
+        if (in.getVersion().onOrAfter(Version.V_2_12_0)) {
+            requestCacheOnHeap = in.readBoolean();
+        }
         if (in.getVersion().onOrAfter(Version.V_2_8_0)) {
             fileCache = in.readBoolean();
         }
@@ -143,8 +147,12 @@ public class ClearIndicesCacheRequest extends BroadcastRequest<ClearIndicesCache
         out.writeBoolean(fieldDataCache);
         out.writeStringArrayNullable(fields);
         out.writeBoolean(requestCache);
-        out.writeBoolean(requestCacheOnDisk);
-        out.writeBoolean(requestCacheOnHeap);
+        if (out.getVersion().onOrAfter(Version.V_2_12_0)) {
+            out.writeBoolean(requestCacheOnDisk);
+        }
+        if (out.getVersion().onOrAfter(Version.V_2_12_0)) {
+            out.writeBoolean(requestCacheOnHeap);
+        }
         if (out.getVersion().onOrAfter(Version.V_2_8_0)) {
             out.writeBoolean(fileCache);
         }
