@@ -10,8 +10,11 @@ package org.opensearch.common.cache.tier;
 
 import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.RemovalListener;
+import org.opensearch.common.settings.ClusterSettings;
+import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.env.NodeEnvironment;
@@ -21,7 +24,9 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
@@ -32,7 +37,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
 
     private static final int CACHE_SIZE_IN_BYTES = 1024 * 101;
-    private static final String SETTING_PREFIX = "indices.request.cache";
 
     public void testBasicGetAndPut() throws IOException {
         Settings settings = Settings.builder().build();
@@ -41,11 +45,10 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
+                .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
-                .setSettingPrefix(SETTING_PREFIX)
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .build();
@@ -76,11 +79,10 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 BytesReference>().setKeyType(String.class)
                 .setValueType(BytesReference.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
+                .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES * 2) // bigger so no evictions happen
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
-                .setSettingPrefix(SETTING_PREFIX)
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new BytesReferenceSerializer())
                 .build();
@@ -111,11 +113,10 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
+                .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
-                .setSettingPrefix(SETTING_PREFIX)
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .build();
@@ -154,11 +155,10 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
+                .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
-                .setSettingPrefix(SETTING_PREFIX)
                 .setIsEventListenerModeSync(true) // For accurate count
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
@@ -199,10 +199,9 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
+                .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
-                .setSettingPrefix(SETTING_PREFIX)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
@@ -235,10 +234,9 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
+                .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
-                .setSettingPrefix(SETTING_PREFIX)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
@@ -275,40 +273,13 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
         }
     }
 
-    /*public void testThresholdPolicy() throws Exception {
-        long slowTookTimeNanos = 10000000000L; // 10 seconds
-        BytesReference slowResult = DiskTierTookTimePolicyTests.getQSRBytesReference(slowTookTimeNanos);
-
-        long fastTookTimeNanos = 100000L; // 100 microseconds
-        BytesReference fastResult = DiskTierTookTimePolicyTests.getQSRBytesReference(fastTookTimeNanos);
-
-        long thresholdMillis = 10;
-
-        // For this unit test, set the policy's threshold directly rather than from cluster settings
-        ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
-        DiskTierTookTimePolicy policy = new DiskTierTookTimePolicy(Settings.EMPTY, dummyClusterSettings);
-        policy.setThreshold(new TimeValue(thresholdMillis));
-
-        Settings settings = Settings.builder().build();
-        try (NodeEnvironment env = newNodeEnvironment(settings)) {
-            EhCacheDiskCachingTier<String, BytesReference> tier = new EhCacheDiskCachingTier.Builder<String, BytesReference>()
-                .setKeyType(String.class)
-                .setValueType(BytesReference.class)
-                .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
-                .setThreadPoolAlias("ehcacheTest")
-                .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
-                .setSettingPrefix(SETTING_PREFIX)
-                .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
-                .withPolicy(policy)
-                .build();
-            tier.put("slow", slowResult);
-            assertEquals(slowResult, tier.get("slow")); // key "slow" is found because the policy accepted it
-            tier.put("fast", fastResult);
-            assertNull(tier.get("fast")); // key "fast" -> null because the policy rejected it
-            tier.close();
-        }
-    }*/
+    private ClusterSettings getClusterSettings() {
+        HashSet<Setting<?>> clusterSettingsSet = new HashSet<>();
+        for (Setting<?> s : ClusterSettings.FEATURE_FLAGGED_CLUSTER_SETTINGS.get(List.of(FeatureFlags.TIERED_CACHING))) {
+            clusterSettingsSet.add(s);
+        } // :(
+        return new ClusterSettings(Settings.EMPTY, clusterSettingsSet);
+    }
 
     private RemovalListener<String, String> removalListener(AtomicInteger counter) {
         return notification -> counter.incrementAndGet();

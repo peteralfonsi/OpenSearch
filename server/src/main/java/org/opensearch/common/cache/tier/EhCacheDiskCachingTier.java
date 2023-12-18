@@ -14,7 +14,9 @@ import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.tier.keystore.RBMIntKeyLookupStore;
 import org.opensearch.common.metrics.CounterMetric;
+import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
+import org.opensearch.common.settings.Setting.Property;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 
@@ -51,6 +53,47 @@ import org.ehcache.spi.serialization.SerializerException;
  */
 public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
 
+    // Ehcache disk write minimum threads for its pool
+    // All number values in setting constructors are default value, min value, and max value
+    public static final Setting<Integer> REQUEST_CACHE_DISK_MIN_THREADS = Setting.intSetting(
+        "indices.requests.cache.tiered.disk.ehcache.min_threads",
+        2,
+        1,
+        5,
+        Property.NodeScope
+    );
+
+    // Ehcache disk write maximum threads for its pool
+    public static final Setting<Integer> REQUEST_CACHE_DISK_MAX_THREADS = Setting.intSetting(
+        "indices.requests.cache.tiered.disk.ehcache.max_threads",
+        2,
+        1,
+        20,
+        Property.NodeScope
+    );
+
+    // Not be to confused with number of disk segments, this is different. Defines
+    // distinct write queues created for disk store where a group of segments share a write queue. This is
+    // implemented with ehcache using a partitioned thread pool exectutor By default all segments share a single write
+    // queue ie write concurrency is 1. Check OffHeapDiskStoreConfiguration and DiskWriteThreadPool.
+    public static final Setting<Integer> REQUEST_CACHE_DISK_WRITE_CONCURRENCY = Setting.intSetting(
+        "indices.requests.cache.tiered.disk.ehcache.write_concurrency",
+        2,
+        1,
+        3,
+        Property.NodeScope
+    );
+
+    // Defines how many segments the disk cache is separated into. Higher number achieves greater concurrency but
+    // will hold that many file pointers.
+    public static final Setting<Integer> REQUEST_CACHE_DISK_SEGMENTS = Setting.intSetting(
+        "indices.requests.cache.tiered.disk.ehcache.segments",
+        16,
+        1,
+        32,
+        Property.NodeScope
+    );
+
     // A Cache manager can create many caches.
     private static PersistentCacheManager cacheManager = null;
 
@@ -68,8 +111,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     private final EhCacheEventListener<K, V> ehCacheEventListener;
 
     private final String threadPoolAlias;
-
-    private final Settings settings;
+    private final ClusterSettings clusterSettings;
 
     private CounterMetric count = new CounterMetric();
 
@@ -79,21 +121,6 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
 
     private final static int MINIMUM_MAX_SIZE_IN_BYTES = 1024 * 100; // 100KB
 
-    // Ehcache disk write minimum threads for its pool
-    public final Setting<Integer> DISK_WRITE_MINIMUM_THREADS;
-
-    // Ehcache disk write maximum threads for its pool
-    public final Setting<Integer> DISK_WRITE_MAXIMUM_THREADS;
-
-    // Not be to confused with number of disk segments, this is different. Defines
-    // distinct write queues created for disk store where a group of segments share a write queue. This is
-    // implemented with ehcache using a partitioned thread pool exectutor By default all segments share a single write
-    // queue ie write concurrency is 1. Check OffHeapDiskStoreConfiguration and DiskWriteThreadPool.
-    public final Setting<Integer> DISK_WRITE_CONCURRENCY;
-
-    // Defines how many segments the disk cache is separated into. Higher number achieves greater concurrency but
-    // will hold that many file pointers.
-    public final Setting<Integer> DISK_SEGMENTS;
     private final RBMIntKeyLookupStore keystore;
 
     private final Serializer<K, byte[]> keySerializer;
@@ -113,14 +140,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         } else {
             this.threadPoolAlias = builder.threadPoolAlias;
         }
-        this.settings = Objects.requireNonNull(builder.settings, "Settings objects shouldn't be null");
-        Objects.requireNonNull(builder.settingPrefix, "Setting prefix shouldn't be null");
-        this.DISK_WRITE_MINIMUM_THREADS = Setting.intSetting(builder.settingPrefix + ".tiered.disk.ehcache.min_threads", 2, 1, 5);
-        this.DISK_WRITE_MAXIMUM_THREADS = Setting.intSetting(builder.settingPrefix + ".tiered.disk.ehcache.max_threads", 2, 1, 20);
-        // Default value is 1 within EhCache.
-        this.DISK_WRITE_CONCURRENCY = Setting.intSetting(builder.settingPrefix + ".tiered.disk.ehcache.concurrency", 2, 1, 3);
-        // Default value is 16 within Ehcache.
-        this.DISK_SEGMENTS = Setting.intSetting(builder.settingPrefix + ".ehcache.disk.segments", 16, 1, 32);
+        this.clusterSettings = Objects.requireNonNull(builder.clusterSettings, "ClusterSettings object shouldn't be null");
 
         // In test cases, there might be leftover cache managers and caches hanging around, from nodes created in the test case setup
         // Destroy them before recreating them
@@ -128,8 +148,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         cacheManager = buildCacheManager();
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
 
-        long keystoreMaxWeight = builder.keystoreMaxWeightInBytes;
-        this.keystore = new RBMIntKeyLookupStore(keystoreMaxWeight);
+        this.keystore = new RBMIntKeyLookupStore(clusterSettings);
     }
 
     private PersistentCacheManager buildCacheManager() {
@@ -140,7 +159,11 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
                 PooledExecutionServiceConfigurationBuilder.newPooledExecutionServiceConfigurationBuilder()
                     .defaultPool(THREAD_POOL_ALIAS_PREFIX + "Default", 1, 3) // Default pool used for other tasks like
                     // event listeners
-                    .pool(this.threadPoolAlias, DISK_WRITE_MINIMUM_THREADS.get(settings), DISK_WRITE_MAXIMUM_THREADS.get(settings))
+                    .pool(
+                        this.threadPoolAlias,
+                        clusterSettings.get(REQUEST_CACHE_DISK_MIN_THREADS),
+                        clusterSettings.get(REQUEST_CACHE_DISK_MAX_THREADS)
+                    )
                     .build()
             )
             .build(true);
@@ -173,8 +196,8 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
                 .withService(
                     new OffHeapDiskStoreConfiguration(
                         this.threadPoolAlias,
-                        DISK_WRITE_CONCURRENCY.get(settings),
-                        DISK_SEGMENTS.get(settings)
+                        clusterSettings.get(REQUEST_CACHE_DISK_WRITE_CONCURRENCY),
+                        clusterSettings.get(REQUEST_CACHE_DISK_SEGMENTS)
                     )
                 )
                 .withKeySerializer(new KeySerializerWrapper<K>(keySerializer))
@@ -433,18 +456,14 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         private String storagePath;
 
         private String threadPoolAlias;
-
-        private Settings settings;
+        private ClusterSettings clusterSettings;
 
         private String diskCacheAlias;
-
-        private String settingPrefix;
 
         // Provides capability to make ehCache event listener to run in sync mode. Used for testing too.
         private boolean isEventListenerModeSync;
         private Serializer<K, byte[]> keySerializer;
         private Serializer<V, byte[]> valueSerializer;
-        private long keystoreMaxWeightInBytes = 0;
 
         public Builder() {}
 
@@ -481,19 +500,8 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
             return this;
         }
 
-        public EhCacheDiskCachingTier.Builder<K, V> setSettings(Settings settings) {
-            this.settings = settings;
-            return this;
-        }
-
         public EhCacheDiskCachingTier.Builder<K, V> setDiskCacheAlias(String diskCacheAlias) {
             this.diskCacheAlias = diskCacheAlias;
-            return this;
-        }
-
-        public EhCacheDiskCachingTier.Builder<K, V> setSettingPrefix(String settingPrefix) {
-            // TODO: Do some basic validation. So that it doesn't end with "." etc.
-            this.settingPrefix = settingPrefix;
             return this;
         }
 
@@ -512,8 +520,8 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
             return this;
         }
 
-        public EhCacheDiskCachingTier.Builder<K, V> setKeyStoreMaxWeightInBytes(long weight) {
-            this.keystoreMaxWeightInBytes = weight;
+        public EhCacheDiskCachingTier.Builder<K, V> setClusterSettings(ClusterSettings clusterSettings) {
+            this.clusterSettings = clusterSettings;
             return this;
         }
 

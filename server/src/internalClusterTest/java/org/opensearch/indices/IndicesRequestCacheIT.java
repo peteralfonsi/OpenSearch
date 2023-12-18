@@ -85,7 +85,11 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
 
     @Override
     protected Settings featureFlagSettings() {
-        return Settings.builder().put(super.featureFlagSettings()).put(FeatureFlags.CONCURRENT_SEGMENT_SEARCH, "true").build();
+        return Settings.builder()
+            .put(super.featureFlagSettings())
+            .put(FeatureFlags.CONCURRENT_SEGMENT_SEARCH, "true")
+            .put(FeatureFlags.TIERED_CACHING, "true")
+            .build();
     }
 
     // One of the primary purposes of the query cache is to cache aggs results
@@ -664,7 +668,6 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
         assertSearchResponse(resp);
         // Should expect hit as here as refresh didn't happen
         assertCacheState(client, "index", 1, 1, TierType.ON_HEAP, false);
-        assertCacheState(client, "index", 0, 1, TierType.DISK, false);
         assertNumCacheEntries(client, "index", 1, TierType.ON_HEAP);
 
         // Explicit refresh would invalidate cache
@@ -674,9 +677,6 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
         assertSearchResponse(resp);
         // Should expect miss as key has changed due to change in IndexReader.CacheKey (due to refresh)
         assertCacheState(client, "index", 1, 2, TierType.ON_HEAP, false);
-        assertCacheState(client, "index", 0, 2, TierType.DISK, false);
-
-        // assertNumCacheEntries(client, "index", 1, TierType.ON_HEAP); // Evictions won't be 1 until the cache cleaner runs every minute
     }
 
     protected static void assertCacheState(
@@ -728,4 +728,14 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
         assertEquals(expectedEntries, requestCacheStats.getEntries(tierType));
     }
 
+    protected static void assertNumEvictions(Client client, String index, long expectedEvictions, TierType tierType) {
+        RequestCacheStats requestCacheStats = client.admin()
+            .indices()
+            .prepareStats(index)
+            .setRequestCache(true)
+            .get()
+            .getTotal()
+            .getRequestCache();
+        assertEquals(expectedEvictions, requestCacheStats.getEvictions(tierType));
+    }
 }

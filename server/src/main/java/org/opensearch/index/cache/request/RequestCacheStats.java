@@ -35,6 +35,7 @@ package org.opensearch.index.cache.request;
 import org.opensearch.OpenSearchException;
 import org.opensearch.Version;
 import org.opensearch.common.cache.tier.TierType;
+import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
@@ -193,17 +194,19 @@ public class RequestCacheStats implements Writeable, ToXContentFragment {
         // write on-heap stats outside of tiers object
         getTierStats(TierType.ON_HEAP).toXContent(builder, params);
         getTierSpecificStats(TierType.ON_HEAP).toXContent(builder, params);
-        builder.startObject(Fields.TIERS);
-        for (TierType tierType : TierType.values()) { // fixed order
-            if (tierType != TierType.ON_HEAP) {
-                String tier = tierType.getStringValue();
-                builder.startObject(tier);
-                defaultStatsMap.get(tier).toXContent(builder, params);
-                tierSpecificStatsMap.get(tier).toXContent(builder, params);
-                builder.endObject();
+        if (FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING)) {
+            builder.startObject(Fields.TIERS);
+            for (TierType tierType : TierType.values()) { // fixed order
+                if (tierType != TierType.ON_HEAP) {
+                    String tier = tierType.getStringValue();
+                    builder.startObject(tier);
+                    defaultStatsMap.get(tier).toXContent(builder, params);
+                    tierSpecificStatsMap.get(tier).toXContent(builder, params);
+                    builder.endObject();
+                }
             }
+            builder.endObject();
         }
-        builder.endObject();
         builder.endObject();
         return builder;
     }
