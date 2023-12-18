@@ -12,5 +12,5 @@ package org.opensearch.common.cache.tier;
  * An interface that provides new instances of a DiskTier.
  */
 public interface DiskTierProvider<K, V> {
-    DiskCachingTier<K, V> getDiskTier();
+    DiskCachingTier<K, V> createNewDiskTier();
 }

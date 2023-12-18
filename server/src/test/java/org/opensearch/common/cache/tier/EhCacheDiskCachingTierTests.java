@@ -37,7 +37,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
 
     private static final int CACHE_SIZE_IN_BYTES = 1024 * 101;
-    private static final String SETTING_PREFIX = "indices.request.cache";
 
     public void testBasicGetAndPut() throws IOException {
         Settings settings = Settings.builder().build();
@@ -46,12 +45,10 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
                 .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
-                .setSettingPrefix(SETTING_PREFIX)
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .build();
@@ -81,12 +78,10 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(BytesReference.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
                 .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES * 2) // bigger so no evictions happen
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
-                .setSettingPrefix(SETTING_PREFIX)
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new BytesReferenceSerializer())
                 .build();
@@ -117,12 +112,10 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
                 .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
-                .setSettingPrefix(SETTING_PREFIX)
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .build();
@@ -161,12 +154,10 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
                 .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
-                .setSettingPrefix(SETTING_PREFIX)
                 .setIsEventListenerModeSync(true) // For accurate count
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
@@ -207,11 +198,9 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
                 .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
-                .setSettingPrefix(SETTING_PREFIX)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
@@ -244,11 +233,9 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
                 .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
-                .setSettingPrefix(SETTING_PREFIX)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())

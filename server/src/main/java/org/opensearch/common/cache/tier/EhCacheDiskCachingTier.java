@@ -56,14 +56,9 @@ import org.ehcache.spi.serialization.SerializerException;
  * @param <V> The value type of cache entries
  */
 public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
-    public static final Setting<Double> REQUEST_CACHE_DISK_STALE_KEY_THRESHOLD = Setting.doubleSetting(
-        "indices.requests.cache.tiered.disk.stale_cleanup_threshold",
-        0.5,
-        Property.Dynamic,
-        Property.NodeScope
-    );
 
     // Ehcache disk write minimum threads for its pool
+    // All number values in setting constructors are default value, min value, and max value
     public static final Setting<Integer> REQUEST_CACHE_DISK_MIN_THREADS = Setting.intSetting(
         "indices.requests.cache.tiered.disk.ehcache.min_threads",
         2,
@@ -120,8 +115,6 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     private final EhCacheEventListener<K, V> ehCacheEventListener;
 
     private final String threadPoolAlias;
-
-    private final Settings settings;
     private final ClusterSettings clusterSettings;
 
     private CounterMetric count = new CounterMetric();
@@ -151,14 +144,11 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         } else {
             this.threadPoolAlias = builder.threadPoolAlias;
         }
-        this.settings = Objects.requireNonNull(builder.settings, "Settings objects shouldn't be null");
         this.clusterSettings = Objects.requireNonNull(builder.clusterSettings, "ClusterSettings object shouldn't be null");
-        Objects.requireNonNull(builder.settingPrefix, "Setting prefix shouldn't be null");
 
         cacheManager = buildCacheManager();
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
         this.keystore = new RBMIntKeyLookupStore(clusterSettings);
-        clusterSettings.addSettingsUpdateConsumer(REQUEST_CACHE_DISK_STALE_KEY_THRESHOLD, this::setStaleKeyThreshold);
     }
 
     private PersistentCacheManager buildCacheManager() {
@@ -310,11 +300,6 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         } catch (CachePersistenceException e) {
             throw new OpenSearchException("Exception occurred while destroying ehcache and associated data", e);
         } catch (NullPointerException ignored) {} // Another test node has already destroyed the cache manager
-    }
-
-    private void setStaleKeyThreshold(double newThreshold) {
-        return;
-        // TODO: Fill in once Kiran's code is merged
     }
 
     /**
@@ -470,13 +455,9 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         private String storagePath;
 
         private String threadPoolAlias;
-
-        private Settings settings;
         private ClusterSettings clusterSettings;
 
         private String diskCacheAlias;
-
-        private String settingPrefix;
 
         // Provides capability to make ehCache event listener to run in sync mode. Used for testing too.
         private boolean isEventListenerModeSync;
@@ -518,19 +499,8 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
             return this;
         }
 
-        public EhCacheDiskCachingTier.Builder<K, V> setSettings(Settings settings) {
-            this.settings = settings;
-            return this;
-        }
-
         public EhCacheDiskCachingTier.Builder<K, V> setDiskCacheAlias(String diskCacheAlias) {
             this.diskCacheAlias = diskCacheAlias;
-            return this;
-        }
-
-        public EhCacheDiskCachingTier.Builder<K, V> setSettingPrefix(String settingPrefix) {
-            // TODO: Do some basic validation. So that it doesn't end with "." etc.
-            this.settingPrefix = settingPrefix;
             return this;
         }
 
