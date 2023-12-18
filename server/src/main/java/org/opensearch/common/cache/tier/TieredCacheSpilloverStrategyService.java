@@ -12,10 +12,8 @@ import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.settings.ClusterSettings;
-import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.indices.IndicesRequestCache;
-import org.opensearch.indices.IndicesService;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -256,7 +254,7 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
                 enableInactiveDiskTier();
             } else {
                 // There is no disk tier to reactivate, create a new one now.
-                DiskCachingTier<K, V> newTier = diskTierProvider.getDiskTier();
+                DiskCachingTier<K, V> newTier = diskTierProvider.createNewDiskTier();
                 addNewDiskTier(newTier);
             }
         } else if (!enableDiskTier && diskTierInUse) {

@@ -725,7 +725,6 @@ public final class ClusterSettings extends AbstractScopedSettings {
             IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED,
             IndicesRequestCache.INDICES_CACHE_DISK_TIER_SIZE,
             RBMIntKeyLookupStore.INDICES_CACHE_KEYSTORE_SIZE,
-            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_STALE_KEY_THRESHOLD,
             EhCacheDiskCachingTier.REQUEST_CACHE_DISK_MIN_THREADS,
             EhCacheDiskCachingTier.REQUEST_CACHE_DISK_MAX_THREADS,
             EhCacheDiskCachingTier.REQUEST_CACHE_DISK_WRITE_CONCURRENCY,

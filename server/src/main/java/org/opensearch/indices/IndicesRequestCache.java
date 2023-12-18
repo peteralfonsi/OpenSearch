@@ -74,9 +74,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
 import java.util.function.Function;
@@ -140,13 +138,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         Property.NodeScope
     ); // TODO: This is 1% of the minimum EBS size for most EC2 instances. In future set to 1% of actual disk size if possible
 
-    public static final Setting<Double> INDICES_CACHE_DISK_STALE_KEY_THRESHOLD = Setting.doubleSetting(
-        "indices.requests.cache.tiered.disk.stale_cleanup_threshold",
-        0.5,
-        Property.Dynamic,
-        Property.NodeScope
-    );
-
     public static final Setting<ByteSizeValue> INDICES_CACHE_KEYSTORE_SIZE = Setting.memorySizeSetting(
         "indices.requests.cache.tiered.disk.keystore.size",
         "0.05%", // 5% of INDICES_CACHE_QUERY_SIZE
@@ -193,7 +184,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
 
         if (FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING)) {
             if (clusterSettings.get(INDICES_CACHE_DISK_TIER_ENABLED)) {
-                EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = getDiskTier();
+                EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = createNewDiskTier();
                 tieredCacheServiceBuilder.setOnDiskCachingTier(ehcacheDiskTier);
             }
             // if the disk tier dynamic setting is disabled, still provide the necessary things to turn it on
@@ -503,9 +494,8 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      * @return A new disk tier instance
      */
     @Override
-    public EhCacheDiskCachingTier<Key, BytesReference> getDiskTier() {
+    public EhCacheDiskCachingTier<Key, BytesReference> createNewDiskTier() {
         assert FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING);
-        String SETTING_PREFIX = "indices.request.cache";
         long CACHE_SIZE_IN_BYTES = INDICES_CACHE_DISK_TIER_SIZE.get(settings).getBytes();
         String STORAGE_PATH = indicesService.getNodePaths()[0].indicesPath.toString() + "/request_cache";
 
@@ -513,12 +503,10 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             .setKeyType(Key.class)
             .setValueType(BytesReference.class)
             .setExpireAfterAccess(TimeValue.MAX_VALUE) // TODO: Is this meant to be the same as IRC expire or different?
-            .setSettings(settings)
             .setClusterSettings(clusterSettings)
             .setThreadPoolAlias("ehcacheThreadpool")
             .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
             .setStoragePath(STORAGE_PATH)
-            .setSettingPrefix(SETTING_PREFIX)
             .setKeySerializer(new IRCKeyWriteableSerializer(this))
             .setValueSerializer(new BytesReferenceSerializer())
             .build();
