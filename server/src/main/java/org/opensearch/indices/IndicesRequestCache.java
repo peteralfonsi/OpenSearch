@@ -40,6 +40,13 @@ import org.apache.lucene.util.Accountable;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.tier.BytesReferenceSerializer;
+import org.opensearch.common.cache.tier.CachePolicyInfoWrapper;
+import org.opensearch.common.cache.tier.CacheValue;
+import org.opensearch.common.cache.tier.DiskTierProvider;
+import org.opensearch.common.cache.tier.CachingTier;
+import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
+import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
 import org.opensearch.common.cache.tier.OnHeapCachingTier;
 import org.opensearch.common.cache.tier.OpenSearchOnHeapCache;
 import org.opensearch.common.cache.tier.TierType;
@@ -48,26 +55,34 @@ import org.opensearch.common.cache.tier.TieredCacheLoader;
 import org.opensearch.common.cache.tier.TieredCacheService;
 import org.opensearch.common.cache.tier.TieredCacheSpilloverStrategyService;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
+import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.common.util.concurrent.ConcurrentCollections;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.core.common.unit.ByteSizeUnit;
 import org.opensearch.core.common.unit.ByteSizeValue;
+import org.opensearch.core.index.shard.ShardId;
+import org.opensearch.index.shard.IndexShard;
+
 
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
-import java.util.Iterator;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 /**
  * The indices request cache allows to cache a shard level request stage responses, helping with improving
@@ -84,13 +99,14 @@ import java.util.concurrent.ConcurrentMap;
  *
  * @opensearch.internal
  */
-public final class IndicesRequestCache implements TieredCacheEventListener<IndicesRequestCache.Key, BytesReference>, Closeable {
+public final class IndicesRequestCache implements TieredCacheEventListener<IndicesRequestCache.Key, BytesReference>, Closeable, DiskTierProvider<IndicesRequestCache.Key, BytesReference> {
 
     private static final Logger logger = LogManager.getLogger(IndicesRequestCache.class);
 
     /**
      * A setting to enable or disable request caching on an index level. Its dynamic by default
      * since we are checking on the cluster state IndexMetadata always.
+     *
      */
     public static final Setting<Boolean> INDEX_CACHE_REQUEST_ENABLED_SETTING = Setting.boolSetting(
         "index.requests.cache.enable",
@@ -109,44 +125,123 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         Property.NodeScope
     );
 
+    /**
+     * A setting to dynamically enable/disable the disk tier. Note that FeatureFlags.TIERED_CACHING, which is static,
+     * must also be true to enable this and all the below settings.
+     */
+
+    public static final Setting<Boolean> INDICES_CACHE_DISK_TIER_ENABLED = Setting.boolSetting(
+        "indices.requests.cache.tiered.disk.enable",
+        false,
+        Property.Dynamic,
+        Property.NodeScope
+    );
+
+    public static final Setting<ByteSizeValue> INDICES_CACHE_DISK_TIER_SIZE = Setting.memorySizeSetting(
+        "indices.requests.cache.tiered.disk.size",
+        new ByteSizeValue(100, ByteSizeUnit.MB),
+        Property.NodeScope
+    ); // TODO: This is 1% of the minimum EBS size for most EC2 instances. In future set to 1% of actual disk size if possible
+
+    public static final Setting<ByteSizeValue> INDICES_CACHE_KEYSTORE_SIZE = Setting.memorySizeSetting(
+        "indices.requests.cache.tiered.disk.keystore.size",
+        "0.05%", // 5% of INDICES_CACHE_QUERY_SIZE
+        Property.Dynamic,
+        Property.NodeScope
+    );
+
     private final ConcurrentMap<CleanupKey, Boolean> registeredClosedListeners = ConcurrentCollections.newConcurrentMap();
-    private final Set<CleanupKey> keysToClean = ConcurrentCollections.newConcurrentSet();
+    private final Map<CleanupKey, CleanupStatus> keysToClean = ConcurrentCollections.newConcurrentMap();
+    // A map to keep track of the number of keys to be cleaned for a given ShardId and readerCacheKeyId
+    private final ConcurrentMap<ShardId, ConcurrentMap<String , Integer>> diskCleanupKeyToCountMap = ConcurrentCollections.newConcurrentMap();
+    private final AtomicInteger staleKeysInDiskCount = new AtomicInteger(0);
     private final ByteSizeValue size;
     private final TimeValue expire;
     private final TieredCacheService<Key, BytesReference> tieredCacheService;
-
     private final IndicesService indicesService;
+    private final Settings settings;
+    private final ClusterSettings clusterSettings;
 
-    IndicesRequestCache(Settings settings, IndicesService indicesService) {
+    IndicesRequestCache(Settings settings, IndicesService indicesService, ClusterSettings clusterSettings) {
         this.size = INDICES_CACHE_QUERY_SIZE.get(settings);
         this.expire = INDICES_CACHE_QUERY_EXPIRE.exists(settings) ? INDICES_CACHE_QUERY_EXPIRE.get(settings) : null;
         long sizeInBytes = size.getBytes();
+        this.indicesService = indicesService;
+        this.settings = settings;
+        this.clusterSettings = clusterSettings;
 
         // Initialize onHeap cache tier first.
         OnHeapCachingTier<Key, BytesReference> openSearchOnHeapCache = new OpenSearchOnHeapCache.Builder<Key, BytesReference>().setWeigher(
             (k, v) -> k.ramBytesUsed() + v.ramBytesUsed()
         ).setMaximumWeight(sizeInBytes).setExpireAfterAccess(expire).build();
 
-        // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
-        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>().setOnHeapCachingTier(
-            openSearchOnHeapCache
-        ).setTieredCacheEventListener(this).build();
+        Function<BytesReference, CachePolicyInfoWrapper> transformationFunction = (data) -> {
+            try {
+                return getPolicyInfo(data);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        };
+
+        // Initialize tiered cache service.
+        TieredCacheSpilloverStrategyService.Builder<Key, BytesReference> tieredCacheServiceBuilder =
+            new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>()
+                .setOnHeapCachingTier(openSearchOnHeapCache)
+                .setTieredCacheEventListener(this)
+                .setClusterSettings(clusterSettings);
+
+        if (FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING)) {
+            if (clusterSettings.get(INDICES_CACHE_DISK_TIER_ENABLED)) {
+                EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = createNewDiskTier();
+                tieredCacheServiceBuilder.setOnDiskCachingTier(ehcacheDiskTier);
+            }
+            // if the disk tier dynamic setting is disabled, still provide the necessary things to turn it on
+            tieredCacheServiceBuilder.setDiskTierProvider(this);
+            tieredCacheServiceBuilder.withPolicy(new DiskTierTookTimePolicy(settings, clusterSettings, transformationFunction));
+        }
+        tieredCacheService = tieredCacheServiceBuilder.build();
+    }
+
+    // added for testing
+    IndicesRequestCache(
+        Settings settings,
+        ClusterSettings clusterSettings,
+        IndicesService indicesService,
+        TieredCacheService<Key, BytesReference> tieredCacheService
+    ) {
+        this.size = INDICES_CACHE_QUERY_SIZE.get(settings);
+        this.expire = INDICES_CACHE_QUERY_EXPIRE.exists(settings) ? INDICES_CACHE_QUERY_EXPIRE.get(settings) : null;
+        long sizeInBytes = size.getBytes();
         this.indicesService = indicesService;
+        this.tieredCacheService = tieredCacheService;
+        this.settings = settings;
+        this.clusterSettings = clusterSettings;
     }
 
     @Override
     public void close() {
         tieredCacheService.invalidateAll();
+        if (tieredCacheService.getDiskCachingTier().isPresent()) {
+            tieredCacheService.getDiskCachingTier().get().close();
+        }
     }
 
     void clear(CacheEntity entity) {
-        keysToClean.add(new CleanupKey(entity, null));
+        CleanupKey cleanupKey = new CleanupKey(entity, null);
+        keysToClean.put(cleanupKey, new CleanupStatus());
+        updateStaleKeysInDiskCount(cleanupKey);
         cleanCache();
+        /*
+        this would be triggered by the cache clear API call
+        we need to make sure we clean the disk cache as well
+        hence passing threshold as 0
+        */
+        cleanDiskCache(0);
     }
 
     @Override
-    public void onMiss(Key key, TierType tierType) {
-        key.entity.onMiss(tierType);
+    public void onMiss(Key key, CacheValue<BytesReference> cacheValue) {
+        key.entity.onMiss(cacheValue);
     }
 
     @Override
@@ -155,13 +250,84 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     @Override
-    public void onHit(Key key, BytesReference value, TierType tierType) {
-        key.entity.onHit(tierType);
+    public void onHit(Key key, CacheValue<BytesReference> cacheValue) {
+        key.entity.onHit(cacheValue);
     }
 
     @Override
     public void onCached(Key key, BytesReference value, TierType tierType) {
         key.entity.onCached(key, value, tierType);
+        updateDiskCleanupKeyToCountMap(new CleanupKey(key.entity, key.readerCacheKeyId), tierType);
+    }
+
+    /**
+     * Updates the diskCleanupKeyToCountMap with the given CleanupKey and TierType.
+     * If the TierType is not DISK, the method returns without making any changes.
+     * If the ShardId associated with the CleanupKey does not exist in the map, a new entry is created.
+     * The method increments the count of the CleanupKey in the map.
+     *
+     * Why use ShardID as the key ?
+     * CacheEntity mainly contains IndexShard, both of these classes do not override equals() and hashCode() methods.
+     * ShardID class properly overrides equals() and hashCode() methods.
+     * Therefore, to avoid modifying CacheEntity and IndexShard classes to override these methods, we use ShardID as the key.
+     *
+     * @param cleanupKey the CleanupKey to be updated in the map
+     * @param tierType the TierType of the CleanupKey
+     */
+    private void updateDiskCleanupKeyToCountMap(CleanupKey cleanupKey, TierType tierType) {
+        if(!tierType.equals(TierType.DISK)) {
+            return;
+        }
+        IndexShard indexShard = (IndexShard)cleanupKey.entity.getCacheIdentity();
+        if(indexShard == null) {
+            logger.warn("IndexShard is null for CleanupKey: {} while cleaning tier : {}",
+                cleanupKey.readerCacheKeyId, tierType.getStringValue());
+            return;
+        }
+        ShardId shardId = indexShard.shardId();
+
+        diskCleanupKeyToCountMap
+            .computeIfAbsent(shardId, k -> ConcurrentCollections.newConcurrentMap())
+            .merge(cleanupKey.readerCacheKeyId, 1, Integer::sum);
+    }
+
+    /**
+     * Updates the count of stale keys in the disk cache.
+     * This method is called when a CleanupKey is added to the keysToClean set.
+     * It increments the staleKeysInDiskCount by the count of the CleanupKey in the diskCleanupKeyToCountMap.
+     * If the CleanupKey's readerCacheKeyId is null or the CleanupKey's entity is not open, it increments the staleKeysInDiskCount
+     * by the total count of keys associated with the CleanupKey's ShardId in the diskCleanupKeyToCountMap and removes the ShardId from the map.
+     *
+     * @param cleanupKey the CleanupKey that has been marked for cleanup
+     */
+    private void updateStaleKeysInDiskCount(CleanupKey cleanupKey) {
+        IndexShard indexShard = (IndexShard) cleanupKey.entity.getCacheIdentity();
+        if(indexShard == null) {
+            logger.warn("IndexShard is null for CleanupKey: {}",  cleanupKey.readerCacheKeyId);
+            return;
+        }
+        ShardId shardId = indexShard.shardId();
+
+        ConcurrentMap<String, Integer> countMap = diskCleanupKeyToCountMap.get(shardId);
+        if (countMap == null) {
+            return;
+        }
+
+        if (cleanupKey.readerCacheKeyId == null) {
+            int totalSum = countMap.values().stream().mapToInt(Integer::intValue).sum();
+            staleKeysInDiskCount.addAndGet(totalSum);
+            diskCleanupKeyToCountMap.remove(shardId);
+            return;
+        }
+        Integer count = countMap.get(cleanupKey.readerCacheKeyId);
+        if (count == null) {
+            return;
+        }
+        staleKeysInDiskCount.addAndGet(count);
+        countMap.remove(cleanupKey.readerCacheKeyId);
+        if (countMap.isEmpty()) {
+            diskCleanupKeyToCountMap.remove(shardId);
+        }
     }
 
     BytesReference getOrCompute(
@@ -181,7 +347,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         Loader cacheLoader = new Loader(cacheEntity, loader);
         BytesReference value = tieredCacheService.computeIfAbsent(key, cacheLoader);
         if (cacheLoader.isLoaded()) {
-            // see if its the first time we see this reader, and make sure to register a cleanup key
+            // see if it's the first time we see this reader, and make sure to register a cleanup key
             CleanupKey cleanupKey = new CleanupKey(cacheEntity, readerCacheKeyId);
             if (!registeredClosedListeners.containsKey(cleanupKey)) {
                 Boolean previous = registeredClosedListeners.putIfAbsent(cleanupKey, Boolean.TRUE);
@@ -195,9 +361,10 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
 
     /**
      * Invalidates the given the cache entry for the given key and it's context
+     *
      * @param cacheEntity the cache entity to invalidate for
-     * @param reader the reader to invalidate the cache entry for
-     * @param cacheKey the cache key to invalidate
+     * @param reader      the reader to invalidate the cache entry for
+     * @param cacheKey    the cache key to invalidate
      */
     void invalidate(CacheEntity cacheEntity, DirectoryReader reader, BytesReference cacheKey) {
         assert reader.getReaderCacheHelper() != null;
@@ -209,13 +376,18 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         tieredCacheService.invalidate(new Key(cacheEntity, cacheKey, readerCacheKeyId));
     }
 
+    public static CachePolicyInfoWrapper getPolicyInfo(BytesReference data) throws IOException {
+        // Reads the policy info corresponding to this QSR, written in IndicesService$loadIntoContext,
+        // without having to create a potentially large short-lived QSR object just for this purpose
+        return new CachePolicyInfoWrapper(data.streamInput());
+    }
+
     /**
      * Loader for the request cache
      *
      * @opensearch.internal
      */
     private static class Loader implements TieredCacheLoader<Key, BytesReference> {
-
         private final CacheEntity entity;
         private final CheckedSupplier<BytesReference, IOException> loader;
         private boolean loaded;
@@ -235,6 +407,11 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             loaded = true;
             return value;
         }
+    }
+
+    public class CleanupStatus {
+        public boolean cleanedInHeap;
+        public boolean cleanedOnDisk;
     }
 
     /**
@@ -262,12 +439,12 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         /**
          * Called each time this entity has a cache hit.
          */
-        void onHit(TierType tierType);
+        void onHit(CacheValue<BytesReference> cacheValue);
 
         /**
          * Called each time this entity has a cache miss.
          */
-        void onMiss(TierType tierType);
+        void onMiss(CacheValue<BytesReference> cacheValue);
 
         /**
          * Called when this entity instance is removed
@@ -351,7 +528,8 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         public void onClose(IndexReader.CacheKey cacheKey) {
             Boolean remove = registeredClosedListeners.remove(this);
             if (remove != null) {
-                keysToClean.add(this);
+                keysToClean.put(this, new CleanupStatus());
+                updateStaleKeysInDiskCount(this);
             }
         }
 
@@ -379,33 +557,130 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      * Logic to clean up in-memory cache.
      */
     synchronized void cleanCache() {
+        cleanCache(TierType.ON_HEAP);
+        tieredCacheService.getOnHeapCachingTier().refresh();
+    }
+
+    /**
+     * Logic to clean up disk based cache.
+     * <p>
+     * TODO: cleanDiskCache is very specific to disk caching tier. We can refactor this to be more generic.
+     */
+    synchronized void cleanDiskCache(double diskCachesCleanThresholdPercent) {
+        if (!canSkipDiskCacheCleanup(diskCachesCleanThresholdPercent)) {
+            cleanCache(TierType.DISK);
+        }
+    }
+
+    private synchronized void cleanCache(TierType cacheType) {
         final Set<CleanupKey> currentKeysToClean = new HashSet<>();
         final Set<Object> currentFullClean = new HashSet<>();
-        currentKeysToClean.clear();
-        currentFullClean.clear();
-        for (Iterator<CleanupKey> iterator = keysToClean.iterator(); iterator.hasNext();) {
-            CleanupKey cleanupKey = iterator.next();
-            iterator.remove();
-            if (cleanupKey.readerCacheKeyId == null || cleanupKey.entity.isOpen() == false) {
-                // null indicates full cleanup, as does a closed shard
+
+            /*
+            Stores the keys that need to be removed from keysToClean
+            This is done to avoid ConcurrentModificationException
+            */
+        final Set<CleanupKey> keysCleanedFromAllCaches = new HashSet<>();
+
+        for (Map.Entry<CleanupKey, CleanupStatus> entry : keysToClean.entrySet()) {
+            CleanupKey cleanupKey = entry.getKey();
+            CleanupStatus cleanupStatus = entry.getValue();
+
+            if (cleanupStatus.cleanedInHeap && cleanupStatus.cleanedOnDisk) {
+                keysCleanedFromAllCaches.add(cleanupKey);
+                continue;
+            }
+
+            if (cacheType == TierType.ON_HEAP && cleanupStatus.cleanedInHeap) continue;
+            if (cacheType == TierType.DISK && cleanupStatus.cleanedOnDisk) continue;
+
+            if (needsFullClean(cleanupKey)) {
                 currentFullClean.add(cleanupKey.entity.getCacheIdentity());
             } else {
                 currentKeysToClean.add(cleanupKey);
             }
+
+            if (cacheType == TierType.ON_HEAP) {
+                cleanupStatus.cleanedInHeap = true;
+            } else if (cacheType == TierType.DISK) {
+                cleanupStatus.cleanedOnDisk = true;
+            }
         }
-        if (!currentKeysToClean.isEmpty() || !currentFullClean.isEmpty()) {
-            for (Iterator<Key> iterator = tieredCacheService.getOnHeapCachingTier().keys().iterator(); iterator.hasNext();) {
-                Key key = iterator.next();
-                if (currentFullClean.contains(key.entity.getCacheIdentity())) {
-                    iterator.remove();
-                } else {
-                    if (currentKeysToClean.contains(new CleanupKey(key.entity, key.readerCacheKeyId))) {
-                        iterator.remove();
-                    }
+
+        // Remove keys that have been cleaned from all caches
+        keysToClean.keySet().removeAll(keysCleanedFromAllCaches);
+
+        // Early exit if no cleanup is needed
+        if (currentKeysToClean.isEmpty() && currentFullClean.isEmpty()) {
+            return;
+        }
+
+        CachingTier<Key, BytesReference> cachingTier;
+
+        if (cacheType == TierType.ON_HEAP) {
+            cachingTier = tieredCacheService.getOnHeapCachingTier();
+        } else {
+            cachingTier = tieredCacheService.getDiskCachingTier().get();
+        }
+
+        cleanUpKeys(
+            cachingTier,
+            currentKeysToClean,
+            currentFullClean
+        );
+    }
+
+    private synchronized boolean canSkipDiskCacheCleanup(double diskCachesCleanThresholdPercent) {
+        if (tieredCacheService.getDiskCachingTier().isEmpty()) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Skipping disk cache keys cleanup since disk caching tier is not present");
+            }
+            return true;
+        }
+        if (tieredCacheService.getDiskCachingTier().get().count() == 0) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Skipping disk cache keys cleanup since disk caching tier is empty");
+            }
+            return true;
+        }
+        if (diskCleanupKeysPercentage() < diskCachesCleanThresholdPercent) {
+            if (logger.isDebugEnabled()) {
+                logger.debug("Skipping disk cache keys cleanup since the percentage of stale keys in disk cache is less than the threshold");
+            }
+            return true;
+        }
+        return false;
+    }
+
+    synchronized double diskCleanupKeysPercentage() {
+        int totalKeysInDiskCache = tieredCacheService.getDiskCachingTier()
+            .map(CachingTier::count)
+            .orElse(0);
+        if (totalKeysInDiskCache == 0 || staleKeysInDiskCount.get() == 0) {
+            return 0;
+        }
+        return ((double) staleKeysInDiskCount.get() / totalKeysInDiskCache);
+    }
+
+    synchronized void cleanUpKeys(
+        CachingTier<Key, BytesReference> cachingTier,
+        Set<CleanupKey> currentKeysToClean,
+        Set<Object> currentFullClean
+    ) {
+        for (Key key : cachingTier.keys()) {
+            CleanupKey cleanupKey = new CleanupKey(key.entity, key.readerCacheKeyId);
+            if (currentFullClean.contains(key.entity.getCacheIdentity()) || currentKeysToClean.contains(cleanupKey)) {
+                cachingTier.invalidate(key);
+                if(cachingTier.getTierType() == TierType.DISK) {
+                    staleKeysInDiskCount.decrementAndGet();
                 }
             }
         }
-        tieredCacheService.getOnHeapCachingTier().refresh();
+    }
+
+    private boolean needsFullClean(CleanupKey cleanupKey) {
+        // null indicates full cleanup, as does a closed shard
+        return cleanupKey.readerCacheKeyId == null || !cleanupKey.entity.isOpen();
     }
 
     /**
@@ -415,7 +690,51 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         return tieredCacheService.count();
     }
 
+    // to be used for testing only
     int numRegisteredCloseListeners() { // for testing
         return registeredClosedListeners.size();
+    }
+
+    /**
+     * Creates a new disk tier instance. Should only be run if the instance will actually be used!
+     * Otherwise, it may not be closed properly.
+     * @return A new disk tier instance
+     */
+    @Override
+    public EhCacheDiskCachingTier<Key, BytesReference> createNewDiskTier() {
+        assert FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING);
+        long CACHE_SIZE_IN_BYTES = INDICES_CACHE_DISK_TIER_SIZE.get(settings).getBytes();
+        String STORAGE_PATH = indicesService.getNodePaths()[0].indicesPath.toString() + "/request_cache";
+
+        return new EhCacheDiskCachingTier.Builder<Key, BytesReference>()
+            .setKeyType(Key.class)
+            .setValueType(BytesReference.class)
+            .setExpireAfterAccess(TimeValue.MAX_VALUE) // TODO: Is this meant to be the same as IRC expire or different?
+            .setClusterSettings(clusterSettings)
+            .setThreadPoolAlias("ehcacheThreadpool")
+            .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
+            .setStoragePath(STORAGE_PATH)
+            .setKeySerializer(new IRCKeyWriteableSerializer(this))
+            .setValueSerializer(new BytesReferenceSerializer())
+            .build();
+    }
+    // to be used for testing only
+    void addCleanupKeyForTesting(CacheEntity entity, String readerCacheKeyId) { // for testing
+        keysToClean.put(new CleanupKey(entity, readerCacheKeyId), new CleanupStatus());
+    }
+
+    // to be used for testing only
+    int getKeysToCleanSizeForTesting() { // for testing
+        return keysToClean.size();
+    }
+
+    // to be used for testing only
+    Key createKeyForTesting(CacheEntity entity, String readerCacheKeyId) { // for testing
+        return new Key(entity, null, readerCacheKeyId);
+    }
+
+    // to be used for testing only
+    void setStaleKeysInDiskCountForTesting(int count) {
+        staleKeysInDiskCount.set(count);
     }
 }

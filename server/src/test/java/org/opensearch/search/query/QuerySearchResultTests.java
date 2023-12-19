@@ -56,6 +56,8 @@ import org.opensearch.search.internal.ShardSearchRequest;
 import org.opensearch.search.suggest.SuggestTests;
 import org.opensearch.test.OpenSearchTestCase;
 
+import java.util.HashMap;
+
 import static java.util.Collections.emptyList;
 
 public class QuerySearchResultTests extends OpenSearchTestCase {
@@ -99,25 +101,36 @@ public class QuerySearchResultTests extends OpenSearchTestCase {
         if (randomBoolean()) {
             result.aggregations(InternalAggregationsTests.createTestInstance());
         }
+        assertNull(result.getTookTimeNanos());
         return result;
     }
 
     public void testSerialization() throws Exception {
-        QuerySearchResult querySearchResult = createTestInstance();
-        QuerySearchResult deserialized = copyWriteable(querySearchResult, namedWriteableRegistry, QuerySearchResult::new);
-        assertEquals(querySearchResult.getContextId().getId(), deserialized.getContextId().getId());
-        assertNull(deserialized.getSearchShardTarget());
-        assertEquals(querySearchResult.topDocs().maxScore, deserialized.topDocs().maxScore, 0f);
-        assertEquals(querySearchResult.topDocs().topDocs.totalHits, deserialized.topDocs().topDocs.totalHits);
-        assertEquals(querySearchResult.from(), deserialized.from());
-        assertEquals(querySearchResult.size(), deserialized.size());
-        assertEquals(querySearchResult.hasAggs(), deserialized.hasAggs());
-        if (deserialized.hasAggs()) {
-            Aggregations aggs = querySearchResult.consumeAggs().expand();
-            Aggregations deserializedAggs = deserialized.consumeAggs().expand();
-            assertEquals(aggs.asList(), deserializedAggs.asList());
+        HashMap<Boolean, Long> expectedValues = new HashMap<>(); // map contains whether to set took time, and if so, to what value
+        expectedValues.put(false, null);
+        expectedValues.put(true, 1000L);
+        for (Boolean doSetTookTime : expectedValues.keySet()) {
+            QuerySearchResult querySearchResult = createTestInstance();
+            if (doSetTookTime) {
+                querySearchResult.setTookTimeNanos(expectedValues.get(doSetTookTime));
+            }
+            QuerySearchResult deserialized = copyWriteable(querySearchResult, namedWriteableRegistry, QuerySearchResult::new);
+            assertEquals(querySearchResult.getContextId().getId(), deserialized.getContextId().getId());
+            assertNull(deserialized.getSearchShardTarget());
+            assertEquals(querySearchResult.topDocs().maxScore, deserialized.topDocs().maxScore, 0f);
+            assertEquals(querySearchResult.topDocs().topDocs.totalHits, deserialized.topDocs().topDocs.totalHits);
+            assertEquals(querySearchResult.from(), deserialized.from());
+            assertEquals(querySearchResult.size(), deserialized.size());
+            assertEquals(querySearchResult.hasAggs(), deserialized.hasAggs());
+            if (deserialized.hasAggs()) {
+                Aggregations aggs = querySearchResult.consumeAggs().expand();
+                Aggregations deserializedAggs = deserialized.consumeAggs().expand();
+                assertEquals(aggs.asList(), deserializedAggs.asList());
+            }
+            assertEquals(querySearchResult.terminatedEarly(), deserialized.terminatedEarly());
+            assertEquals(querySearchResult.getTookTimeNanos(), deserialized.getTookTimeNanos());
+            assertEquals(expectedValues.get(doSetTookTime), querySearchResult.getTookTimeNanos());
         }
-        assertEquals(querySearchResult.terminatedEarly(), deserialized.terminatedEarly());
     }
 
     public void testNullResponse() throws Exception {

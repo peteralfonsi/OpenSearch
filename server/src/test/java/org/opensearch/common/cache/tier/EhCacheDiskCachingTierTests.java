@@ -8,16 +8,27 @@
 
 package org.opensearch.common.cache.tier;
 
+import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.RemovalListener;
+import org.opensearch.common.settings.ClusterSettings;
+import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.common.util.FeatureFlags;
+import org.opensearch.core.common.bytes.BytesArray;
+import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
@@ -26,7 +37,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
 
     private static final int CACHE_SIZE_IN_BYTES = 1024 * 101;
-    private static final String SETTING_PREFIX = "indices.request.cache";
 
     public void testBasicGetAndPut() throws IOException {
         Settings settings = Settings.builder().build();
@@ -35,11 +45,12 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
+                .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
-                .setSettingPrefix(SETTING_PREFIX)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .build();
             int randomKeys = randomIntBetween(10, 100);
             Map<String, String> keyValueMap = new HashMap<>();
@@ -50,10 +61,48 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 ehCacheDiskCachingTierNew.put(entry.getKey(), entry.getValue());
             }
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
-                String value = ehCacheDiskCachingTierNew.get(entry.getKey());
-                assertEquals(entry.getValue(), value);
+                CacheValue<String> value = ehCacheDiskCachingTierNew.get(entry.getKey());
+                assertEquals(entry.getValue(), value.value);
+                assertEquals(TierType.DISK, value.getSource());
+                assertTrue(((DiskTierRequestStats) value.getStats()).getRequestReachedDisk());
+                assertTrue(((DiskTierRequestStats) value.getStats()).getRequestGetTimeNanos() > 0);
             }
             ehCacheDiskCachingTierNew.close();
+        }
+    }
+
+    public void testBasicGetAndPutBytesReference() throws Exception {
+        Settings settings = Settings.builder().build();
+        try (NodeEnvironment env = newNodeEnvironment(settings)) {
+            EhCacheDiskCachingTier<String, BytesReference> ehCacheDiskCachingTier = new EhCacheDiskCachingTier.Builder<
+                String,
+                BytesReference>().setKeyType(String.class)
+                .setValueType(BytesReference.class)
+                .setExpireAfterAccess(TimeValue.MAX_VALUE)
+                .setClusterSettings(getClusterSettings())
+                .setThreadPoolAlias("ehcacheTest")
+                .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES * 2) // bigger so no evictions happen
+                .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new BytesReferenceSerializer())
+                .build();
+            int randomKeys = randomIntBetween(10, 100);
+            int valueLength = 1000;
+            Random rand = Randomness.get();
+            Map<String, BytesReference> keyValueMap = new HashMap<>();
+            for (int i = 0; i < randomKeys; i++) {
+                byte[] valueBytes = new byte[valueLength];
+                rand.nextBytes(valueBytes);
+                keyValueMap.put(UUID.randomUUID().toString(), new BytesArray(valueBytes));
+            }
+            for (Map.Entry<String, BytesReference> entry : keyValueMap.entrySet()) {
+                ehCacheDiskCachingTier.put(entry.getKey(), entry.getValue());
+            }
+            for (Map.Entry<String, BytesReference> entry : keyValueMap.entrySet()) {
+                BytesReference value = ehCacheDiskCachingTier.get(entry.getKey()).value;
+                assertEquals(entry.getValue(), value);
+            }
+            ehCacheDiskCachingTier.close();
         }
     }
 
@@ -64,11 +113,12 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
+                .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
-                .setSettingPrefix(SETTING_PREFIX)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .build();
             int randomKeys = randomIntBetween(20, 100);
             Thread[] threads = new Thread[randomKeys];
@@ -91,8 +141,8 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
             phaser.arriveAndAwaitAdvance(); // Will trigger parallel puts above.
             countDownLatch.await(); // Wait for all threads to finish
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
-                String value = ehCacheDiskCachingTierNew.get(entry.getKey());
-                assertEquals(entry.getValue(), value);
+                CacheValue<String> value = ehCacheDiskCachingTierNew.get(entry.getKey());
+                assertEquals(entry.getValue(), value.value);
             }
             ehCacheDiskCachingTierNew.close();
         }
@@ -105,12 +155,13 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
+                .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
-                .setSettingPrefix(SETTING_PREFIX)
                 .setIsEventListenerModeSync(true) // For accurate count
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .build();
             ehCacheDiskCachingTierNew.setRemovalListener(removalListener(new AtomicInteger()));
             int randomKeys = randomIntBetween(20, 100);
@@ -129,7 +180,7 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
                 threads[j] = new Thread(() -> {
                     phaser.arriveAndAwaitAdvance();
-                    assertEquals(entry.getValue(), ehCacheDiskCachingTierNew.get(entry.getKey()));
+                    assertEquals(entry.getValue(), ehCacheDiskCachingTierNew.get(entry.getKey()).value);
                     countDownLatch.countDown();
                 });
                 threads[j].start();
@@ -148,11 +199,12 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
+                .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
-                .setSettingPrefix(SETTING_PREFIX)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .build();
 
             int randomKeys = randomIntBetween(2, 2);
@@ -182,11 +234,12 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
                 .setKeyType(String.class)
                 .setValueType(String.class)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
-                .setSettings(settings)
+                .setClusterSettings(getClusterSettings())
                 .setThreadPoolAlias("ehcacheTest")
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
-                .setSettingPrefix(SETTING_PREFIX)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .build();
             // For now it is unsupported.
             assertThrows(
@@ -220,7 +273,38 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
         }
     }
 
+    private ClusterSettings getClusterSettings() {
+        HashSet<Setting<?>> clusterSettingsSet = new HashSet<>();
+        for (Setting<?> s : ClusterSettings.FEATURE_FLAGGED_CLUSTER_SETTINGS.get(List.of(FeatureFlags.TIERED_CACHING))) {
+            clusterSettingsSet.add(s);
+        } // :(
+        return new ClusterSettings(Settings.EMPTY, clusterSettingsSet);
+    }
+
     private RemovalListener<String, String> removalListener(AtomicInteger counter) {
         return notification -> counter.incrementAndGet();
+    }
+
+    private static class StringSerializer implements Serializer<String, byte[]> {
+
+        private final Charset charset = StandardCharsets.UTF_8;
+
+        @Override
+        public byte[] serialize(String object) {
+            return object.getBytes(charset);
+        }
+
+        @Override
+        public String deserialize(byte[] bytes) {
+            if (bytes == null) {
+                return null;
+            }
+            return new String(bytes, charset);
+        }
+
+        @Override
+        public boolean equals(String object, byte[] bytes) {
+            return object.equals(deserialize(bytes));
+        }
     }
 }

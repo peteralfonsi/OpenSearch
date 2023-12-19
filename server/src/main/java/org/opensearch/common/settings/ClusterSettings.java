@@ -79,6 +79,9 @@ import org.opensearch.cluster.service.ClusterManagerService;
 import org.opensearch.cluster.service.ClusterManagerTaskThrottler;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.annotation.PublicApi;
+import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
+import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
+import org.opensearch.common.cache.tier.keystore.RBMIntKeyLookupStore;
 import org.opensearch.common.logging.Loggers;
 import org.opensearch.common.network.NetworkModule;
 import org.opensearch.common.network.NetworkService;
@@ -687,11 +690,11 @@ public final class ClusterSettings extends AbstractScopedSettings {
                 RemoteStoreNodeService.REMOTE_STORE_COMPATIBILITY_MODE_SETTING,
                 IndicesService.CLUSTER_REMOTE_TRANSLOG_BUFFER_INTERVAL_SETTING,
                 IndicesService.CLUSTER_REMOTE_INDEX_RESTRICT_ASYNC_DURABILITY_SETTING,
+                IndicesService.CLUSTER_RESTRICT_INDEX_REPLICATION_TYPE_SETTING,
                 AdmissionControlSettings.ADMISSION_CONTROL_TRANSPORT_LAYER_MODE,
                 CPUBasedAdmissionControllerSettings.CPU_BASED_ADMISSION_CONTROLLER_TRANSPORT_LAYER_MODE,
                 CPUBasedAdmissionControllerSettings.INDEXING_CPU_USAGE_LIMIT,
-                CPUBasedAdmissionControllerSettings.SEARCH_CPU_USAGE_LIMIT,
-                IndicesService.CLUSTER_RESTRICT_INDEX_REPLICATION_TYPE_SETTING
+                CPUBasedAdmissionControllerSettings.SEARCH_CPU_USAGE_LIMIT
             )
         )
     );
@@ -716,6 +719,19 @@ public final class ClusterSettings extends AbstractScopedSettings {
             TelemetrySettings.METRICS_PUBLISH_INTERVAL_SETTING,
             TelemetrySettings.TRACER_FEATURE_ENABLED_SETTING,
             TelemetrySettings.METRICS_FEATURE_ENABLED_SETTING
+        ),
+        List.of(FeatureFlags.TIERED_CACHING),
+        List.of(
+            IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED,
+            IndicesRequestCache.INDICES_CACHE_DISK_TIER_SIZE,
+            RBMIntKeyLookupStore.INDICES_CACHE_KEYSTORE_SIZE,
+            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_MIN_THREADS,
+            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_MAX_THREADS,
+            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_WRITE_CONCURRENCY,
+            EhCacheDiskCachingTier.REQUEST_CACHE_DISK_SEGMENTS,
+            DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING,
+            IndicesService.INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING,
+            IndicesService.INDICES_REQUEST_CACHE_DISK_CLEAN_INTERVAL_SETTING
         )
     );
 }
