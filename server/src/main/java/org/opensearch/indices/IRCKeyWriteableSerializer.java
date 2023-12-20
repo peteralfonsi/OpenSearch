@@ -56,10 +56,10 @@ public class IRCKeyWriteableSerializer implements Serializer<IndicesRequestCache
     public boolean equals(IndicesRequestCache.Key object, byte[] bytes) {
         // Deserialization is much slower than serialization for keys of order 1 KB,
         // while time to serialize is fairly constant (per byte)
-        if (bytes.length < 5000) {
+        /*if (bytes.length < 5000) {
             return Arrays.equals(serialize(object), bytes);
-        } else {
-            return object.equals(deserialize(bytes));
-        }
+        } else {*/
+        return object.equals(deserialize(bytes));
+        //}
     }
 }
