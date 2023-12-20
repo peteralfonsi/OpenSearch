@@ -235,7 +235,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     @Override
     public void onCached(Key key, BytesReference value, TierType tierType) {
         key.entity.onCached(key, value, tierType);
-        updateDiskCleanupKeyToCountMap(new CleanupKey(key.entity, key.readerCacheKeyId), tierType);
+        updateDiskCleanupKeyToCountMap(key, tierType);
     }
 
     /**
@@ -249,24 +249,24 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      * ShardID class properly overrides equals() and hashCode() methods.
      * Therefore, to avoid modifying CacheEntity and IndexShard classes to override these methods, we use ShardID as the key.
      *
-     * @param cleanupKey the CleanupKey to be updated in the map
+     * @param key the CleanupKey to be updated in the map
      * @param tierType the TierType of the CleanupKey
      */
-    private void updateDiskCleanupKeyToCountMap(CleanupKey cleanupKey, TierType tierType) {
+    private void updateDiskCleanupKeyToCountMap(Key key, TierType tierType) {
         if(!tierType.equals(TierType.DISK)) {
             return;
         }
-        IndexShard indexShard = (IndexShard)cleanupKey.entity.getCacheIdentity();
+        IndexShard indexShard = (IndexShard)key.entity.getCacheIdentity();
         if(indexShard == null) {
             logger.warn("IndexShard is null for CleanupKey: {} while cleaning tier : {}",
-                cleanupKey.readerCacheKeyId, tierType.getStringValue());
+                key.readerCacheKeyId, tierType.getStringValue());
             return;
         }
         ShardId shardId = indexShard.shardId();
 
         diskCleanupKeyToCountMap
             .computeIfAbsent(shardId, k -> ConcurrentCollections.newConcurrentMap())
-            .merge(cleanupKey.readerCacheKeyId, 1, Integer::sum);
+            .merge(key.readerCacheKeyId, 1, Integer::sum);
     }
 
     /**
