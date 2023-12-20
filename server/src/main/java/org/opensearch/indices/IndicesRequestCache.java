@@ -608,7 +608,16 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         );
     }
 
-    private synchronized boolean canSkipDiskCacheCleanup(double diskCachesCleanThresholdPercent) {
+    /**
+     * Checks if the disk cache cleanup can be skipped based on certain conditions.
+     *
+     * @param diskStaleKeysThresholdPercent the threshold percentage for stale keys in the disk cache
+     * @return true if any of the following conditions are met:
+     *         1. The disk caching tier is not present.
+     *         2. The disk caching tier is empty.
+     *         3. The percentage of stale keys in the disk cache is less than the provided threshold.
+     */
+    private synchronized boolean canSkipDiskCacheCleanup(double diskStaleKeysThresholdPercent) {
         if (tieredCacheService.getDiskCachingTier().isEmpty()) {
             if (logger.isDebugEnabled()) {
                 logger.debug("Skipping disk cache keys cleanup since disk caching tier is not present");
@@ -621,7 +630,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             }
             return true;
         }
-        if (diskCleanupKeysPercentage() < diskCachesCleanThresholdPercent) {
+        if (getDiskStaleKeysPercentage() < diskStaleKeysThresholdPercent) {
             if (logger.isDebugEnabled()) {
                 logger.debug("Skipping disk cache keys cleanup since the percentage of stale keys in disk cache is less than the threshold");
             }
@@ -630,13 +639,21 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         return false;
     }
 
-    synchronized double diskCleanupKeysPercentage() {
+    /**
+     * This method calculates the percentage of stale keys in the disk cache.
+     * Stale keys are those keys that are marked for removal but not yet removed.
+     *
+     * @return the percentage of stale keys in the disk cache. If there are no keys in the disk cache or no stale keys, it returns 0.
+     */
+    synchronized double getDiskStaleKeysPercentage() {
+        // Get the total number of keys in the disk cache
         int totalKeysInDiskCache = tieredCacheService.getDiskCachingTier()
             .map(CachingTier::count)
             .orElse(0);
         if (totalKeysInDiskCache == 0 || staleKeysInDiskCount.get() == 0) {
             return 0;
         }
+        // Calculate and return the percentage of stale keys in the disk cache
         return ((double) staleKeysInDiskCount.get() / totalKeysInDiskCache);
     }
 

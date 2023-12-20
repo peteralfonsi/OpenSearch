@@ -801,7 +801,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
             when(tieredCacheService.getDiskCachingTier()).thenReturn(Optional.of(diskCachingTier));
             when(diskCachingTier.count()).thenReturn(0);
 
-            double result = indicesRequestCache.diskCleanupKeysPercentage();
+            double result = indicesRequestCache.getDiskStaleKeysPercentage();
 
             assertEquals(0, result, 0);
         }
@@ -819,7 +819,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
                     mockTieredCacheService
             );
 
-            double result = cache.diskCleanupKeysPercentage();
+            double result = cache.getDiskStaleKeysPercentage();
 
             assertEquals(0, result, 0.001);
         }
@@ -843,7 +843,7 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
             cache.addCleanupKeyForTesting(mockEntity, "readerCacheKeyId");
             cache.setStaleKeysInDiskCountForTesting(1);
 
-            double result = cache.diskCleanupKeysPercentage();
+            double result = cache.getDiskStaleKeysPercentage();
             assertEquals(1.0, result, 0);
         }
     }
