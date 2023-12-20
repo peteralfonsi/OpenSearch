@@ -114,6 +114,10 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     private final ByteSizeValue size;
     private final TimeValue expire;
     private final TieredCacheService<Key, BytesReference> tieredCacheService;
+    private final IndicesService indicesService;
+    private final Settings settings;
+    private final ClusterSettings clusterSettings;
+    protected final static long keyInstanceSize = RamUsageEstimator.shallowSizeOfInstance(Key.class);
 
     private final TieredCacheHandler<Key, BytesReference> tieredCacheHandler;
 
@@ -283,8 +287,8 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      *
      * @opensearch.internal
      */
-    public static class Key implements Accountable {
-        private static final long BASE_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(Key.class);
+    class Key implements Accountable, Writeable {
+        private final long BASE_RAM_BYTES_USED = IndicesRequestCache.keyInstanceSize;
 
         public final CacheEntity entity; // use as identity equality
         public final String readerCacheKeyId;
