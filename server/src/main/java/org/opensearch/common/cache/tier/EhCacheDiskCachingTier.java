@@ -82,9 +82,9 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     // queue ie write concurrency is 1. Check OffHeapDiskStoreConfiguration and DiskWriteThreadPool.
     public static final Setting<Integer> REQUEST_CACHE_DISK_WRITE_CONCURRENCY = Setting.intSetting(
         "indices.requests.cache.tiered.disk.ehcache.write_concurrency",
-        2,
-        1,
         3,
+        1,
+        4,
         Property.NodeScope
     );
 
