@@ -71,7 +71,7 @@ public class DiskTierTookTimePolicyTests extends OpenSearchTestCase {
     private DiskTierTookTimePolicy getTookTimePolicy() {
         // dummy settings
         Settings dummySettings = Settings.EMPTY;
-        ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
+        ClusterSettings dummyClusterSettings = EhCacheDiskCachingTierTests.getClusterSettings();
         return new DiskTierTookTimePolicy(dummySettings, dummyClusterSettings, transformationFunction);
     }
 

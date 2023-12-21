@@ -37,7 +37,7 @@ import org.opensearch.action.search.SearchResponse;
 import org.opensearch.client.Client;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
-import org.opensearch.common.cache.tier.TierType;
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.FeatureFlags;
@@ -82,8 +82,8 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         int numRequests = heapSizeBytes / requestSize + numOnDisk;
         for (int i = 1; i < numRequests; i++) {
             doHelloSearch(client, "index", i);
-            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.ON_HEAP, false);
-            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.DISK, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, CacheStoreType.ON_HEAP, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, CacheStoreType.DISK, false);
         }
 
         // So far, disk-specific stats should be 0, as keystore has prevented any actual disk reaches
@@ -91,20 +91,20 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
 
         // the first request, for "hello0", should have been evicted to the disk tier
         doHelloSearch(client, "index", 0);
-        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + 1, TierType.ON_HEAP, false);
-        IndicesRequestCacheIT.assertCacheState(client, "index", 1, numRequests, TierType.DISK, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + 1, CacheStoreType.ON_HEAP, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 1, numRequests, CacheStoreType.DISK, false);
         tookTimeSoFar = assertDiskTierSpecificStats(client, "index", 1, 0, -1);
 
         // We make another actual request that should be in the disk tier. Disk specific stats should keep incrementing
         doHelloSearch(client, "index", 1);
-        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + 2, TierType.ON_HEAP, false);
-        IndicesRequestCacheIT.assertCacheState(client, "index", 2, numRequests, TierType.DISK, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + 2, CacheStoreType.ON_HEAP, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 2, numRequests, CacheStoreType.DISK, false);
         tookTimeSoFar = assertDiskTierSpecificStats(client, "index", 2, tookTimeSoFar, -1);
 
         // A final request for something in neither tier shouldn't increment disk specific stats
         doHelloSearch(client, "index", numRequests);
-        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + 3, TierType.ON_HEAP, false);
-        IndicesRequestCacheIT.assertCacheState(client, "index", 2, numRequests + 1, TierType.DISK, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + 3, CacheStoreType.ON_HEAP, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 2, numRequests + 1, CacheStoreType.DISK, false);
         assertDiskTierSpecificStats(client, "index", 2, tookTimeSoFar, tookTimeSoFar);
     }
 
@@ -131,10 +131,10 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         SearchResponse resp;
         for (int i = 1; i < numRequests; i++) {
             doHelloSearch(client, "index", i);
-            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.ON_HEAP, false);
-            IndicesRequestCacheIT.assertCacheState(client, "index", 0, 0, TierType.DISK, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, CacheStoreType.ON_HEAP, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, 0, CacheStoreType.DISK, false);
         }
-        IndicesRequestCacheIT.assertNumEvictions(client, "index", numEvicted, TierType.ON_HEAP);
+        IndicesRequestCacheIT.assertNumEvictions(client, "index", numEvicted, CacheStoreType.ON_HEAP);
         // The heap tier should now contain requests # numEvicted through numRequests. 0 through numEvicted have been evicted and lost.
 
         // Set IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED = false. Nothing should happen
@@ -147,55 +147,55 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         int numOnDisk = 3;
         for (int i = numRequests; i < numRequests + numOnDisk; i++) {
             doHelloSearch(client, "index", i);
-            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.ON_HEAP, false);
-            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i - numRequests + 1, TierType.DISK, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, CacheStoreType.ON_HEAP, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i - numRequests + 1, CacheStoreType.DISK, false);
         }
-        IndicesRequestCacheIT.assertNumEvictions(client, "index", numEvicted + numOnDisk, TierType.ON_HEAP);
-        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", heapSizeBytes / requestSize, TierType.ON_HEAP);
-        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", numOnDisk, TierType.DISK);
+        IndicesRequestCacheIT.assertNumEvictions(client, "index", numEvicted + numOnDisk, CacheStoreType.ON_HEAP);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", heapSizeBytes / requestSize, CacheStoreType.ON_HEAP);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", numOnDisk, CacheStoreType.DISK);
         // Confirm request # numEvicted + 1 is a disk tier hit
         doHelloSearch(client, "index", numEvicted + 1);
-        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + numOnDisk + 1, TierType.ON_HEAP, false);
-        IndicesRequestCacheIT.assertCacheState(client, "index", 1, numOnDisk, TierType.DISK, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + numOnDisk + 1, CacheStoreType.ON_HEAP, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 1, numOnDisk, CacheStoreType.DISK, false);
 
         // Set IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED = true. Nothing should happen
         setDiskCacheEnabledSetting(client, true);
 
         // Set IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED = false. The disk tier should be deactivated but not deleted
         setDiskCacheEnabledSetting(client, false);
-        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", numOnDisk, TierType.DISK);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", numOnDisk, CacheStoreType.DISK);
 
         // Make some new requests. These should cause evictions from the heap tier (numEvicted + numOnDisk through numEvicted + numOnDisk + numNewRequests), but not reach the deactivated disk tier
         int numNewRequests = 5;
         assertTrue(numNewRequests > 3); // necessary for checks later in the test
         for (int i = numRequests + numOnDisk; i < numRequests + numOnDisk + numNewRequests; i++) {
             doHelloSearch(client, "index", i);
-            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 2, TierType.ON_HEAP, false);
-            IndicesRequestCacheIT.assertCacheState(client, "index", 1, numOnDisk, TierType.DISK, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 2, CacheStoreType.ON_HEAP, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 1, numOnDisk, CacheStoreType.DISK, false);
         }
-        IndicesRequestCacheIT.assertNumEvictions(client, "index", numEvicted + numOnDisk + numNewRequests, TierType.ON_HEAP);
-        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", heapSizeBytes / requestSize, TierType.ON_HEAP);
-        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", numOnDisk, TierType.DISK);
+        IndicesRequestCacheIT.assertNumEvictions(client, "index", numEvicted + numOnDisk + numNewRequests, CacheStoreType.ON_HEAP);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", heapSizeBytes / requestSize, CacheStoreType.ON_HEAP);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", numOnDisk, CacheStoreType.DISK);
         // Now the heap tier contains requests numEvicted + numOnDisk + numNewRequests through numEvicted + numOnDisk + numNewRequests + num
 
         // Check a request (# numEvicted) which was on the disk tier is now a cache miss. This evicts #
         doHelloSearch(client, "index", numEvicted);
-        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + numOnDisk + numNewRequests + 2, TierType.ON_HEAP, false);
-        IndicesRequestCacheIT.assertCacheState(client, "index", 1, numOnDisk, TierType.DISK, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + numOnDisk + numNewRequests + 2, CacheStoreType.ON_HEAP, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 1, numOnDisk, CacheStoreType.DISK, false);
 
 
         // Re-enable the disk tier. We should get the same previously deactivated disk tier, not a new one
         setDiskCacheEnabledSetting(client, true);
-        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", numOnDisk, TierType.DISK);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", numOnDisk, CacheStoreType.DISK);
         // Request # numEvicted + 2 should be a disk tier hit
         doHelloSearch(client, "index", numEvicted + 2);
-        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + numOnDisk + numNewRequests + 3, TierType.ON_HEAP, false);
-        IndicesRequestCacheIT.assertCacheState(client, "index", 2, numOnDisk, TierType.DISK, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + numOnDisk + numNewRequests + 3, CacheStoreType.ON_HEAP, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 2, numOnDisk, CacheStoreType.DISK, false);
         // New queries should cause spillover to the disk tier again
         doHelloSearch(client, "index", numRequests + numOnDisk + numNewRequests);
-        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + numOnDisk + numNewRequests + 4, TierType.ON_HEAP, false);
-        IndicesRequestCacheIT.assertCacheState(client, "index", 2, numOnDisk + 1, TierType.DISK, false);
-        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", numOnDisk + 1, TierType.DISK);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 0, numRequests + numOnDisk + numNewRequests + 4, CacheStoreType.ON_HEAP, false);
+        IndicesRequestCacheIT.assertCacheState(client, "index", 2, numOnDisk + 1, CacheStoreType.DISK, false);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", numOnDisk + 1, CacheStoreType.DISK);
 
         // TODO: Once Kiran's cache clear PR is done, add a case where we deactivate, clear disk cache, reactivate, and see a new empty disk tier.
     }
@@ -223,7 +223,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         // Setup function to get the maximum number of entries of the form "hello" + i
         // that will fit in the heap cache, by making a query and checking size afterwards
         doHelloSearch(client, index, 0);
-        int requestSize = (int) getCacheSizeBytes(client, "index", TierType.ON_HEAP);
+        int requestSize = (int) getCacheSizeBytes(client, "index", CacheStoreType.ON_HEAP);
         assertTrue(heapSizeBytes > requestSize);
         // If this fails, increase heapSizeBytes! We can't adjust it after getting the size of one query
         // as the cache size setting is not dynamic
@@ -245,6 +245,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
                 .put(IndicesService.INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING.getKey(), "0%")
                 .put(IndicesRequestCache.INDICES_CACHE_QUERY_SIZE.getKey(), new ByteSizeValue(heapSizeBytes))
                 .put(DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING.getKey(), TimeValue.ZERO) // allow into disk cache regardless of took time
+                .put(IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED.getKey(), true)
         );
         Client client = client(node);
 
@@ -262,7 +263,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         SearchResponse resp;
 
         resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + 0)).get();
-        int requestSize = (int) getCacheSizeBytes(client, "index", TierType.ON_HEAP);
+        int requestSize = (int) getCacheSizeBytes(client, "index", CacheStoreType.ON_HEAP);
         assertTrue(heapSizeBytes > requestSize);
         // If this fails, increase heapSizeBytes! We can't adjust it after getting the size of one query
         // as the cache size setting is not dynamic
@@ -271,15 +272,15 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         for (int i = 1; i < numRequests; i++) {
             resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + i)).get();
             assertSearchResponse(resp);
-            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.ON_HEAP, false);
-            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.DISK, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, CacheStoreType.ON_HEAP, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, CacheStoreType.DISK, false);
         }
-        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 2, TierType.DISK);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 2, CacheStoreType.DISK);
 
         // call clear cache api
         client.admin().indices().prepareClearCache().setIndices("index").setRequestCache(true).get();
         // fetch the stats again
-        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 0, TierType.DISK);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 0, CacheStoreType.DISK);
     }
 
     // When entire disk tier is stale, test whether cache cleaner cleans up everything from disk
@@ -293,6 +294,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
             .put(IndicesService.INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING.getKey(), "1%")
             .put(IndicesRequestCache.INDICES_CACHE_QUERY_SIZE.getKey(), new ByteSizeValue(heapSizeBytes))
             .put(DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING.getKey(), TimeValue.ZERO) // allow into disk cache regardless of took time
+            .put(IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED.getKey(), true)
         );
         Client client = client(node);
 
@@ -310,7 +312,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         SearchResponse resp;
 
         resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + 0)).get();
-        int requestSize = (int) getCacheSizeBytes(client, "index", TierType.ON_HEAP);
+        int requestSize = (int) getCacheSizeBytes(client, "index", CacheStoreType.ON_HEAP);
         assertTrue(heapSizeBytes > requestSize);
 
         int numOnDisk = 2;
@@ -318,11 +320,11 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         for (int i = 1; i < numRequests; i++) {
             resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + i)).get();
             assertSearchResponse(resp);
-            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.ON_HEAP, false);
-            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.DISK, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, CacheStoreType.ON_HEAP, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, CacheStoreType.DISK, false);
         }
 
-        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 2, TierType.DISK);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 2, CacheStoreType.DISK);
 
         // index a doc and force refresh so that the cache cleaner can clean the cache
         indexRandom(true, client.prepareIndex("index").setSource("k", "hello"));
@@ -337,7 +339,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
 
         // by now cache cleaner would have run and cleaned up stale keys
         // fetch the stats again
-        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 0, TierType.DISK);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 0, CacheStoreType.DISK);
     }
 
     // When part of disk tier is stale, test whether cache cleaner cleans up only stale items from disk
@@ -351,6 +353,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
                 .put(IndicesService.INDICES_REQUEST_CACHE_DISK_CLEAN_THRESHOLD_SETTING.getKey(), "1%")
                 .put(IndicesRequestCache.INDICES_CACHE_QUERY_SIZE.getKey(), new ByteSizeValue(heapSizeBytes))
                 .put(DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING.getKey(), TimeValue.ZERO) // allow into disk cache regardless of took time
+                .put(IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED.getKey(), true)
         );
         Client client = client(node);
 
@@ -368,7 +371,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         SearchResponse resp;
 
         resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + 0)).get();
-        int requestSize = (int) getCacheSizeBytes(client, "index", TierType.ON_HEAP);
+        int requestSize = (int) getCacheSizeBytes(client, "index", CacheStoreType.ON_HEAP);
         assertTrue(heapSizeBytes > requestSize);
 
         int numOnDisk = 2;
@@ -376,11 +379,11 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         for (int i = 1; i < numRequests; i++) {
             resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello" + i)).get();
             assertSearchResponse(resp);
-            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.ON_HEAP, false);
-            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, TierType.DISK, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, CacheStoreType.ON_HEAP, false);
+            IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, CacheStoreType.DISK, false);
         }
 
-        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 2, TierType.DISK);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 2, CacheStoreType.DISK);
 
         // force refresh so that it creates stale keys in the cache for the cache cleaner to pick up.
         flushAndRefresh("index");
@@ -399,10 +402,10 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         Thread.sleep(sleepTime);
 
         // make sure we have 5 entries in disk.
-        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 5, TierType.DISK);
+        IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 5, CacheStoreType.DISK);
     }
 
-    private long getCacheSizeBytes(Client client, String index, TierType tierType) {
+    private long getCacheSizeBytes(Client client, String index, CacheStoreType tierType) {
         RequestCacheStats requestCacheStats = client.admin()
             .indices()
             .prepareStats(index)

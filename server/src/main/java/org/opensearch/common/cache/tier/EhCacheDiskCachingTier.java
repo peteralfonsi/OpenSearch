@@ -28,7 +28,9 @@ import org.opensearch.OpenSearchException;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
 import org.opensearch.common.cache.tier.keystore.RBMIntKeyLookupStore;
+import org.opensearch.common.cache.tier.listeners.TieredCacheRemovalListener;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
@@ -235,7 +237,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
             tookTime = System.nanoTime() - now;
         }
         DiskTierRequestStats stats = new DiskTierRequestStats(tookTime, reachedDisk);
-        return new CacheValue<>(value, TierType.DISK, stats);
+        return new CacheValue<>(value, CacheStoreType.DISK, stats);
     }
 
     @Override
@@ -264,7 +266,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     }
 
     @Override
-    public void setRemovalListener(RemovalListener<K, V> removalListener) {
+    public void setRemovalListener(TieredCacheRemovalListener<K, V> removalListener) {
         ehCacheEventListener.setRemovalListener(removalListener);
     }
 
@@ -285,8 +287,8 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     }
 
     @Override
-    public TierType getTierType() {
-        return TierType.DISK;
+    public CacheStoreType getCacheStoreType() {
+        return CacheStoreType.DISK;
     }
 
     @Override
@@ -307,7 +309,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
      */
     class EhCacheEventListener<K, V> implements CacheEventListener<K, byte[]> {
 
-        private Optional<RemovalListener<K, V>> removalListener;
+        private Optional<TieredCacheRemovalListener<K, V>> removalListener;
         // We need to pass the value serializer to this listener, as the removal listener is expecting
         // values of type K, V, not K, byte[]
         private Serializer<V, byte[]> valueSerializer;
@@ -316,7 +318,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
             this.valueSerializer = valueSerializer;
         }
 
-        public void setRemovalListener(RemovalListener<K, V> removalListener) {
+        public void setRemovalListener(TieredCacheRemovalListener<K, V> removalListener) {
             this.removalListener = Optional.ofNullable(removalListener);
         }
 
@@ -330,11 +332,11 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
                 case EVICTED:
                     this.removalListener.ifPresent(
                         listener -> listener.onRemoval(
-                            new RemovalNotification<>(
+                            new TieredCacheRemovalNotification<>(
                                 event.getKey(),
                                 valueSerializer.deserialize(event.getOldValue()),
                                 RemovalReason.EVICTED,
-                                TierType.DISK
+                                CacheStoreType.DISK
                             )
                         )
                     );
@@ -344,11 +346,11 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
                 case REMOVED:
                     this.removalListener.ifPresent(
                         listener -> listener.onRemoval(
-                            new RemovalNotification<>(
+                            new TieredCacheRemovalNotification<>(
                                 event.getKey(),
                                 valueSerializer.deserialize(event.getOldValue()),
                                 RemovalReason.INVALIDATED,
-                                TierType.DISK
+                                CacheStoreType.DISK
                             )
                         )
                     );
@@ -358,11 +360,11 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
                 case EXPIRED:
                     this.removalListener.ifPresent(
                         listener -> listener.onRemoval(
-                            new RemovalNotification<>(
+                            new TieredCacheRemovalNotification<>(
                                 event.getKey(),
                                 valueSerializer.deserialize(event.getOldValue()),
                                 RemovalReason.INVALIDATED,
-                                TierType.DISK
+                                CacheStoreType.DISK
                             )
                         )
                     );

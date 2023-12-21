@@ -39,7 +39,7 @@ public interface CachingTier<K, V> {
 
     int count();
 
-    CacheStoreType getTierType();
+    CacheStoreType getCacheStoreType();
 
     /**
      * Force any outstanding size-based and time-based evictions to occur

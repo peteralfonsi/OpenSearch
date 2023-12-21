@@ -672,7 +672,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             CleanupKey cleanupKey = new CleanupKey(key.entity, key.readerCacheKeyId);
             if (currentFullClean.contains(key.entity.getCacheIdentity()) || currentKeysToClean.contains(cleanupKey)) {
                 cachingTier.invalidate(key);
-                if(cachingTier.getTierType() == CacheStoreType.DISK) {
+                if(cachingTier.getCacheStoreType() == CacheStoreType.DISK) {
                     staleKeysInDiskCount.decrementAndGet();
                 }
             }

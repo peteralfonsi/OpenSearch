@@ -14,6 +14,9 @@ import org.opensearch.common.cache.tier.listeners.TieredCacheEventListener;
 import org.opensearch.common.cache.tier.listeners.TieredCacheRemovalListener;
 import org.opensearch.common.cache.tier.service.TieredCacheSpilloverStrategyService;
 import org.opensearch.common.metrics.CounterMetric;
+import org.opensearch.common.settings.ClusterSettings;
+import org.opensearch.common.settings.Settings;
+import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.util.ArrayList;
@@ -209,7 +212,10 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         Function<String, String> identityFunction = (String value) -> { return value; };
         TieredCacheSpilloverStrategyService<String, String> spilloverStrategyService = new TieredCacheSpilloverStrategyService.Builder<
             String,
-            String>().setOnHeapCachingTier(new MockOnHeapCacheTier<>(onHeapCacheSize)).setTieredCacheEventListener(eventListener).build();
+            String>().setOnHeapCachingTier(new MockOnHeapCacheTier<>(onHeapCacheSize))
+            .setTieredCacheEventListener(eventListener)
+            .setClusterSettings(EhCacheDiskCachingTierTests.getClusterSettings())
+            .build();
         int numOfItems = randomIntBetween(onHeapCacheSize + 1, onHeapCacheSize * 3);
         for (int iter = 0; iter < numOfItems; iter++) {
             TieredCacheLoader<String, String> tieredCacheLoader = getTieredCacheLoader();
@@ -333,10 +339,14 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
             policiesToUse = policies;
         }
 
-        return new TieredCacheSpilloverStrategyService.Builder<String, String>().setOnHeapCachingTier(openSearchOnHeapCache)
+        ClusterSettings clusterSettings = EhCacheDiskCachingTierTests.getClusterSettings();
+
+        return new TieredCacheSpilloverStrategyService.Builder<String, String>()
+            .setOnHeapCachingTier(openSearchOnHeapCache)
             .setOnDiskCachingTier(diskCache)
             .setTieredCacheEventListener(cacheEventListener)
             .withPolicies(policiesToUse)
+            .setClusterSettings(clusterSettings)
             .build();
     }
 
@@ -353,7 +363,7 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
 
         @Override
         public CacheValue<V> get(K key) {
-            return new CacheValue(this.onHeapCacheTier.get(key), TierType.ON_HEAP, new OnHeapTierRequestStats());
+            return new CacheValue<V>(this.onHeapCacheTier.get(key), CacheStoreType.ON_HEAP, new OnHeapTierRequestStats());
         }
 
         @Override
@@ -417,7 +427,7 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-        public CacheStoreType getTierType() {
+        public CacheStoreType getCacheStoreType() {
             return CacheStoreType.ON_HEAP;
         }
 
@@ -438,13 +448,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-<<<<<<< HEAD
         public void onMiss(K key, CacheValue<V> cacheValue) {
             enumMap.get(cacheValue.getSource()).missCount.inc();
-=======
-        public void onMiss(K key, CacheStoreType cacheStoreType) {
-            enumMap.get(cacheStoreType).missCount.inc();
->>>>>>> 2e9c47836bf (Addressing comments)
         }
 
         @Override
@@ -455,13 +460,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-<<<<<<< HEAD
         public void onHit(K key, CacheValue<V> cacheValue) {
             enumMap.get(cacheValue.getSource()).hitCount.inc();
-=======
-        public void onHit(K key, V value, CacheStoreType cacheStoreType) {
-            enumMap.get(cacheStoreType).hitCount.inc();
->>>>>>> 2e9c47836bf (Addressing comments)
         }
 
         @Override
@@ -490,7 +490,7 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
 
         @Override
         public CacheValue<V> get(K key) {
-            return new CacheValue<>(this.diskTier.get(key), TierType.DISK, new DiskTierRequestStats(0L, true));
+            return new CacheValue<>(this.diskTier.get(key), CacheStoreType.DISK, new DiskTierRequestStats(0L, true));
         }
 
         @Override
@@ -554,7 +554,7 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-        public CacheStoreType getTierType() {
+        public CacheStoreType getCacheStoreType() {
             return CacheStoreType.DISK;
         }
 

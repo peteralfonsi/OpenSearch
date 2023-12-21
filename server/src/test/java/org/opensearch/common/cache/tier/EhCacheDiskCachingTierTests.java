@@ -10,6 +10,8 @@ package org.opensearch.common.cache.tier;
 
 import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.RemovalListener;
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
+import org.opensearch.common.cache.tier.listeners.TieredCacheRemovalListener;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
@@ -63,7 +65,7 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
                 CacheValue<String> value = ehCacheDiskCachingTierNew.get(entry.getKey());
                 assertEquals(entry.getValue(), value.value);
-                assertEquals(TierType.DISK, value.getSource());
+                assertEquals(CacheStoreType.DISK, value.getSource());
                 assertTrue(((DiskTierRequestStats) value.getStats()).getRequestReachedDisk());
                 assertTrue(((DiskTierRequestStats) value.getStats()).getRequestGetTimeNanos() > 0);
             }
@@ -273,7 +275,7 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
         }
     }
 
-    private ClusterSettings getClusterSettings() {
+    public static ClusterSettings getClusterSettings() {
         HashSet<Setting<?>> clusterSettingsSet = new HashSet<>();
         for (Setting<?> s : ClusterSettings.FEATURE_FLAGGED_CLUSTER_SETTINGS.get(List.of(FeatureFlags.TIERED_CACHING))) {
             clusterSettingsSet.add(s);
@@ -281,7 +283,7 @@ public class EhCacheDiskCachingTierTests extends OpenSearchSingleNodeTestCase {
         return new ClusterSettings(Settings.EMPTY, clusterSettingsSet);
     }
 
-    private RemovalListener<String, String> removalListener(AtomicInteger counter) {
+    private TieredCacheRemovalListener<String, String> removalListener(AtomicInteger counter) {
         return notification -> counter.incrementAndGet();
     }
 
