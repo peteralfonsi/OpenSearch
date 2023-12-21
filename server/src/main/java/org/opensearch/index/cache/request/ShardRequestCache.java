@@ -91,7 +91,13 @@ public final class ShardRequestCache {
     }
 
     public void onCached(Accountable key, BytesReference value, CacheStoreType cacheStoreType) {
-        defaultStatsHolder.get(cacheStoreType).totalMetric.inc(key.ramBytesUsed() + value.ramBytesUsed());
+        long valueByteSize;
+        if (cacheStoreType == CacheStoreType.DISK) {
+            valueByteSize = value.length(); // Ehcache trims trailing zeros from incoming byte[]
+        } else {
+            valueByteSize = value.ramBytesUsed();
+        }
+        defaultStatsHolder.get(cacheStoreType).totalMetric.inc(key.ramBytesUsed() + valueByteSize);
         defaultStatsHolder.get(cacheStoreType).entries.inc();
     }
 

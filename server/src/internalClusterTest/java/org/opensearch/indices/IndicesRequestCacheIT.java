@@ -738,4 +738,15 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .getRequestCache();
         assertEquals(expectedEvictions, requestCacheStats.getEvictions(cacheStoreType));
     }
+
+    protected static void assertCacheSizeZero(Client client, String index, CacheStoreType cacheStoreType) {
+        RequestCacheStats requestCacheStats = client.admin()
+            .indices()
+            .prepareStats(index)
+            .setRequestCache(true)
+            .get()
+            .getTotal()
+            .getRequestCache();
+        assertEquals(0, requestCacheStats.getMemorySizeInBytes(cacheStoreType));
+    }
 }

@@ -276,11 +276,13 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
             IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, CacheStoreType.DISK, false);
         }
         IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 2, CacheStoreType.DISK);
+        System.out.println("Size before cache clear = " + getCacheSize(client, "index", CacheStoreType.DISK));
 
         // call clear cache api
         client.admin().indices().prepareClearCache().setIndices("index").setRequestCache(true).get();
         // fetch the stats again
         IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 0, CacheStoreType.DISK);
+        IndicesRequestCacheIT.assertCacheSizeZero(client, "index", CacheStoreType.DISK);
     }
 
     // When entire disk tier is stale, test whether cache cleaner cleans up everything from disk
@@ -340,6 +342,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         // by now cache cleaner would have run and cleaned up stale keys
         // fetch the stats again
         IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 0, CacheStoreType.DISK);
+        IndicesRequestCacheIT.assertCacheSizeZero(client, "index", CacheStoreType.DISK);
     }
 
     // When part of disk tier is stale, test whether cache cleaner cleans up only stale items from disk
@@ -437,5 +440,17 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         assertTrue(tookTime >= totalGetTimeLowerBound || totalGetTimeLowerBound < 0);
         assertTrue(tookTime <= totalGetTimeUpperBound || totalGetTimeUpperBound < 0);
         return tookTime; // Return for use in next check
+    }
+
+    private long getCacheSize(Client client, String index, CacheStoreType cacheStoreType) {
+        // for debug purposes
+        RequestCacheStats requestCacheStats = client.admin()
+            .indices()
+            .prepareStats(index)
+            .setRequestCache(true)
+            .get()
+            .getTotal()
+            .getRequestCache();
+        return requestCacheStats.getMemorySizeInBytes();
     }
 }
