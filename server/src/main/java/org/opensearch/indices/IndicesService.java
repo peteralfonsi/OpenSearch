@@ -404,6 +404,11 @@ public class IndicesService extends AbstractLifecycleComponent
 
     private final SearchRequestStats searchRequestStats;
 
+    // Moved this computation out here to prevent recomputing the size over and over when initializing cache entities,
+    // now that IndexShardCacheEntity has to be non-static for serialization purposes
+    // (this was having significant performance impact)
+    protected static long indexShardCacheEntitySize = RamUsageEstimator.shallowSizeOfInstance(IndexShardCacheEntity.class);
+
     @Override
     protected void doStart() {
         // Start threads that will manage cleaning the field data and request caches periodically
@@ -1864,7 +1869,7 @@ public class IndicesService extends AbstractLifecycleComponent
      * @opensearch.internal
      */
     public final class IndexShardCacheEntity extends AbstractIndexShardCacheEntity {
-        private final long BASE_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(IndexShardCacheEntity.class);
+        private final long BASE_RAM_BYTES_USED = IndicesService.indexShardCacheEntitySize;
         private final IndexShard indexShard;
 
         public IndexShardCacheEntity(IndexShard indexShard) {
