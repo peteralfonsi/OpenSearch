@@ -8,10 +8,12 @@
 
 package org.opensearch.common.cache.tier;
 
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
+
 /**
  * An interface for single-request tier-specific stats, which are produced on each request from a cache tier
  * and then added to the correct shard's overall StatsHolder for the tier.
  */
 public interface TierRequestStats {
-    TierType getTierType();
+    CacheStoreType getCacheStoreType();
 }

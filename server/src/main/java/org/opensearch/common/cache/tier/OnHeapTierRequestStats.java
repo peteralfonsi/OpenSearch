@@ -8,12 +8,14 @@
 
 package org.opensearch.common.cache.tier;
 
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
+
 /**
  * A class created by on-heap tier implementations containing on-heap-specific stats for a single request.
  */
 public class OnHeapTierRequestStats implements TierRequestStats {
     @Override
-    public TierType getTierType() {
-        return TierType.ON_HEAP;
+    public CacheStoreType getCacheStoreType() {
+        return CacheStoreType.ON_HEAP;
     }
 }

@@ -8,6 +8,8 @@
 
 package org.opensearch.common.cache.tier;
 
+import org.opensearch.common.cache.tier.enums.CacheStoreType;
+
 /**
  * A class created by disk tier implementations containing disk-specific stats for a single request.
  */
@@ -22,8 +24,8 @@ public class DiskTierRequestStats implements TierRequestStats {
     }
 
     @Override
-    public TierType getTierType() {
-        return TierType.DISK;
+    public CacheStoreType getCacheStoreType() {
+        return CacheStoreType.DISK;
     }
 
     public long getRequestGetTimeNanos() {
