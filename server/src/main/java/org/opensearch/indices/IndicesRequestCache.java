@@ -411,6 +411,9 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         }
     }
 
+    /**
+     * Status keeping track of whether a shard's stale cache entries have been cleaned up in the heap/disk tiers.
+     */
     public class CleanupStatus {
         public boolean cleanedInHeap;
         public boolean cleanedOnDisk;
