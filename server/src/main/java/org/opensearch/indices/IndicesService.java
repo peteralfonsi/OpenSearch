@@ -1883,6 +1883,11 @@ public class IndicesService extends AbstractLifecycleComponent
             this.indexShard = Optional.ofNullable(indexService).map(indexService1 -> indexService1.getShard(shardId)).orElse(null);
         }
 
+        public IndexShardCacheEntity(Index index, int shardId) { // Used for kryo serialization
+            IndexService indexService = indices.get(index.getUUID());
+            this.indexShard = Optional.ofNullable(indexService).map(indexService1 -> indexService1.getShard(shardId)).orElse(null);
+        }
+
         @Override
         protected ShardRequestCache stats() {
             return indexShard.requestCache();
@@ -1909,6 +1914,10 @@ public class IndicesService extends AbstractLifecycleComponent
         public void writeTo(StreamOutput out) throws IOException {
             out.writeOptionalWriteable(indexShard.shardId().getIndex());
             out.writeVInt(indexShard.shardId().id());
+        }
+
+        public IndexShard getIndexShard() {
+            return indexShard;
         }
     }
 

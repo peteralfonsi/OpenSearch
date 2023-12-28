@@ -44,7 +44,7 @@ public class IRCKeyWriteableSerializerTests extends OpenSearchSingleNodeTestCase
         }
     }
 
-    private IndicesRequestCache.Key getRandomIRCKey(
+    static IndicesRequestCache.Key getRandomIRCKey(
         int valueLength,
         Random random,
         IndicesRequestCache irc,
