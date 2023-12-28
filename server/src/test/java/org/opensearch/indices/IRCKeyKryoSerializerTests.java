@@ -27,13 +27,14 @@ import java.util.concurrent.ThreadPoolExecutor;
 
 public class IRCKeyKryoSerializerTests extends OpenSearchSingleNodeTestCase {
     public void testSerializer() throws Exception {
+        int numComponentSerializers = 5;
         ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         IndicesService indicesService = getInstanceFromNode(IndicesService.class);
         IndicesRequestCache irc = new IndicesRequestCache(Settings.EMPTY, indicesService, dummyClusterSettings);
         IndexService indexService = createIndex("test");
         IndexShard indexShard = indexService.getShardOrNull(0);
         IndicesService.IndexShardCacheEntity entity = indicesService.new IndexShardCacheEntity(indexShard);
-        IRCKeyKryoSerializer ser = new IRCKeyKryoSerializer(indicesService, irc);
+        IRCKeyPooledKryoSerializer ser = new IRCKeyPooledKryoSerializer(indicesService, irc, numComponentSerializers);
 
         int NUM_KEYS = 1000;
         Random rand = Randomness.get();
@@ -50,13 +51,14 @@ public class IRCKeyKryoSerializerTests extends OpenSearchSingleNodeTestCase {
     }
 
     public void testConcurrency() throws Exception {
+        int numComponentSerializers = 5;
         ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         IndicesService indicesService = getInstanceFromNode(IndicesService.class);
         IndicesRequestCache irc = new IndicesRequestCache(Settings.EMPTY, indicesService, dummyClusterSettings);
         IndexService indexService = createIndex("test");
         IndexShard indexShard = indexService.getShardOrNull(0);
         IndicesService.IndexShardCacheEntity entity = indicesService.new IndexShardCacheEntity(indexShard);
-        IRCKeyKryoSerializer ser = new IRCKeyKryoSerializer(indicesService, irc);
+        IRCKeyPooledKryoSerializer ser = new IRCKeyPooledKryoSerializer(indicesService, irc, numComponentSerializers);
 
         Random rand = Randomness.get();
 

@@ -40,7 +40,7 @@ public class IRCKeySerializerSpeedTests extends OpenSearchSingleNodeTestCase {
         IndicesService.IndexShardCacheEntity entity = indicesService.new IndexShardCacheEntity(indexShard);
         Random rand = Randomness.get();
 
-        IRCKeyKryoSerializer kryoSer = new IRCKeyKryoSerializer(indicesService, irc);
+        IRCKeyPooledKryoSerializer kryoSer = new IRCKeyPooledKryoSerializer(indicesService, irc, 5);
         IRCKeyWriteableSerializer writeableSer = new IRCKeyWriteableSerializer(irc);
 
         int NUM_ITER = 1_000_000;
@@ -84,13 +84,13 @@ public class IRCKeySerializerSpeedTests extends OpenSearchSingleNodeTestCase {
         IndicesService.IndexShardCacheEntity entity = indicesService.new IndexShardCacheEntity(indexShard);
         Random rand = Randomness.get();
 
-        IRCKeyKryoSerializer kryoSer = new IRCKeyKryoSerializer(indicesService, irc);
+        IRCKeyPooledKryoSerializer kryoSer = new IRCKeyPooledKryoSerializer(indicesService, irc, 32);
         IRCKeyWriteableSerializer writeableSer = new IRCKeyWriteableSerializer(irc);
 
-        int numThreads = 32; // total threads, 16 for each serializer
+        int numThreads = 6; // total threads, 3 for each serializer
         int totalKeys = 65_536; // total keys for each serializer to process, should be a multiple of numThreads
         int keysPerThread = 2 * totalKeys / (numThreads);
-        int valueLength = 2048;
+        int valueLength = 1024;
 
         AtomicLong kryoSerializeTimeNanos = new AtomicLong(0L);
         AtomicLong writeableSerializeTimeNanos = new AtomicLong(0L);

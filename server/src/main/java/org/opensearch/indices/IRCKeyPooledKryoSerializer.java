@@ -11,104 +11,86 @@ package org.opensearch.indices;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
+import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.tier.Serializer;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.index.Index;
 
 import java.nio.ByteBuffer;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.Random;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * A serializer which maintains multiple Kryo objects that can be accessed concurrently.
+ * A serializer which maintains multiple component Kryo serializers. Incoming requests are  routed
+ * to one of these, and must wait for its synchronized serialize/deserialize methods to become available.
  */
 public class IRCKeyPooledKryoSerializer implements Serializer<IndicesRequestCache.Key, byte[]> {
 
     private final IndicesService indicesService;
     private final IndicesRequestCache irc;
     private final int INITIAL_OUTPUT_BUFFER_SIZE = 1024; // The default size of the Output buffer, but it will grow if needed
-    private final int kryoConcurrency; // The number of Kryo objects to maintain to be used concurrently
+    private final int numComponentSerializers; // The number of Kryo objects to maintain
     // TODO: Should this be AtomicBoolean or is the ConcurrentMap enough?
 
-    // These maps hold the actual Kryo objects, as well as which ones are available
-    private final ConcurrentMap<Integer, KryoObjects> availabilityMap;
-    private final long backoffTimeNanos = 50_000L; // 50 microseconds - tweak
+    private final ComponentKryoSerializer[] componentSerializers;
+    private AtomicInteger nextComponentSerializerToAssign;
 
 
-    public IRCKeyPooledKryoSerializer(IndicesService indicesService, IndicesRequestCache irc, int kryoConcurrency) {
+    public IRCKeyPooledKryoSerializer(IndicesService indicesService, IndicesRequestCache irc, int numComponentSerializers) {
         this.indicesService = indicesService;
         this.irc = irc;
-        assert kryoConcurrency >= 1;
-        this.kryoConcurrency = kryoConcurrency;
-        this.availabilityMap = new ConcurrentHashMap<>();
-        for (int i = 0; i < kryoConcurrency; i++) {
-            availabilityMap.put(i, new KryoObjects());
+        assert numComponentSerializers >= 1;
+        this.numComponentSerializers = numComponentSerializers;
+        this.componentSerializers = new ComponentKryoSerializer[numComponentSerializers];
+        for (int i = 0; i < numComponentSerializers; i++) {
+            componentSerializers[i] = new ComponentKryoSerializer();
         }
+        this.nextComponentSerializerToAssign = new AtomicInteger(0);
     }
 
     /**
-     * Gets the index of an available Kryo object for serialization or deserialization.
-     * Because it's synchronized, only one index will ever try to be obtained at a time.
-     * This index will be released once the serialization or deserialization function is done.
-     * @return the index
+     * Returns a component serializer to use. To pick, we just cycle through them.
      */
-    private synchronized KryoObjects getAvailableKryoObjects() {
-        for (int i = 0; i < kryoConcurrency; i++) {
-            if (availabilityMap.get(i).getAvailability()) {
-                availabilityMap.get(i).setUnavailable();
-                return availabilityMap.get(i);
-            }
+    private ComponentKryoSerializer assignComponentSerializer() {
+        int index = nextComponentSerializerToAssign.get();
+        int nextIndex = index + 1;
+        if (nextIndex >= numComponentSerializers) {
+            nextIndex = 0;
         }
-        return null; // If nothing is currently available
+        nextComponentSerializerToAssign.set(nextIndex);
+        return componentSerializers[index];
     }
 
     @Override
     public byte[] serialize(IndicesRequestCache.Key object) {
-        // This method has to be gated by getAvailableKryoObjects().
-        KryoObjects kryoObjects = getAvailableKryoObjects();
-        if (kryoObjects == null) {
-            // Try again after backoff period
-            Thread.sleep()
-        }
-        return new byte[0];
+        ComponentKryoSerializer componentSerializer = assignComponentSerializer();
+        return componentSerializer.serialize(object);
     }
 
     @Override
     public IndicesRequestCache.Key deserialize(byte[] bytes) {
-        return null;
+        ComponentKryoSerializer componentSerializer = assignComponentSerializer();
+        return componentSerializer.deserialize(bytes);
     }
 
     @Override
     public boolean equals(IndicesRequestCache.Key object, byte[] bytes) {
-        return false;
+        IndicesRequestCache.Key deserialized = deserialize(bytes); // Deserialization is ~30% faster than serialization
+        return deserialized.equals(object);
     }
 
     /**
-     * A wrapper class for a Kryo, Output, and Input that are all used together.
+     * An individual serializer with synchronized serialize and deserialize methods.
      */
-     class KryoObjects {
+     class ComponentKryoSerializer {
         private Kryo kryo;
         private Output output;
         private Input input;
-        private AtomicBoolean isAvailable;
-        //private final IndicesService indicesService;
-        //private final IndicesRequestCache irc;
-        public KryoObjects() {
-            //this.indicesService = indicesService;
-            //this.irc = irc;
+        public ComponentKryoSerializer() {
             this.kryo = new Kryo();
             kryo.register(byte[].class);
             this.output = new Output(INITIAL_OUTPUT_BUFFER_SIZE, -1);
             this.input = new Input();
-            this.isAvailable = new AtomicBoolean(true);
-        }
-        public boolean getAvailability() {
-            return isAvailable.get();
-        }
-
-        public void setUnavailable() {
-            isAvailable.set(false);
         }
 
         public synchronized byte[] serialize(IndicesRequestCache.Key object) {
