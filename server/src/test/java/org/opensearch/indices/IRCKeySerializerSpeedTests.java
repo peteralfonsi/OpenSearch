@@ -88,7 +88,7 @@ public class IRCKeySerializerSpeedTests extends OpenSearchSingleNodeTestCase {
         IRCKeyWriteableSerializer writeableSer = new IRCKeyWriteableSerializer(irc);
 
         int numThreads = 6; // total threads, 3 for each serializer
-        int totalKeys = 65_536; // total keys for each serializer to process, should be a multiple of numThreads
+        int totalKeys = 1_048_576; // total keys for each serializer to process, should be a multiple of numThreads
         int keysPerThread = 2 * totalKeys / (numThreads);
         int valueLength = 1024;
 

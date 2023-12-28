@@ -717,7 +717,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
             .setStoragePath(STORAGE_PATH)
             //.setKeySerializer(new IRCKeyWriteableSerializer(this))
-            .setKeySerializer(new IRCKeyKryoSerializer(indicesService, this))
+            .setKeySerializer(new IRCKeyPooledKryoSerializer(indicesService, this, 32))
             .setValueSerializer(new BytesReferenceSerializer())
             .build();
     }
