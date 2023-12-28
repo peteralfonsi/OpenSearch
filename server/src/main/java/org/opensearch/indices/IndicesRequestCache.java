@@ -164,10 +164,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     }
 
     @Override
-<<<<<<< HEAD
-    public void onCached(Key key, BytesReference value, TierType tierType) {
-        key.entity.onCached(key, value, tierType);
-=======
     public void onCached(Key key, BytesReference value, CacheStoreType cacheStoreType) {
         key.entity.onCached(key, value, cacheStoreType);
         updateDiskCleanupKeyToCountMap(new CleanupKey(key.entity, key.readerCacheKeyId), cacheStoreType);
@@ -241,7 +237,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         if (countMap.isEmpty()) {
             diskCleanupKeyToCountMap.remove(shardId);
         }
->>>>>>> 85c3d799000 (Addressing comments)
     }
 
     BytesReference getOrCompute(
@@ -318,6 +313,14 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             loaded = true;
             return value;
         }
+    }
+
+    /**
+     * Status keeping track of whether a shard's stale cache entries have been cleaned up in the heap/disk tiers.
+     */
+    public class CleanupStatus {
+        public boolean cleanedInHeap;
+        public boolean cleanedOnDisk;
     }
 
     /**
