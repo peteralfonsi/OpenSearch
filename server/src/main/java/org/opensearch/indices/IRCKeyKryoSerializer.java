@@ -25,7 +25,7 @@ public class IRCKeyKryoSerializer implements Serializer<IndicesRequestCache.Key,
     private final IndicesService indicesService;
     private final IndicesRequestCache irc;
 
-    private Kryo kryo = null;
+    private Kryo kryo;
     private final Output output;
     private final Input input;
 
@@ -40,9 +40,6 @@ public class IRCKeyKryoSerializer implements Serializer<IndicesRequestCache.Key,
 
     private Kryo getNewKryo() {
         Kryo kryo = new Kryo();
-
-        // see https://github.com/EsotericSoftware/kryo/issues/885
-        kryo.register(String.class);
         kryo.register(byte[].class);
         return kryo;
     }
@@ -55,20 +52,8 @@ public class IRCKeyKryoSerializer implements Serializer<IndicesRequestCache.Key,
         return new Input();
     }
 
-    private void checkNullKryo() {
-        // It's unclear why, but if we try to instantiate the Kryo during setup, it fails with error
-        // java.lang.NoClassDefFoundError: org/objenesis/strategy/InstantiatorStrategy
-        // If we instead instantiate after the cluster is running, when the Kryo is first needed, there's no error
-        // :(
-        if (this.kryo == null) {
-            this.kryo = getNewKryo();
-        }
-    }
     @Override
     public synchronized byte[] serialize(IndicesRequestCache.Key object) {
-        //Kryo kryo = getNewKryo();
-        //Output output = getNewOutput();
-        //checkNullKryo();
         output.setBuffer(new byte[INITIAL_OUTPUT_BUFFER_SIZE], -1); // Should this go here??
         // Duplicate what we need to write in writeTo of Key, so we dont serialize the whole IndicesService
 
@@ -78,14 +63,12 @@ public class IRCKeyKryoSerializer implements Serializer<IndicesRequestCache.Key,
         //kryo.writeObject(output, entity.getIndexShard().shardId().getIndex());
         Index index = entity.getIndexShard().shardId().getIndex();
         // Cannot reconstruct Index (no zero-arg constructor), so write its two fields instead
-
-        kryo.writeObject(output, index.getName());
-        kryo.writeObject(output, index.getUUID());
-        //kryo.writeObject(output, entity.getIndexShard().shardId().id());
+        output.writeString(index.getName());
+        output.writeString(index.getUUID());
         output.writeInt(entity.getIndexShard().shardId().id());
 
         // write readerCacheKeyId
-        kryo.writeObject(output, object.readerCacheKeyId);
+        output.writeString(object.readerCacheKeyId);
 
         // write only the byte[] within the ByteReference value
         kryo.writeObject(output, BytesReference.toBytes(object.value));
@@ -95,16 +78,13 @@ public class IRCKeyKryoSerializer implements Serializer<IndicesRequestCache.Key,
 
     @Override
     public synchronized IndicesRequestCache.Key deserialize(byte[] bytes) {
-        //Kryo kryo = getNewKryo();
-        //Input input = getNewInput();
-        //checkNullKryo();
         input.setBuffer(bytes);
-        String indexName = kryo.readObject(input, String.class);
-        String indexUUID = kryo.readObject(input, String.class);
+        String indexName = input.readString();
+        String indexUUID = input.readString();
         Index index = new Index(indexName, indexUUID);
         int shardIdValue = input.readInt();
         IndicesService.IndexShardCacheEntity entity = indicesService.new IndexShardCacheEntity(index, shardIdValue);
-        String readerCacheKeyId = kryo.readObject(input, String.class); //input.readString();
+        String readerCacheKeyId = input.readString();
         byte[] valueArr = kryo.readObject(input, byte[].class);
         BytesReference value = BytesReference.fromByteBuffer(ByteBuffer.wrap(valueArr));
         return irc.new Key(entity, value, readerCacheKeyId);
@@ -112,7 +92,7 @@ public class IRCKeyKryoSerializer implements Serializer<IndicesRequestCache.Key,
 
     @Override
     public boolean equals(IndicesRequestCache.Key object, byte[] bytes) {
-        byte[] serialized = serialize(object);
-        return Arrays.equals(serialized, bytes); // Does this work? Check
+        IndicesRequestCache.Key deserialized = deserialize(bytes); // Deserialization is ~30% faster than serialization
+        return deserialized.equals(object);
     }
 }
