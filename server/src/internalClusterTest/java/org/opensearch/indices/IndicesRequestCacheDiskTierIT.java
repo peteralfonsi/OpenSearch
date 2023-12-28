@@ -276,7 +276,6 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
             IndicesRequestCacheIT.assertCacheState(client, "index", 0, i + 1, CacheStoreType.DISK, false);
         }
         IndicesRequestCacheIT.assertNumCacheEntries(client, "index", 2, CacheStoreType.DISK);
-        System.out.println("Size before cache clear = " + getCacheSize(client, "index", CacheStoreType.DISK));
 
         // call clear cache api
         client.admin().indices().prepareClearCache().setIndices("index").setRequestCache(true).get();
