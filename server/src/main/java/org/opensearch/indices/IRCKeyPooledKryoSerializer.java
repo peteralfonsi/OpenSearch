@@ -92,7 +92,7 @@ public class IRCKeyPooledKryoSerializer implements Serializer<IndicesRequestCach
             this.input = new Input();
         }
 
-        public byte[] serialize(IndicesRequestCache.Key object) {
+        public synchronized byte[] serialize(IndicesRequestCache.Key object) {
 
             // Duplicate what we need to write in writeTo of Key, so we dont serialize the whole IndicesService
 
@@ -102,43 +102,32 @@ public class IRCKeyPooledKryoSerializer implements Serializer<IndicesRequestCach
             //kryo.writeObject(output, entity.getIndexShard().shardId().getIndex());
             Index index = entity.getIndexShard().shardId().getIndex();
             // Cannot reconstruct Index (no zero-arg constructor), so write its two fields instead
-            synchronized (this) {
-                output.setBuffer(new byte[INITIAL_OUTPUT_BUFFER_SIZE], -1);
-                output.writeString(index.getName());
-                output.writeString(index.getUUID());
-                output.writeInt(entity.getIndexShard().shardId().id());
+            output.setBuffer(new byte[INITIAL_OUTPUT_BUFFER_SIZE], -1);
+            output.writeString(index.getName());
+            output.writeString(index.getUUID());
+            output.writeInt(entity.getIndexShard().shardId().id());
 
-                // write readerCacheKeyId
-                output.writeString(object.readerCacheKeyId);
+            // write readerCacheKeyId
+            output.writeString(object.readerCacheKeyId);
 
-                // write only the byte[] within the ByteReference value
-                kryo.writeObject(output, BytesReference.toBytes(object.value));
+            // write only the byte[] within the ByteReference value
+            kryo.writeObject(output, BytesReference.toBytes(object.value));
 
-                return output.getBuffer();
-            }
+            return output.getBuffer();
         }
 
         public synchronized IndicesRequestCache.Key deserialize(byte[] bytes) {
-            String indexName;
-            String indexUUID;
-            int shardIdValue;
-            String readerCacheKeyId;
-            byte[] valueArr;
-            synchronized (this) {
-                input.setBuffer(bytes);
-                indexName = input.readString();
-                indexUUID = input.readString();
-                shardIdValue = input.readInt();
-                readerCacheKeyId = input.readString();
-                valueArr = kryo.readObject(input, byte[].class);
-            }
+            input.setBuffer(bytes);
+            String indexName = input.readString();
+            String indexUUID = input.readString();
+            int shardIdValue = input.readInt();
+            String readerCacheKeyId = input.readString();
+            byte[] valueArr = kryo.readObject(input, byte[].class);
 
             Index index = new Index(indexName, indexUUID);
             IndicesService.IndexShardCacheEntity entity = indicesService.new IndexShardCacheEntity(index, shardIdValue);
             BytesReference value = BytesReference.fromByteBuffer(ByteBuffer.wrap(valueArr));
             return irc.new Key(entity, value, readerCacheKeyId);
         }
-
-
     }
 }
