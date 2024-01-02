@@ -55,6 +55,7 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.ConcurrentCollections;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.common.unit.ByteSizeValue;
 
@@ -331,6 +332,13 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             result = 31 * result + readerCacheKeyId.hashCode();
             result = 31 * result + value.hashCode();
             return result;
+        }
+
+        @Override
+        public void writeTo(StreamOutput out) throws IOException {
+            out.writeOptionalWriteable(entity);
+            out.writeOptionalString(readerCacheKeyId);
+            out.writeBytesReference(value);
         }
     }
 
