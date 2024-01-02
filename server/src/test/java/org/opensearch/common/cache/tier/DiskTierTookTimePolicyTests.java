@@ -46,7 +46,6 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.common.Strings;
 import org.opensearch.core.common.bytes.BytesReference;
-import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.indices.IndicesRequestCache;
 import org.opensearch.search.DocValueFormat;
