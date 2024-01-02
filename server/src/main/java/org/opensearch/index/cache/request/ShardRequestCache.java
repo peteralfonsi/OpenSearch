@@ -49,6 +49,7 @@ public final class ShardRequestCache {
     final CounterMetric missCount = new CounterMetric();
 
     public RequestCacheStats stats() {
+        // TODO: Change RequestCacheStats to support disk tier stats.
         return new RequestCacheStats(totalMetric.count(), evictionsMetric.count(), hitCount.count(), missCount.count());
     }
 

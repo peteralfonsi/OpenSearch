@@ -34,6 +34,7 @@ package org.opensearch.indices;
 
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
+import org.opensearch.common.cache.tier.TierType;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.index.cache.request.ShardRequestCache;
 import org.opensearch.index.shard.IndexShard;
@@ -51,22 +52,26 @@ abstract class AbstractIndexShardCacheEntity implements IndicesRequestCache.Cach
     protected abstract ShardRequestCache stats();
 
     @Override
-    public final void onCached(IndicesRequestCache.Key key, BytesReference value) {
+    public final void onCached(IndicesRequestCache.Key key, BytesReference value, TierType tierType) {
+        // TODO: Handle tierType in stats
         stats().onCached(key, value);
     }
 
     @Override
-    public final void onHit() {
+    public final void onHit(TierType tierType) {
+        // TODO: Handle tierType in stats
         stats().onHit();
     }
 
     @Override
-    public final void onMiss() {
+    public final void onMiss(TierType tierType) {
+        // TODO: Handle tierType in stats
         stats().onMiss();
     }
 
     @Override
     public final void onRemoval(RemovalNotification<IndicesRequestCache.Key, BytesReference> notification) {
+        // TODO: Handle tierType in stats
         stats().onRemoval(notification.getKey(), notification.getValue(), notification.getRemovalReason() == RemovalReason.EVICTED);
     }
 }
