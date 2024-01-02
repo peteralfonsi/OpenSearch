@@ -124,6 +124,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         close();
         cacheManager = buildCacheManager();
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
+        int i = 0;
     }
 
     private PersistentCacheManager buildCacheManager() {
