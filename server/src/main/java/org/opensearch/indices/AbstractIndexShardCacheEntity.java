@@ -34,6 +34,7 @@ package org.opensearch.indices;
 
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
+import org.opensearch.common.cache.tier.CacheValue;
 import org.opensearch.common.cache.tier.TierType;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.index.cache.request.ShardRequestCache;
@@ -53,25 +54,27 @@ abstract class AbstractIndexShardCacheEntity implements IndicesRequestCache.Cach
 
     @Override
     public final void onCached(IndicesRequestCache.Key key, BytesReference value, TierType tierType) {
-        // TODO: Handle tierType in stats
-        stats().onCached(key, value);
+        stats().onCached(key, value, tierType);
     }
 
     @Override
-    public final void onHit(TierType tierType) {
-        // TODO: Handle tierType in stats
-        stats().onHit();
+    public final void onHit(CacheValue<BytesReference> cacheValue) {
+        stats().onHit(cacheValue);
     }
 
     @Override
-    public final void onMiss(TierType tierType) {
-        // TODO: Handle tierType in stats
-        stats().onMiss();
+    public final void onMiss(CacheValue<BytesReference> cacheValue) {
+        stats().onMiss(cacheValue);
     }
 
     @Override
     public final void onRemoval(RemovalNotification<IndicesRequestCache.Key, BytesReference> notification) {
         // TODO: Handle tierType in stats
-        stats().onRemoval(notification.getKey(), notification.getValue(), notification.getRemovalReason() == RemovalReason.EVICTED);
+        stats().onRemoval(
+            notification.getKey(),
+            notification.getValue(),
+            notification.getRemovalReason() == RemovalReason.EVICTED,
+            notification.getTierType()
+        );
     }
 }
