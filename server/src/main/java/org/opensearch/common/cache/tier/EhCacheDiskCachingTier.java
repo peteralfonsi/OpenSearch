@@ -11,6 +11,7 @@ package org.opensearch.common.cache.tier;
 import org.ehcache.core.spi.service.FileBasedPersistenceContext;
 import org.ehcache.spi.serialization.SerializerException;
 import org.opensearch.OpenSearchException;
+import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
@@ -26,6 +27,8 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Random;
+import java.util.UUID;
 import java.util.function.Supplier;
 
 import org.ehcache.Cache;
@@ -50,7 +53,7 @@ import org.ehcache.impl.config.store.disk.OffHeapDiskStoreConfiguration;
 public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
 
     // A Cache manager can create many caches.
-    private static PersistentCacheManager cacheManager = null;
+    private PersistentCacheManager cacheManager;
 
     // Disk cache
     private Cache<K, byte[]> cache;
@@ -104,7 +107,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         this.valueSerializer = Objects.requireNonNull(builder.valueSerializer, "Value serializer shouldn't be null");
         this.ehCacheEventListener = new EhCacheEventListener<K, V>(this.valueSerializer);
         this.maxWeightInBytes = builder.maxWeightInBytes;
-        this.storagePath = Objects.requireNonNull(builder.storagePath, "Storage path shouldn't be null");
+        this.storagePath = Objects.requireNonNull(builder.storagePath, "Storage path shouldn't be null") + UUID.randomUUID(); // temporary fix
         if (builder.threadPoolAlias == null || builder.threadPoolAlias.isBlank()) {
             this.threadPoolAlias = THREAD_POOL_ALIAS_PREFIX + "DiskWrite";
         } else {
@@ -119,12 +122,8 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
         // Default value is 16 within Ehcache.
         this.DISK_SEGMENTS = Setting.intSetting(builder.settingPrefix + ".ehcache.disk.segments", 16, 1, 32);
 
-        // In test cases, there might be leftover cache managers and caches hanging around, from nodes created in the test case setup
-        // Destroy them before recreating them
-        close();
         cacheManager = buildCacheManager();
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
-        int i = 0;
     }
 
     private PersistentCacheManager buildCacheManager() {
