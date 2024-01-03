@@ -9,10 +9,9 @@
 package org.opensearch.common.cache.tier;
 
 /**
- * This is specific to disk caching tier and can be used to add methods which are specific to disk tier.
- * @param <K> Type of key
- * @param <V> Type of value
+ * An interface for single-request tier-specific stats, which are produced on each request from a cache tier
+ * and then added to the correct shard's overall StatsHolder for the tier.
  */
-public interface DiskCachingTier<K, V> extends CachingTier<K, V> {
-    void close();
+public interface TierRequestStats {
+    TierType getTierType();
 }

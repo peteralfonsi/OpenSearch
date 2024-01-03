@@ -9,10 +9,11 @@
 package org.opensearch.common.cache.tier;
 
 /**
- * This is specific to disk caching tier and can be used to add methods which are specific to disk tier.
- * @param <K> Type of key
- * @param <V> Type of value
+ * A class created by disk tier implementations containing disk-specific stats for a single request.
  */
-public interface DiskCachingTier<K, V> extends CachingTier<K, V> {
-    void close();
+public class OnHeapTierRequestStats implements TierRequestStats {
+    @Override
+    public TierType getTierType() {
+        return TierType.ON_HEAP;
+    }
 }

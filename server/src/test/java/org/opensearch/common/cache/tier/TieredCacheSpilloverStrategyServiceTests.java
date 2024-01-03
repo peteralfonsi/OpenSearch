@@ -354,8 +354,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-        public V get(K key) {
-            return this.onHeapCacheTier.get(key);
+        public CacheValue<V> get(K key) {
+            return new CacheValue(this.onHeapCacheTier.get(key), TierType.ON_HEAP, new OnHeapTierRequestStats());
         }
 
         @Override
@@ -440,8 +440,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-        public void onMiss(K key, TierType tierType) {
-            enumMap.get(tierType).missCount.inc();
+        public void onMiss(K key, CacheValue<V> cacheValue) {
+            enumMap.get(cacheValue.getSource()).missCount.inc();
         }
 
         @Override
@@ -452,8 +452,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-        public void onHit(K key, V value, TierType tierType) {
-            enumMap.get(tierType).hitCount.inc();
+        public void onHit(K key, CacheValue<V> cacheValue) {
+            enumMap.get(cacheValue.getSource()).hitCount.inc();
         }
 
         @Override
@@ -481,8 +481,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         }
 
         @Override
-        public V get(K key) {
-            return this.diskTier.get(key);
+        public CacheValue<V> get(K key) {
+            return new CacheValue<>(this.diskTier.get(key), TierType.DISK, new DiskTierRequestStats(0L, true));
         }
 
         @Override
@@ -554,5 +554,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         public void onRemoval(RemovalNotification<K, V> notification) {
             this.removalListener.onRemoval(notification);
         }
+
+        @Override
+        public void close() {}
     }
 }
