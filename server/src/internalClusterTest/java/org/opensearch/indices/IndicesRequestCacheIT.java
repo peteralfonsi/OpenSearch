@@ -44,7 +44,6 @@ import org.opensearch.common.cache.tier.TierType;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.time.DateFormatter;
 import org.opensearch.common.util.FeatureFlags;
-import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.index.cache.request.RequestCacheStats;
 import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.search.aggregations.bucket.global.GlobalAggregationBuilder;

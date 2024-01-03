@@ -118,42 +118,31 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     private final TimeValue expire;
     private final TieredCacheService<Key, BytesReference> tieredCacheService;
     private final IndicesService indicesService;
+    private final Settings settings;
+
     IndicesRequestCache(Settings settings, IndicesService indicesService) {
         this.size = INDICES_CACHE_QUERY_SIZE.get(settings);
         this.expire = INDICES_CACHE_QUERY_EXPIRE.exists(settings) ? INDICES_CACHE_QUERY_EXPIRE.get(settings) : null;
         long sizeInBytes = size.getBytes();
         this.indicesService = indicesService;
+        this.settings = settings;
 
         // Initialize onHeap cache tier first.
         OnHeapCachingTier<Key, BytesReference> openSearchOnHeapCache = new OpenSearchOnHeapCache.Builder<Key, BytesReference>().setWeigher(
             (k, v) -> k.ramBytesUsed() + v.ramBytesUsed()
         ).setMaximumWeight(sizeInBytes).setExpireAfterAccess(expire).build();
 
-        // TODO: Enable/disable switch for disk tier, in cluster settings PR
-        long CACHE_SIZE_IN_BYTES = 10000000L; // Set to 10 MB for now, will be changed in cluster settings PR
-        String SETTING_PREFIX = "indices.request.cache";
-        String STORAGE_PATH = indicesService.getNodePaths()[0].indicesPath.toString() + "/request_cache";
 
-        EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = new EhCacheDiskCachingTier.Builder<Key, BytesReference>()
-            .setKeyType(Key.class)
-            .setValueType(BytesReference.class)
-            .setExpireAfterAccess(TimeValue.MAX_VALUE)
-            .setSettings(settings)
-            .setThreadPoolAlias("ehcacheTest")
-            .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
-            .setStoragePath(STORAGE_PATH)
-            .setSettingPrefix(SETTING_PREFIX)
-            .setKeySerializer(new IRCKeyWriteableSerializer(this))
-            .setValueSerializer(new BytesReferenceSerializer())
-            .build();
+        // Initialize tiered cache service.
+        TieredCacheSpilloverStrategyService.Builder<Key, BytesReference> tieredCacheServiceBuilder =
+            new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>()
+                .setOnHeapCachingTier(openSearchOnHeapCache)
+                .setTieredCacheEventListener(this);
 
-        // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
 
-        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>()
-            .setOnHeapCachingTier(openSearchOnHeapCache)
-            .setOnDiskCachingTier(ehcacheDiskTier)
-            .setTieredCacheEventListener(this)
-            .build();
+        EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = createNewDiskTier();
+        tieredCacheServiceBuilder.setOnDiskCachingTier(ehcacheDiskTier);
+        tieredCacheService = tieredCacheServiceBuilder.build();
     }
 
     @Override
@@ -215,9 +204,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
                 }
             }
         }
-        // else {
-        // key.entity.onHit();
-        // }
         return value;
     }
 
@@ -243,7 +229,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      * @opensearch.internal
      */
     private static class Loader implements TieredCacheLoader<Key, BytesReference> {
-
         private final CacheEntity entity;
         private final CheckedSupplier<BytesReference, IOException> loader;
         private boolean loaded;
@@ -309,7 +294,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
      *
      * @opensearch.internal
      */
-     class Key implements Accountable, Writeable {
+    class Key implements Accountable, Writeable {
         private final long BASE_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(Key.class);
 
         public final CacheEntity entity; // use as identity equality
@@ -445,5 +430,29 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
 
     int numRegisteredCloseListeners() { // for testing
         return registeredClosedListeners.size();
+    }
+
+    /**
+     * Creates a new disk tier instance. Should only be run if the instance will actually be used!
+     * Otherwise, it may not be closed properly.
+     * @return A new disk tier instance
+     */
+    public EhCacheDiskCachingTier<Key, BytesReference> createNewDiskTier() {
+        //assert FeatureFlags.isEnabled(FeatureFlags.TIERED_CACHING);
+        long CACHE_SIZE_IN_BYTES = 10000000L; //INDICES_CACHE_DISK_TIER_SIZE.get(settings).getBytes();
+        String STORAGE_PATH = indicesService.getNodePaths()[0].indicesPath.toString() + "/request_cache";
+
+        return new EhCacheDiskCachingTier.Builder<Key, BytesReference>()
+            .setKeyType(Key.class)
+            .setValueType(BytesReference.class)
+            .setExpireAfterAccess(TimeValue.MAX_VALUE) // TODO: Is this meant to be the same as IRC expire or different?
+            .setThreadPoolAlias("ehcacheThreadpool")
+            .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
+            .setStoragePath(STORAGE_PATH)
+            .setKeySerializer(new IRCKeyWriteableSerializer(this))
+            .setValueSerializer(new BytesReferenceSerializer())
+            .setSettings(settings)
+            .setSettingPrefix("indices.requests.tier")
+            .build();
     }
 }
