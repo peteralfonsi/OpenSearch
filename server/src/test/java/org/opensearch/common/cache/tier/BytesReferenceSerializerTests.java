@@ -34,6 +34,12 @@ public class BytesReferenceSerializerTests extends OpenSearchTestCase {
         BytesReference deserialized = ser.deserialize(serialized);
         assertEquals(ba, deserialized);
 
+        ba = new BytesArray(new byte[] {});
+        serialized = ser.serialize(ba);
+        assertTrue(ser.equals(ba, serialized));
+        deserialized = ser.deserialize(serialized);
+        assertEquals(ba, deserialized);
+
         BytesReference cbr = CompositeBytesReference.of(new BytesArray(bytesValue), new BytesArray(bytesValue));
         serialized = ser.serialize(cbr);
         assertTrue(ser.equals(cbr, serialized));
