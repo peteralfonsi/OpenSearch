@@ -92,7 +92,7 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
         // assertEquals(diskReachesSoFar, 0); // TODO: Once keystore is integrated, this value should be 0
         // assertEquals(getTimeSoFar, 0); // TODO: Once keystore is integrated, this value should be 0
 
-        // long tookTimeSoFar = assertDiskTierSpecificStats(client, "index", 0, -1, 0); // TODO: Uncomment once keystore is integrated
+        tookTimeSoFar = assertDiskTierSpecificStats(client, "index", 0, -1, 0); // TODO: Uncomment once keystore is integrated
 
         // the first request, for "hello0", should have been evicted to the disk tier
         resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello0")).get();

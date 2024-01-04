@@ -15,6 +15,7 @@ import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
+import org.opensearch.common.cache.tier.keystore.RBMIntKeyLookupStore;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
@@ -45,6 +46,7 @@ import org.ehcache.event.CacheEventListener;
 import org.ehcache.event.EventType;
 import org.ehcache.expiry.ExpiryPolicy;
 import org.ehcache.impl.config.store.disk.OffHeapDiskStoreConfiguration;
+import org.opensearch.core.common.unit.ByteSizeValue;
 
 /**
  * @param <K> The key type of cache entries
@@ -95,6 +97,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     // Defines how many segments the disk cache is separated into. Higher number achieves greater concurrency but
     // will hold that many file pointers.
     public final Setting<Integer> DISK_SEGMENTS;
+    private final RBMIntKeyLookupStore keystore;
 
     private final Serializer<K, byte[]> keySerializer;
     private final Serializer<V, byte[]> valueSerializer;
@@ -124,6 +127,11 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
 
         cacheManager = buildCacheManager();
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
+
+        // IndicesRequestCache gets 1%, of which we allocate 5% to the keystore = 0.05%
+        // TODO: how do we change this automatically based on INDICES_CACHE_QUERY_SIZE setting?
+        Setting<ByteSizeValue> keystoreSizeSetting = Setting.memorySizeSetting(builder.settingPrefix + ".tiered.disk.keystore_size", "0.05%");
+        this.keystore = new RBMIntKeyLookupStore(keystoreSizeSetting.get(this.settings).getBytes());
     }
 
     private PersistentCacheManager buildCacheManager() {
@@ -194,10 +202,14 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     @Override
     public CacheValue<V> get(K key) {
         // Optimize it by adding key store.
-        boolean reachedDisk = true; // TODO: Change this once we combine this with keystore integration
+        boolean reachedDisk = false;
         long now = System.nanoTime(); // Nanoseconds required; milliseconds might be too slow on an SSD
 
-        V value = valueSerializer.deserialize(cache.get(key));
+        V value = null;
+        if (keystore.contains(key.hashCode())) { // Check in-memory store of key hashes to avoid unnecessary disk seek
+            value = valueSerializer.deserialize(cache.get(key));
+            reachedDisk = true;
+        }
 
         long tookTime = -1L; // This value will be ignored by stats accumulator if reachedDisk is false anyway
         if (reachedDisk) {
@@ -210,6 +222,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     @Override
     public void put(K key, V value) {
         cache.put(key, valueSerializer.serialize(value));
+        keystore.add(key.hashCode());
     }
 
     @Override
@@ -222,6 +235,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     public void invalidate(K key) {
         // There seems to be a thread leak issue while calling this and then closing cache.
         cache.remove(key);
+        keystore.remove(key.hashCode());
     }
 
     @Override
@@ -238,6 +252,7 @@ public class EhCacheDiskCachingTier<K, V> implements DiskCachingTier<K, V> {
     @Override
     public void invalidateAll() {
         // Clear up files.
+        keystore.clear();
     }
 
     @Override
