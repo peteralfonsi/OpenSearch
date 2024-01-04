@@ -24,8 +24,9 @@ import java.util.UUID;
 public class IRCKeyWriteableSerializerTests extends OpenSearchSingleNodeTestCase {
 
     public void testSerializer() throws Exception {
+        ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         IndicesService indicesService = getInstanceFromNode(IndicesService.class);
-        IndicesRequestCache irc = new IndicesRequestCache(Settings.EMPTY, indicesService);
+        IndicesRequestCache irc = new IndicesRequestCache(Settings.EMPTY, indicesService, dummyClusterSettings);
         IndexService indexService = createIndex("test");
         IndexShard indexShard = indexService.getShardOrNull(0);
         IndicesService.IndexShardCacheEntity entity = indicesService.new IndexShardCacheEntity(indexShard);

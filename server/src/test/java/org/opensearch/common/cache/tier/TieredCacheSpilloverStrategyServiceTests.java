@@ -15,11 +15,15 @@ import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase {
 
@@ -29,7 +33,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         TieredCacheSpilloverStrategyService<String, String> spilloverStrategyService = intializeTieredCacheService(
             onHeapCacheSize,
             randomIntBetween(1, 4),
-            eventListener
+            eventListener,
+                null
         );
         int numOfItems1 = randomIntBetween(1, onHeapCacheSize / 2 - 1);
         List<String> keys = new ArrayList<>();
@@ -73,7 +78,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         TieredCacheSpilloverStrategyService<String, String> spilloverStrategyService = intializeTieredCacheService(
             onHeapCacheSize,
             diskCacheSize,
-            eventListener
+            eventListener,
+            null
         );
 
         // Put values in cache more than it's size and cause evictions from onHeap.
@@ -140,7 +146,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         TieredCacheSpilloverStrategyService<String, String> spilloverStrategyService = intializeTieredCacheService(
             onHeapCacheSize,
             diskCacheSize,
-            eventListener
+            eventListener,
+            null
         );
 
         int numOfItems = randomIntBetween(totalSize + 1, totalSize * 3);
@@ -161,7 +168,8 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         TieredCacheSpilloverStrategyService<String, String> spilloverStrategyService = intializeTieredCacheService(
             onHeapCacheSize,
             diskCacheSize,
-            eventListener
+            eventListener,
+            null
         );
 
         int numOfItems1 = randomIntBetween(onHeapCacheSize + 1, totalSize);
@@ -198,9 +206,12 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
     public void testWithDiskTierNull() throws Exception {
         int onHeapCacheSize = randomIntBetween(10, 30);
         MockTieredCacheEventListener<String, String> eventListener = new MockTieredCacheEventListener<String, String>();
+        Function<String, String> identityFunction = (String value) -> { return value; };
         TieredCacheSpilloverStrategyService<String, String> spilloverStrategyService = new TieredCacheSpilloverStrategyService.Builder<
             String,
-            String>().setOnHeapCachingTier(new MockOnHeapCacheTier<>(onHeapCacheSize)).setTieredCacheEventListener(eventListener).build();
+            String>().setOnHeapCachingTier(new MockOnHeapCacheTier<>(onHeapCacheSize))
+            .setTieredCacheEventListener(eventListener)
+            .build();
         int numOfItems = randomIntBetween(onHeapCacheSize + 1, onHeapCacheSize * 3);
         for (int iter = 0; iter < numOfItems; iter++) {
             TieredCacheLoader<String, String> tieredCacheLoader = getTieredCacheLoader();
@@ -210,6 +221,70 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         assertEquals(0, eventListener.enumMap.get(TierType.DISK).cachedCount.count());
         assertEquals(0, eventListener.enumMap.get(TierType.DISK).evictionsMetric.count());
         assertEquals(0, eventListener.enumMap.get(TierType.DISK).missCount.count());
+    }
+
+    public void testDiskTierPolicies() throws Exception {
+        // For policy function, allow if what it receives starts with "a" and string is even length
+        ArrayList<CacheTierPolicy<String>> policies = new ArrayList<>();
+        policies.add(new AllowFirstLetterA());
+        policies.add(new AllowEvenLengths());
+
+        int onHeapCacheSize = 0;
+        int diskCacheSize = 10000;
+        MockTieredCacheEventListener<String, String> eventListener = new MockTieredCacheEventListener<String, String>();
+        TieredCacheSpilloverStrategyService<String, String> spilloverStrategyService = intializeTieredCacheService(
+            onHeapCacheSize,
+            diskCacheSize,
+            eventListener,
+            policies
+        );
+
+        Map<String, String> keyValuePairs = new HashMap<>();
+        Map<String, Boolean> expectedOutputs = new HashMap<>();
+        keyValuePairs.put("key1", "abcd");
+        expectedOutputs.put("key1", true);
+        keyValuePairs.put("key2", "abcde");
+        expectedOutputs.put("key2", false);
+        keyValuePairs.put("key3", "bbc");
+        expectedOutputs.put("key3", false);
+        keyValuePairs.put("key4", "ab");
+        expectedOutputs.put("key4", true);
+        keyValuePairs.put("key5", "");
+        expectedOutputs.put("key5", false);
+
+        TieredCacheLoader<String, String> loader = getTieredCacheLoaderWithKeyValueMap(keyValuePairs);
+
+        for (String key : keyValuePairs.keySet()) {
+            Boolean expectedOutput = expectedOutputs.get(key);
+            String value = spilloverStrategyService.computeIfAbsent(key, loader);
+            assertEquals(keyValuePairs.get(key), value);
+            String result = spilloverStrategyService.get(key);
+            if (expectedOutput) {
+                // Should retrieve from disk tier if it was accepted
+                assertEquals(keyValuePairs.get(key), result);
+            } else {
+                // Should miss as heap tier size = 0 and the policy rejected it
+                assertNull(result);
+            }
+        }
+    }
+
+    private static class AllowFirstLetterA implements CacheTierPolicy<String> {
+        @Override
+        public boolean checkData(String data) {
+            try {
+                return (data.charAt(0) == 'a');
+            } catch (StringIndexOutOfBoundsException e) {
+                return false;
+            }
+        }
+    }
+
+    private static class AllowEvenLengths implements CacheTierPolicy<String> {
+        @Override
+        public boolean checkData(String data) {
+            return data.length() % 2 == 0;
+        }
     }
 
     private TieredCacheLoader<String, String> getTieredCacheLoader() {
@@ -229,16 +304,41 @@ public class TieredCacheSpilloverStrategyServiceTests extends OpenSearchTestCase
         };
     }
 
+    private TieredCacheLoader<String, String> getTieredCacheLoaderWithKeyValueMap(Map<String, String> map) {
+        return new TieredCacheLoader<String, String>() {
+            boolean isLoaded;
+            @Override
+            public String load(String key) throws Exception {
+                isLoaded = true;
+                return map.get(key);
+            }
+
+            @Override
+            public boolean isLoaded() {
+                return isLoaded;
+            }
+        };
+    }
+
     private TieredCacheSpilloverStrategyService<String, String> intializeTieredCacheService(
         int onHeapCacheSize,
-        int diksCacheSize,
-        TieredCacheEventListener<String, String> cacheEventListener
+        int diskCacheSize,
+        TieredCacheEventListener<String, String> cacheEventListener,
+        List<CacheTierPolicy<String>> policies // If passed null, default to no policies (empty list)
     ) {
-        DiskCachingTier<String, String> diskCache = new MockDiskCachingTier<>(diksCacheSize);
+        DiskCachingTier<String, String> diskCache = new MockDiskCachingTier<>(diskCacheSize);
         OnHeapCachingTier<String, String> openSearchOnHeapCache = new MockOnHeapCacheTier<>(onHeapCacheSize);
+
+        List<CacheTierPolicy<String>> policiesToUse = new ArrayList<>();
+        if (policies != null) {
+            policiesToUse = policies;
+        }
+
+
         return new TieredCacheSpilloverStrategyService.Builder<String, String>().setOnHeapCachingTier(openSearchOnHeapCache)
             .setOnDiskCachingTier(diskCache)
             .setTieredCacheEventListener(cacheEventListener)
+            .withPolicies(policiesToUse)
             .build();
     }
 

@@ -40,6 +40,8 @@ import org.apache.lucene.util.Accountable;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.tier.CachePolicyInfoWrapper;
+import org.opensearch.common.cache.tier.DiskTierTookTimePolicy;
 import org.opensearch.common.cache.tier.BytesReferenceSerializer;
 import org.opensearch.common.cache.tier.CacheValue;
 import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
@@ -51,6 +53,7 @@ import org.opensearch.common.cache.tier.TieredCacheLoader;
 import org.opensearch.common.cache.tier.TieredCacheService;
 import org.opensearch.common.cache.tier.TieredCacheSpilloverStrategyService;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
+import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
 import org.opensearch.common.settings.Settings;
@@ -61,6 +64,7 @@ import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.common.unit.ByteSizeValue;
+import org.opensearch.search.query.QuerySearchResult;
 
 import java.io.Closeable;
 import java.io.IOException;
@@ -71,6 +75,7 @@ import java.util.Iterator;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
+import java.util.function.Function;
 
 /**
  * The indices request cache allows to cache a shard level request stage responses, helping with improving
@@ -120,7 +125,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     private final IndicesService indicesService;
     private final Settings settings;
 
-    IndicesRequestCache(Settings settings, IndicesService indicesService) {
+    IndicesRequestCache(Settings settings, IndicesService indicesService, ClusterSettings clusterSettings) {
         this.size = INDICES_CACHE_QUERY_SIZE.get(settings);
         this.expire = INDICES_CACHE_QUERY_EXPIRE.exists(settings) ? INDICES_CACHE_QUERY_EXPIRE.get(settings) : null;
         long sizeInBytes = size.getBytes();
@@ -133,6 +138,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         ).setMaximumWeight(sizeInBytes).setExpireAfterAccess(expire).build();
 
 
+
         // Initialize tiered cache service.
         TieredCacheSpilloverStrategyService.Builder<Key, BytesReference> tieredCacheServiceBuilder =
             new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>()
@@ -142,6 +148,16 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
 
         EhCacheDiskCachingTier<Key, BytesReference> ehcacheDiskTier = createNewDiskTier();
         tieredCacheServiceBuilder.setOnDiskCachingTier(ehcacheDiskTier);
+
+        // Function to allow took-time policy to inspect took time on cached data.
+        Function<BytesReference, CachePolicyInfoWrapper> transformationFunction = (data) -> {
+            try {
+                return getPolicyInfo(data);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        };
+        tieredCacheServiceBuilder.withPolicy(new DiskTierTookTimePolicy(settings, clusterSettings, transformationFunction));
         tieredCacheService = tieredCacheServiceBuilder.build();
     }
 
@@ -221,6 +237,12 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             readerCacheKeyId = ((OpenSearchDirectoryReader.DelegatingCacheHelper) cacheHelper).getDelegatingCacheKey().getId();
         }
         tieredCacheService.invalidate(new Key(cacheEntity, cacheKey, readerCacheKeyId));
+    }
+
+    public static CachePolicyInfoWrapper getPolicyInfo(BytesReference data) throws IOException {
+        // Reads the policy info corresponding to this QSR, written in IndicesService$loadIntoContext,
+        // without having to create a potentially large short-lived QSR object just for this purpose
+        return new CachePolicyInfoWrapper(data.streamInput());
     }
 
     /**

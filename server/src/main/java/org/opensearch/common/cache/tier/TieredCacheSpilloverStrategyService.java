@@ -8,10 +8,15 @@
 
 package org.opensearch.common.cache.tier;
 
+import org.opensearch.common.cache.Cache;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
+import org.opensearch.core.common.bytes.BytesReference;
+import org.opensearch.indices.IndicesRequestCache;
+import org.opensearch.search.query.QuerySearchResult;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -38,6 +43,7 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
      * Maintains caching tiers in order of get calls.
      */
     private final List<CachingTier<K, V>> cachingTierList;
+    private final List<CacheTierPolicy<V>> policies;
 
     private TieredCacheSpilloverStrategyService(Builder<K, V> builder) {
         this.onHeapCachingTier = Objects.requireNonNull(builder.onHeapCachingTier);
@@ -45,6 +51,7 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
         this.tieredCacheEventListener = Objects.requireNonNull(builder.tieredCacheEventListener);
         this.cachingTierList = this.diskCachingTier.map(diskTier -> Arrays.asList(onHeapCachingTier, diskTier))
             .orElse(List.of(onHeapCachingTier));
+        this.policies = Objects.requireNonNull(builder.policies);
         setRemovalListeners();
     }
 
@@ -130,10 +137,12 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
         if (RemovalReason.EVICTED.equals(notification.getRemovalReason())) {
             switch (notification.getTierType()) {
                 case ON_HEAP:
-                    diskCachingTier.ifPresent(diskTier -> {
-                        diskTier.put(notification.getKey(), notification.getValue());
-                        tieredCacheEventListener.onCached(notification.getKey(), notification.getValue(), TierType.DISK);
-                    });
+                    if (checkPolicies(notification.getValue())) {
+                        diskCachingTier.ifPresent(diskTier -> {
+                            diskTier.put(notification.getKey(), notification.getValue());
+                            tieredCacheEventListener.onCached(notification.getKey(), notification.getValue(), TierType.DISK);
+                        });
+                    }
                     break;
                 default:
                     break;
@@ -150,6 +159,15 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
     @Override
     public Optional<DiskCachingTier<K, V>> getDiskCachingTier() {
         return this.diskCachingTier;
+    }
+
+    boolean checkPolicies(V value) {
+        for (CacheTierPolicy<V> policy : policies) {
+            if (!policy.checkData(value)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -190,6 +208,7 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
         private OnHeapCachingTier<K, V> onHeapCachingTier;
         private DiskCachingTier<K, V> diskCachingTier;
         private TieredCacheEventListener<K, V> tieredCacheEventListener;
+        private ArrayList<CacheTierPolicy<V>> policies = new ArrayList<>();
 
         public Builder() {}
 
@@ -205,6 +224,17 @@ public class TieredCacheSpilloverStrategyService<K, V> implements TieredCacheSer
 
         public Builder<K, V> setTieredCacheEventListener(TieredCacheEventListener<K, V> tieredCacheEventListener) {
             this.tieredCacheEventListener = tieredCacheEventListener;
+            return this;
+        }
+
+        public Builder<K, V> withPolicy(CacheTierPolicy<V> policy) {
+            this.policies.add(policy);
+            return this;
+        }
+
+        // Add multiple policies at once
+        public Builder<K, V> withPolicies(List<CacheTierPolicy<V>> policiesList) {
+            this.policies.addAll(policiesList);
             return this;
         }
 
