@@ -430,7 +430,7 @@ public final class QuerySearchResult extends SearchPhaseResult {
         return tookTimeNanos;
     }
 
-    void setTookTimeNanos(long tookTime) {
+    public void setTookTimeNanos(long tookTime) {
         tookTimeNanos = tookTime;
     }
 }

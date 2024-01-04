@@ -30,11 +30,7 @@
  * GitHub history for details.
  */
 
-package org.opensearch.indices;
-
-import org.opensearch.core.common.bytes.BytesReference;
-
-import java.io.IOException;
+package org.opensearch.common.cache.tier;
 
 public interface CacheTierPolicy<T> {
     /**

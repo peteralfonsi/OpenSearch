@@ -18,7 +18,7 @@ import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.core.common.bytes.BytesReference;
-import org.opensearch.indices.CacheTierPolicy;
+import org.opensearch.common.cache.tier.CacheTierPolicy;
 import org.opensearch.search.query.QuerySearchResult;
 
 import java.io.IOException;
@@ -32,7 +32,7 @@ import java.util.function.Function;
  */
 public class DiskTierTookTimePolicy implements CacheTierPolicy<BytesReference> {
     public static final Setting<TimeValue> DISK_TOOKTIME_THRESHOLD_SETTING = Setting.positiveTimeSetting(
-        "index.requests.cache.disk.tooktime.threshold",
+        "indices.requests.cache.disk.tooktime.threshold",
         new TimeValue(10),
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
