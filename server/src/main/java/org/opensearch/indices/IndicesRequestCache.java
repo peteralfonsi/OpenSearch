@@ -55,7 +55,6 @@ import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.ConcurrentCollections;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.StreamInput;
-import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.common.unit.ByteSizeValue;
 
@@ -128,9 +127,11 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
         ).setMaximumWeight(sizeInBytes).setExpireAfterAccess(expire).build();
 
         // Initialize tiered cache service. TODO: Enable Disk tier when tiered support is turned on.
-        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>().setOnHeapCachingTier(
-            openSearchOnHeapCache
-        ).setTieredCacheEventListener(this).build();
+
+        tieredCacheService = new TieredCacheSpilloverStrategyService.Builder<Key, BytesReference>()
+            .setOnHeapCachingTier(openSearchOnHeapCache)
+            .setTieredCacheEventListener(this)
+            .build();
     }
 
     @Override

@@ -40,6 +40,7 @@ import org.opensearch.action.search.SearchResponse;
 import org.opensearch.action.search.SearchType;
 import org.opensearch.client.Client;
 import org.opensearch.cluster.metadata.IndexMetadata;
+import org.opensearch.common.cache.tier.TierType;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.time.DateFormatter;
 import org.opensearch.common.util.FeatureFlags;
@@ -689,5 +690,5 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
         );
 
     }
-
+    
 }
