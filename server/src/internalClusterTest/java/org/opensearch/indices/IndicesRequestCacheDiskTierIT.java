@@ -115,30 +115,6 @@ public class IndicesRequestCacheDiskTierIT extends OpenSearchIntegTestCase {
 
     }
 
-    public void testRBMSizeSetting() throws Exception {
-        int heapSizeBytes = 0;
-        String node = internalCluster().startNode(
-            Settings.builder()
-                .put(IndicesRequestCache.INDICES_CACHE_QUERY_SIZE.getKey(), new ByteSizeValue(heapSizeBytes))
-                //.put(DiskTierTookTimePolicy.DISK_TOOKTIME_THRESHOLD_SETTING.getKey(), TimeValue.ZERO) // allow into disk cache regardless of
-            // took time
-        );
-        Client client = client(node);
-
-        Settings.Builder indicesSettingBuilder = Settings.builder()
-            .put(IndicesRequestCache.INDEX_CACHE_REQUEST_ENABLED_SETTING.getKey(), true)
-            .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 1)
-            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0);
-
-        assertAcked(
-            client.admin().indices().prepareCreate("index").setMapping("k", "type=keyword").setSettings(indicesSettingBuilder).get()
-        );
-        indexRandom(true, client.prepareIndex("index").setSource("k", "hello"));
-        ensureSearchable("index");
-        SearchResponse resp;
-        assertDiskTierSpecificStats(client, "index", 2, tookTimeSoFar, tookTimeSoFar);
-    }
-
     public void testTogglingDiskTierSetting() throws Exception {
         // For this test, feature flag tiered caching setting is on, but we toggle IndicesRequestCache.INDICES_CACHE_DISK_TIER_ENABLED
         // and cover all possible transitions

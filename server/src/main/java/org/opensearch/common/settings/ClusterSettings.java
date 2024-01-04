@@ -79,10 +79,7 @@ import org.opensearch.cluster.service.ClusterManagerService;
 import org.opensearch.cluster.service.ClusterManagerTaskThrottler;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.annotation.PublicApi;
-<<<<<<< HEAD
-=======
 import org.opensearch.common.cache.tier.EhCacheDiskCachingTier;
->>>>>>> 29d31b48646 (added skeleton for stale key threshold setting)
 import org.opensearch.common.cache.tier.keystore.RBMIntKeyLookupStore;
 import org.opensearch.common.logging.Loggers;
 import org.opensearch.common.network.NetworkModule;

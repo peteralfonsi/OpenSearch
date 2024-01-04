@@ -52,6 +52,7 @@ import org.opensearch.common.cache.tier.TieredCacheLoader;
 import org.opensearch.common.cache.tier.TieredCacheService;
 import org.opensearch.common.cache.tier.TieredCacheSpilloverStrategyService;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
+import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
 import org.opensearch.common.settings.Settings;
@@ -149,7 +150,7 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
     private final Settings settings;
     private final ClusterSettings clusterSettings;
 
-    IndicesRequestCache(Settings settings, IndicesService indicesService) {
+    IndicesRequestCache(Settings settings, IndicesService indicesService, ClusterSettings clusterSettings) {
         this.size = INDICES_CACHE_QUERY_SIZE.get(settings);
         this.expire = INDICES_CACHE_QUERY_EXPIRE.exists(settings) ? INDICES_CACHE_QUERY_EXPIRE.get(settings) : null;
         long sizeInBytes = size.getBytes();
@@ -490,7 +491,6 @@ public final class IndicesRequestCache implements TieredCacheEventListener<Indic
             .setStoragePath(STORAGE_PATH)
             .setKeySerializer(new IRCKeyWriteableSerializer(this))
             .setValueSerializer(new BytesReferenceSerializer())
-            .setKeyStoreMaxWeightInBytes(keystoreMaxWeight)
             .build();
     }
 }
