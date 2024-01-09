@@ -102,6 +102,9 @@ public class OpenSearchOnHeapCache<K, V> implements StoreAwareCache<K, V>, Remov
     }
 
     @Override
+    public void close() {}
+
+    @Override
     public void onRemoval(RemovalNotification<K, V> notification) {
         eventListener.onRemoval(
             new StoreAwareCacheRemovalNotification<>(

@@ -114,8 +114,8 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         );
         assertEquals(actualDiskCacheSize, eventListener.enumMap.get(CacheStoreType.DISK).cachedCount.count());
 
-        tieredSpilloverCache.getOnHeapCache().keys().forEach(onHeapKeys::add);
-        tieredSpilloverCache.getOnDiskCache().get().keys().forEach(diskTierKeys::add);
+        tieredSpilloverCache.cacheKeys(CacheStoreType.ON_HEAP).forEach(onHeapKeys::add);
+        tieredSpilloverCache.cacheKeys(CacheStoreType.DISK).forEach(diskTierKeys::add);
 
         assertEquals(tieredSpilloverCache.getOnHeapCache().count(), onHeapKeys.size());
         assertEquals(tieredSpilloverCache.getOnDiskCache().get().count(), diskTierKeys.size());
@@ -312,7 +312,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
 
         // Verify that new items are part of onHeap cache.
         List<String> actualOnHeapCacheKeys = new ArrayList<>();
-        tieredSpilloverCache.getOnHeapCache().keys().forEach(actualOnHeapCacheKeys::add);
+        tieredSpilloverCache.cacheKeys(CacheStoreType.ON_HEAP).forEach(actualOnHeapCacheKeys::add);
 
         assertEquals(newKeyList.size(), actualOnHeapCacheKeys.size());
         for (int i = 0; i < actualOnHeapCacheKeys.size(); i++) {
@@ -387,8 +387,8 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
 
         List<String> actualOnHeapKeys = new ArrayList<>();
         List<String> actualOnDiskKeys = new ArrayList<>();
-        Iterable<String> onHeapiterable = tieredSpilloverCache.getOnHeapCache().keys();
-        Iterable<String> onDiskiterable = tieredSpilloverCache.getOnDiskCache().get().keys();
+        Iterable<String> onHeapiterable = tieredSpilloverCache.cacheKeys(CacheStoreType.ON_HEAP);
+        Iterable<String> onDiskiterable = tieredSpilloverCache.cacheKeys(CacheStoreType.DISK);
         onHeapiterable.iterator().forEachRemaining(actualOnHeapKeys::add);
         onDiskiterable.iterator().forEachRemaining(actualOnDiskKeys::add);
         for (String onHeapKey : onHeapKeys) {
@@ -424,6 +424,9 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
             eventListener,
             0
         );
+
+        tieredSpilloverCache.refresh(CacheStoreType.ON_HEAP);
+        tieredSpilloverCache.refresh(CacheStoreType.DISK);
         tieredSpilloverCache.refresh();
     }
 
@@ -762,6 +765,9 @@ class MockOnDiskCache<K, V> implements StoreAwareCache<K, V> {
     public CacheStoreType getTierType() {
         return CacheStoreType.DISK;
     }
+    
+    @Override
+    public void close() {}
 
     public static class Builder<K, V> extends StoreAwareCacheBuilder<K, V> {
 

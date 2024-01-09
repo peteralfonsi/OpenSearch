@@ -6,20 +6,20 @@
  * compatible open source license.
  */
 
-package org.opensearch.common.cache.store;
+package org.opensearch.common.cache.tier;
 
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.store.enums.CacheStoreType;
 
 /**
- * Represents a cache with a specific type of store like onHeap, disk etc.
- * @param <K> Type of key.
- * @param <V> Type of value.
+ * This represents a cache comprising of multiple tiers/layers.
+ * @param <K> Type of key
+ * @param <V> Type of value
  *
  * @opensearch.experimental
  */
-public interface StoreAwareCache<K, V> extends ICache<K, V> {
-    CacheStoreType getTierType();
+public interface TieredCache<K, V> extends ICache<K, V> {
+    Iterable<K> cacheKeys(CacheStoreType type);
 
-    void close();
+    void refresh(CacheStoreType type);
 }
