@@ -765,7 +765,7 @@ class MockOnDiskCache<K, V> implements StoreAwareCache<K, V> {
     public CacheStoreType getTierType() {
         return CacheStoreType.DISK;
     }
-    
+
     @Override
     public void close() {}
 
