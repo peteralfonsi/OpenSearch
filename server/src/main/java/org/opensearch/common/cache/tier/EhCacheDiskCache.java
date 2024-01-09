@@ -8,6 +8,8 @@
 
 package org.opensearch.common.cache.tier;
 
+import org.ehcache.core.spi.service.FileBasedPersistenceContext;
+import org.ehcache.spi.serialization.SerializerException;
 import org.opensearch.OpenSearchException;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalReason;
@@ -22,6 +24,7 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 
 import java.io.File;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
@@ -49,7 +52,11 @@ public class EhCacheDiskCache<K, V> implements StoreAwareCache<K, V> {
     private final PersistentCacheManager cacheManager;
 
     // Disk cache
-    private Cache<K, V> cache;
+    // Ehcache requires the exact type to be preserved after deserialization, but this is not always feasible, and it
+    // may not matter to the rest of OpenSearch. (For example, BytesReference). So, we use the valueSerializer
+    // to turn V into byte[] before passing to ehcache itself.
+    // We would like to do the same with K, but this isn't possible because of an ehcache bug, so we have a wrapper for the key serializer.
+    private Cache<K, byte[]> cache;
     private final long maxWeightInBytes;
     private final String storagePath;
 
@@ -91,10 +98,15 @@ public class EhCacheDiskCache<K, V> implements StoreAwareCache<K, V> {
 
     private final StoreAwareCacheEventListener<K, V> eventListener;
 
+    private final Serializer<K, byte[]> keySerializer;
+    private final Serializer<V, byte[]> valueSerializer;
+
     private EhCacheDiskCache(Builder<K, V> builder) {
         this.keyType = Objects.requireNonNull(builder.keyType, "Key type shouldn't be null");
         this.valueType = Objects.requireNonNull(builder.valueType, "Value type shouldn't be null");
         this.expireAfterAccess = Objects.requireNonNull(builder.getExpireAfterAcess(), "ExpireAfterAccess value shouldn't " + "be null");
+        this.keySerializer = Objects.requireNonNull(builder.keySerializer, "Key serializer shouldn't be null");
+        this.valueSerializer = Objects.requireNonNull(builder.valueSerializer, "Value serializer shouldn't be null");
         this.maxWeightInBytes = builder.getMaxWeightInBytes();
         if (this.maxWeightInBytes <= MINIMUM_MAX_SIZE_IN_BYTES) {
             throw new IllegalArgumentException("Ehcache Disk tier cache size should be greater than " + MINIMUM_MAX_SIZE_IN_BYTES);
@@ -134,26 +146,26 @@ public class EhCacheDiskCache<K, V> implements StoreAwareCache<K, V> {
             .build(true);
     }
 
-    private Cache<K, V> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {
+    private Cache<K, byte[]> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {
         return this.cacheManager.createCache(
             DISK_CACHE_ALIAS,
             CacheConfigurationBuilder.newCacheConfigurationBuilder(
                 this.keyType,
-                this.valueType,
+                byte[].class,
                 ResourcePoolsBuilder.newResourcePoolsBuilder().disk(maxWeightInBytes, MemoryUnit.B)
-            ).withExpiry(new ExpiryPolicy<K, V>() {
+            ).withExpiry(new ExpiryPolicy<K, byte[]>() {
                 @Override
-                public Duration getExpiryForCreation(K key, V value) {
+                public Duration getExpiryForCreation(K key, byte[] value) {
                     return INFINITE;
                 }
 
                 @Override
-                public Duration getExpiryForAccess(K key, Supplier<? extends V> value) {
+                public Duration getExpiryForAccess(K key, Supplier<? extends byte[]> value) {
                     return expireAfterAccess;
                 }
 
                 @Override
-                public Duration getExpiryForUpdate(K key, Supplier<? extends V> oldValue, V newValue) {
+                public Duration getExpiryForUpdate(K key, Supplier<? extends byte[]> oldValue, byte[] newValue) {
                     return INFINITE;
                 }
             })
@@ -165,6 +177,7 @@ public class EhCacheDiskCache<K, V> implements StoreAwareCache<K, V> {
                         DISK_SEGMENTS.get(settings)
                     )
                 )
+                .withKeySerializer(new KeySerializerWrapper<K>(keySerializer))
         );
     }
 
@@ -187,7 +200,7 @@ public class EhCacheDiskCache<K, V> implements StoreAwareCache<K, V> {
     @Override
     public V get(K key) {
         // Optimize it by adding key store.
-        V value = cache.get(key);
+        V value = valueSerializer.deserialize(cache.get(key));
         if (value != null) {
             eventListener.onHit(key, value, CacheStoreType.DISK);
         } else {
@@ -198,7 +211,7 @@ public class EhCacheDiskCache<K, V> implements StoreAwareCache<K, V> {
 
     @Override
     public void put(K key, V value) {
-        cache.put(key, value);
+        cache.put(key, valueSerializer.serialize(value));
     }
 
     @Override
@@ -320,9 +333,9 @@ public class EhCacheDiskCache<K, V> implements StoreAwareCache<K, V> {
      */
     class EhCacheKeyIterator<K> implements Iterator<K> {
 
-        Iterator<Cache.Entry<K, V>> iterator;
+        Iterator<Cache.Entry<K, byte[]>> iterator;
 
-        EhCacheKeyIterator(Iterator<Cache.Entry<K, V>> iterator) {
+        EhCacheKeyIterator(Iterator<Cache.Entry<K, byte[]>> iterator) {
             this.iterator = iterator;
         }
 
@@ -337,6 +350,43 @@ public class EhCacheDiskCache<K, V> implements StoreAwareCache<K, V> {
                 throw new NoSuchElementException();
             }
             return iterator.next().getKey();
+        }
+    }
+
+    /**
+     * The wrapper for the key serializer which is passed directly to Ehcache.
+     * Required because we cannot directly use a byte[] as an ehcache key, due to a likely ehcache bug.
+     * See <a href="https://groups.google.com/g/ehcache-users/c/zTV5QUgTIRE">...</a>
+     */
+    private class KeySerializerWrapper<K> implements org.ehcache.spi.serialization.Serializer<K> {
+        public Serializer<K, byte[]> serializer;
+
+        public KeySerializerWrapper(Serializer<K, byte[]> serializer) {
+            this.serializer = serializer;
+        }
+
+        // This constructor must be present, but does not have to work as we are not actually persisting the disk
+        // cache after a restart.
+        // See https://www.ehcache.org/documentation/3.0/serializers-copiers.html#persistent-vs-transient-caches
+        public KeySerializerWrapper(ClassLoader classLoader, FileBasedPersistenceContext persistenceContext) {}
+
+        @Override
+        public ByteBuffer serialize(K object) throws SerializerException {
+            return ByteBuffer.wrap(serializer.serialize(object));
+        }
+
+        @Override
+        public K read(ByteBuffer binary) throws ClassNotFoundException, SerializerException {
+            byte[] arr = new byte[binary.remaining()];
+            binary.get(arr);
+            return serializer.deserialize(arr);
+        }
+
+        @Override
+        public boolean equals(K object, ByteBuffer binary) throws ClassNotFoundException, SerializerException {
+            byte[] arr = new byte[binary.remaining()];
+            binary.get(arr);
+            return serializer.equals(object, arr);
         }
     }
 
@@ -362,6 +412,8 @@ public class EhCacheDiskCache<K, V> implements StoreAwareCache<K, V> {
 
         // Provides capability to make ehCache event listener to run in sync mode. Used for testing too.
         private boolean isEventListenerModeSync;
+        private Serializer<K, byte[]> keySerializer;
+        private Serializer<V, byte[]> valueSerializer;
 
         public Builder() {}
 
@@ -403,6 +455,16 @@ public class EhCacheDiskCache<K, V> implements StoreAwareCache<K, V> {
 
         public EhCacheDiskCache.Builder<K, V> setIsEventListenerModeSync(boolean isEventListenerModeSync) {
             this.isEventListenerModeSync = isEventListenerModeSync;
+            return this;
+        }
+
+        public EhCacheDiskCache.Builder<K, V> setKeySerializer(Serializer<K, byte[]> keySerializer) {
+            this.keySerializer = keySerializer;
+            return this;
+        }
+
+        public EhCacheDiskCache.Builder<K, V> setValueSerializer(Serializer<V, byte[]> valueSerializer) {
+            this.valueSerializer = valueSerializer;
             return this;
         }
 
