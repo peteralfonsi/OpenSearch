@@ -35,8 +35,6 @@ package org.opensearch.search.query;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.TotalHits;
 import org.opensearch.common.annotation.PublicApi;
-import org.opensearch.Version;
-import org.opensearch.common.SetOnce;
 import org.opensearch.common.io.stream.DelayableWriteable;
 import org.opensearch.common.lucene.search.TopDocsAndMaxScore;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -91,7 +89,6 @@ public final class QuerySearchResult extends SearchPhaseResult {
     private int nodeQueueSize = -1;
 
     private final boolean isNull;
-    private SetOnce<Long> tookTimeNanos = new SetOnce<>();
 
     public QuerySearchResult() {
         this(false);
@@ -369,11 +366,6 @@ public final class QuerySearchResult extends SearchPhaseResult {
         nodeQueueSize = in.readInt();
         setShardSearchRequest(in.readOptionalWriteable(ShardSearchRequest::new));
         setRescoreDocIds(new RescoreDocIds(in));
-        if (in.getVersion().onOrAfter(Version.V_3_0_0)) {
-            tookTimeNanos = new SetOnce<>(in.readOptionalLong());
-        } else {
-            tookTimeNanos = new SetOnce<>();
-        }
     }
 
     @Override
@@ -416,9 +408,6 @@ public final class QuerySearchResult extends SearchPhaseResult {
         out.writeInt(nodeQueueSize);
         out.writeOptionalWriteable(getShardSearchRequest());
         getRescoreDocIds().writeTo(out);
-        if (out.getVersion().onOrAfter(Version.V_3_0_0)) {
-            out.writeOptionalLong(tookTimeNanos.get());
-        }
     }
 
     public TotalHits getTotalHits() {
@@ -427,13 +416,5 @@ public final class QuerySearchResult extends SearchPhaseResult {
 
     public float getMaxScore() {
         return maxScore;
-    }
-
-    public Long getTookTimeNanos() {
-        return tookTimeNanos.get();
-    }
-
-    public void setTookTimeNanos(long tookTime) {
-        tookTimeNanos.set(tookTime);
     }
 }
