@@ -44,6 +44,9 @@ import org.opensearch.common.cache.CacheBuilder;
 import org.opensearch.common.cache.CacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.store.StoreAwareCacheRemovalNotification;
+import org.opensearch.common.cache.store.enums.CacheStoreType;
+import org.opensearch.common.cache.store.listeners.StoreAwareCacheEventListener;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
@@ -85,7 +88,7 @@ import java.util.function.Function;
  *
  * @opensearch.internal
  */
-public final class IndicesRequestCache implements RemovalListener<IndicesRequestCache.Key, BytesReference>, Closeable {
+public final class IndicesRequestCache implements RemovalListener<IndicesRequestCache.Key, BytesReference>, Closeable, StoreAwareCacheEventListener<IndicesRequestCache.Key, BytesReference> {
 
     private static final Logger logger = LogManager.getLogger(IndicesRequestCache.class);
 
@@ -168,7 +171,6 @@ public final class IndicesRequestCache implements RemovalListener<IndicesRequest
         Loader cacheLoader = new Loader(cacheEntity, loader);
         BytesReference value = cache.computeIfAbsent(key, cacheLoader);
         if (cacheLoader.isLoaded()) {
-            cacheEntity.onMiss();
             // see if its the first time we see this reader, and make sure to register a cleanup key
             CleanupKey cleanupKey = new CleanupKey(cacheEntity, readerCacheKeyId);
             if (!registeredClosedListeners.containsKey(cleanupKey)) {
@@ -177,8 +179,6 @@ public final class IndicesRequestCache implements RemovalListener<IndicesRequest
                     OpenSearchDirectoryReader.addReaderCloseListener(reader, cleanupKey);
                 }
             }
-        } else {
-            cacheEntity.onHit();
         }
         return value;
     }
@@ -197,6 +197,30 @@ public final class IndicesRequestCache implements RemovalListener<IndicesRequest
             readerCacheKeyId = ((OpenSearchDirectoryReader.DelegatingCacheHelper) cacheHelper).getDelegatingCacheKey().getId();
         }
         cache.invalidate(new Key(((IndexShard) cacheEntity.getCacheIdentity()).shardId(), cacheKey, readerCacheKeyId));
+    }
+
+    @Override
+    public void onMiss(Key key, CacheStoreType cacheStoreType) {
+        Optional<CacheEntity> entity = cacheEntityLookup.apply(key.shardId);
+        entity.ifPresent(cacheEntity -> cacheEntity.onMiss(cacheStoreType));
+    }
+
+    @Override
+    public void onRemoval(StoreAwareCacheRemovalNotification<Key, BytesReference> notification) {
+        Optional<CacheEntity> entity = cacheEntityLookup.apply(notification.getKey().shardId);
+        entity.ifPresent(cacheEntity -> cacheEntity.onRemoval(notification));
+    }
+
+    @Override
+    public void onHit(Key key, BytesReference value, CacheStoreType cacheStoreType) {
+        Optional<CacheEntity> entity = cacheEntityLookup.apply(key.shardId);
+        entity.ifPresent(cacheEntity -> cacheEntity.onHit(cacheStoreType));
+    }
+
+    @Override
+    public void onCached(Key key, BytesReference value, CacheStoreType cacheStoreType) {
+        Optional<CacheEntity> entity = cacheEntityLookup.apply(key.shardId);
+        entity.ifPresent(cacheEntity -> cacheEntity.onCached(key, value, cacheStoreType));
     }
 
     /**
@@ -222,7 +246,6 @@ public final class IndicesRequestCache implements RemovalListener<IndicesRequest
         @Override
         public BytesReference load(Key key) throws Exception {
             BytesReference value = loader.get();
-            entity.onCached(key, value);
             loaded = true;
             return value;
         }
@@ -236,7 +259,7 @@ public final class IndicesRequestCache implements RemovalListener<IndicesRequest
         /**
          * Called after the value was loaded.
          */
-        void onCached(Key key, BytesReference value);
+        void onCached(Key key, BytesReference value, CacheStoreType cacheStoreType);
 
         /**
          * Returns <code>true</code> iff the resource behind this entity is still open ie.
@@ -253,12 +276,12 @@ public final class IndicesRequestCache implements RemovalListener<IndicesRequest
         /**
          * Called each time this entity has a cache hit.
          */
-        void onHit();
+        void onHit(CacheStoreType cacheStoreType);
 
         /**
          * Called each time this entity has a cache miss.
          */
-        void onMiss();
+        void onMiss(CacheStoreType cacheStoreType);
 
         /**
          * Called when this entity instance is removed

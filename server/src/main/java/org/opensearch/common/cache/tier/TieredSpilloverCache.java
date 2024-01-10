@@ -218,6 +218,7 @@ public class TieredSpilloverCache<K, V> implements TieredCache<K, V>, StoreAware
         }
     }
 
+    // These listener calls ultimately come from the tiers themselves and are not sent to the IRC to be used in stats.
     @Override
     public void onMiss(K key, CacheStoreType cacheStoreType) {
         // Misses for tiered cache are tracked here itself.
