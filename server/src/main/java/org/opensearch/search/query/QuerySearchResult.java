@@ -433,7 +433,7 @@ public final class QuerySearchResult extends SearchPhaseResult {
         return tookTimeNanos.get();
     }
 
-    void setTookTimeNanos(long tookTime) {
+    public void setTookTimeNanos(long tookTime) {
         tookTimeNanos.set(tookTime);
     }
 }
