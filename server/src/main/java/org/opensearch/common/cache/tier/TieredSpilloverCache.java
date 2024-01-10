@@ -20,6 +20,7 @@ import org.opensearch.common.cache.store.listeners.StoreAwareCacheEventListener;
 import org.opensearch.common.util.concurrent.ReleasableLock;
 import org.opensearch.common.util.iterable.Iterables;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -54,6 +55,9 @@ public class TieredSpilloverCache<K, V> implements TieredCache<K, V>, StoreAware
      */
     private final List<StoreAwareCache<K, V>> cacheList;
 
+    // A list of policies to apply to values before allowing them into the disk tier.
+    private final List<CacheTierPolicy<V>> policies;
+
     TieredSpilloverCache(Builder<K, V> builder) {
         Objects.requireNonNull(builder.onHeapCacheBuilder, "onHeap cache builder can't be null");
         this.onHeapCache = builder.onHeapCacheBuilder.setEventListener(this).build();
@@ -64,6 +68,7 @@ public class TieredSpilloverCache<K, V> implements TieredCache<K, V>, StoreAware
         }
         this.listener = builder.listener;
         this.cacheList = this.onDiskCache.map(diskTier -> Arrays.asList(this.onHeapCache, diskTier)).orElse(List.of(this.onHeapCache));
+        this.policies = Objects.requireNonNull(builder.policies);
     }
 
     // Package private for testing
@@ -229,18 +234,31 @@ public class TieredSpilloverCache<K, V> implements TieredCache<K, V>, StoreAware
             || RemovalReason.CAPACITY.equals(notification.getRemovalReason())) {
             switch (notification.getCacheStoreType()) {
                 case ON_HEAP:
-                    try (ReleasableLock ignore = writeLock.acquire()) {
-                        onDiskCache.ifPresent(diskTier -> { diskTier.put(notification.getKey(), notification.getValue()); });
+                    if (checkPolicies(notification.getValue())) {
+                        try (ReleasableLock ignore = writeLock.acquire()) {
+                            onDiskCache.ifPresent(diskTier -> {
+                                diskTier.put(notification.getKey(), notification.getValue());
+                            });
+                        }
+                        onDiskCache.ifPresent(
+                            diskTier -> listener.onCached(notification.getKey(), notification.getValue(), CacheStoreType.DISK)
+                        );
                     }
-                    onDiskCache.ifPresent(
-                        diskTier -> listener.onCached(notification.getKey(), notification.getValue(), CacheStoreType.DISK)
-                    );
                     break;
                 default:
                     break;
             }
         }
         listener.onRemoval(notification);
+    }
+
+    boolean checkPolicies(V value) {
+        for (CacheTierPolicy<V> policy : policies) {
+            if (!policy.checkData(value)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     @Override
@@ -283,6 +301,7 @@ public class TieredSpilloverCache<K, V> implements TieredCache<K, V>, StoreAware
         private StoreAwareCacheBuilder<K, V> onHeapCacheBuilder;
         private StoreAwareCacheBuilder<K, V> onDiskCacheBuilder;
         private StoreAwareCacheEventListener<K, V> listener;
+        private ArrayList<CacheTierPolicy<V>> policies = new ArrayList<>();
 
         public Builder() {}
 
@@ -298,6 +317,16 @@ public class TieredSpilloverCache<K, V> implements TieredCache<K, V>, StoreAware
 
         public Builder<K, V> setListener(StoreAwareCacheEventListener<K, V> listener) {
             this.listener = listener;
+            return this;
+        }
+
+        public Builder<K, V> withPolicy(CacheTierPolicy<V> policy) {
+            this.policies.add(policy);
+            return this;
+        }
+
+        public Builder<K, V> withPolicies(List<CacheTierPolicy<V>> policies) {
+            this.policies.addAll(policies);
             return this;
         }
 

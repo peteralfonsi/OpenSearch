@@ -21,6 +21,7 @@ import org.opensearch.test.OpenSearchTestCase;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -36,7 +37,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
     public void testComputeIfAbsentWithoutAnyOnHeapCacheEviction() throws Exception {
         int onHeapCacheSize = randomIntBetween(10, 30);
         MockCacheEventListener<String, String> eventListener = new MockCacheEventListener<String, String>();
-        TieredSpilloverCache<String, String> tieredSpilloverCache = intializeTieredSpilloverCache(
+        TieredSpilloverCache<String, String> tieredSpilloverCache = initializeTieredSpilloverCache(
             onHeapCacheSize,
             randomIntBetween(1, 4),
             eventListener,
@@ -159,7 +160,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         int totalSize = onHeapCacheSize + diskCacheSize;
 
         MockCacheEventListener<String, String> eventListener = new MockCacheEventListener<String, String>();
-        TieredSpilloverCache<String, String> tieredSpilloverCache = intializeTieredSpilloverCache(
+        TieredSpilloverCache<String, String> tieredSpilloverCache = initializeTieredSpilloverCache(
             onHeapCacheSize,
             diskCacheSize,
             eventListener,
@@ -181,7 +182,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         int totalSize = onHeapCacheSize + diskCacheSize;
 
         MockCacheEventListener<String, String> eventListener = new MockCacheEventListener<String, String>();
-        TieredSpilloverCache<String, String> tieredSpilloverCache = intializeTieredSpilloverCache(
+        TieredSpilloverCache<String, String> tieredSpilloverCache = initializeTieredSpilloverCache(
             onHeapCacheSize,
             diskCacheSize,
             eventListener,
@@ -247,7 +248,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         int diskCacheSize = randomIntBetween(onHeapCacheSize + 1, 100);
 
         MockCacheEventListener<String, String> eventListener = new MockCacheEventListener<>();
-        TieredSpilloverCache<String, String> tieredSpilloverCache = intializeTieredSpilloverCache(
+        TieredSpilloverCache<String, String> tieredSpilloverCache = initializeTieredSpilloverCache(
             onHeapCacheSize,
             diskCacheSize,
             eventListener,
@@ -266,7 +267,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
 
         MockCacheEventListener<String, String> eventListener = new MockCacheEventListener<>();
 
-        TieredSpilloverCache<String, String> tieredSpilloverCache = intializeTieredSpilloverCache(
+        TieredSpilloverCache<String, String> tieredSpilloverCache = initializeTieredSpilloverCache(
             onHeapCacheSize,
             diskCacheSize,
             eventListener,
@@ -328,7 +329,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         int diskCacheSize = 10;
 
         MockCacheEventListener<String, String> eventListener = new MockCacheEventListener<>();
-        TieredSpilloverCache<String, String> tieredSpilloverCache = intializeTieredSpilloverCache(
+        TieredSpilloverCache<String, String> tieredSpilloverCache = initializeTieredSpilloverCache(
             onHeapCacheSize,
             diskCacheSize,
             eventListener,
@@ -363,7 +364,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         int totalSize = onHeapCacheSize + diskCacheSize;
 
         MockCacheEventListener<String, String> eventListener = new MockCacheEventListener<>();
-        TieredSpilloverCache<String, String> tieredSpilloverCache = intializeTieredSpilloverCache(
+        TieredSpilloverCache<String, String> tieredSpilloverCache = initializeTieredSpilloverCache(
             onHeapCacheSize,
             diskCacheSize,
             eventListener,
@@ -418,7 +419,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         int diskCacheSize = randomIntBetween(60, 100);
 
         MockCacheEventListener<String, String> eventListener = new MockCacheEventListener<>();
-        TieredSpilloverCache<String, String> tieredSpilloverCache = intializeTieredSpilloverCache(
+        TieredSpilloverCache<String, String> tieredSpilloverCache = initializeTieredSpilloverCache(
             onHeapCacheSize,
             diskCacheSize,
             eventListener,
@@ -436,7 +437,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         int totalSize = onHeapCacheSize + diskCacheSize;
 
         MockCacheEventListener<String, String> eventListener = new MockCacheEventListener<>();
-        TieredSpilloverCache<String, String> tieredSpilloverCache = intializeTieredSpilloverCache(
+        TieredSpilloverCache<String, String> tieredSpilloverCache = initializeTieredSpilloverCache(
             onHeapCacheSize,
             diskCacheSize,
             eventListener,
@@ -468,7 +469,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
 
         MockCacheEventListener<String, String> eventListener = new MockCacheEventListener<>();
 
-        TieredSpilloverCache<String, String> tieredSpilloverCache = intializeTieredSpilloverCache(
+        TieredSpilloverCache<String, String> tieredSpilloverCache = initializeTieredSpilloverCache(
             onHeapCacheSize,
             diskCacheSize,
             eventListener,
@@ -598,6 +599,71 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         assertNotNull(onDiskCache.get(keyToBeEvicted));
     }
 
+    public void testDiskTierPolicies() throws Exception {
+        // For policy function, allow if what it receives starts with "a" and string is even length
+        ArrayList<CacheTierPolicy<String>> policies = new ArrayList<>();
+        policies.add(new AllowFirstLetterA());
+        policies.add(new AllowEvenLengths());
+
+        int onHeapCacheSize = 0;
+        MockCacheEventListener<String, String> eventListener = new MockCacheEventListener<>();
+        TieredSpilloverCache<String, String> tieredSpilloverCache = initializeTieredSpilloverCache(
+            onHeapCacheSize,
+            100,
+            eventListener,
+            0,
+            policies
+        );
+
+        Map<String, String> keyValuePairs = new HashMap<>();
+        Map<String, Boolean> expectedOutputs = new HashMap<>();
+        keyValuePairs.put("key1", "abcd");
+        expectedOutputs.put("key1", true);
+        keyValuePairs.put("key2", "abcde");
+        expectedOutputs.put("key2", false);
+        keyValuePairs.put("key3", "bbc");
+        expectedOutputs.put("key3", false);
+        keyValuePairs.put("key4", "ab");
+        expectedOutputs.put("key4", true);
+        keyValuePairs.put("key5", "");
+        expectedOutputs.put("key5", false);
+
+        LoadAwareCacheLoader<String, String> loader = getLoadAwareCacheLoaderWithKeyValueMap(keyValuePairs);
+
+
+        for (String key : keyValuePairs.keySet()) {
+            Boolean expectedOutput = expectedOutputs.get(key);
+            String value = tieredSpilloverCache.computeIfAbsent(key, loader);
+            assertEquals(keyValuePairs.get(key), value);
+            String result = tieredSpilloverCache.get(key);
+            if (expectedOutput) {
+                // Should retrieve from disk tier if it was accepted
+                assertEquals(keyValuePairs.get(key), result);
+            } else {
+                // Should miss as heap tier size = 0 and the policy rejected it
+                assertNull(result);
+            }
+        }
+    }
+
+    private static class AllowFirstLetterA implements CacheTierPolicy<String> {
+        @Override
+        public boolean checkData(String data) {
+            try {
+                return (data.charAt(0) == 'a');
+            } catch (StringIndexOutOfBoundsException e) {
+                return false;
+            }
+        }
+    }
+
+    private static class AllowEvenLengths implements CacheTierPolicy<String> {
+        @Override
+        public boolean checkData(String data) {
+            return data.length() % 2 == 0;
+        }
+    }
+
     class MockCacheEventListener<K, V> implements StoreAwareCacheEventListener<K, V> {
 
         EnumMap<CacheStoreType, TestStatsHolder> enumMap = new EnumMap<>(CacheStoreType.class);
@@ -658,13 +724,32 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         };
     }
 
-    private TieredSpilloverCache<String, String> intializeTieredSpilloverCache(
+    // Brought in from older version of the framework test.
+    private LoadAwareCacheLoader<String, String> getLoadAwareCacheLoaderWithKeyValueMap(Map<String, String> map) {
+        return new LoadAwareCacheLoader<String, String>() {
+            boolean isLoaded;
+
+            @Override
+            public String load(String key) throws Exception {
+                isLoaded = true;
+                return map.get(key);
+            }
+
+            @Override
+            public boolean isLoaded() {
+                return isLoaded;
+            }
+        };
+    }
+
+    private TieredSpilloverCache<String, String> initializeTieredSpilloverCache(
         int onHeapCacheSize,
-        int diksCacheSize,
+        int diskCacheSize,
         StoreAwareCacheEventListener<String, String> eventListener,
-        long diskDeliberateDelay
+        long diskDeliberateDelay,
+        ArrayList<CacheTierPolicy<String>> policies
     ) {
-        StoreAwareCacheBuilder<String, String> diskCacheBuilder = new MockOnDiskCache.Builder<String, String>().setMaxSize(diksCacheSize)
+        StoreAwareCacheBuilder<String, String> diskCacheBuilder = new MockOnDiskCache.Builder<String, String>().setMaxSize(diskCacheSize)
             .setDeliberateDelay(diskDeliberateDelay);
         StoreAwareCacheBuilder<String, String> onHeapCacheBuilder = new OpenSearchOnHeapCache.Builder<String, String>()
             .setMaximumWeightInBytes(onHeapCacheSize * 20)
@@ -672,8 +757,19 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         return new TieredSpilloverCache.Builder<String, String>().setOnHeapCacheBuilder(onHeapCacheBuilder)
             .setOnDiskCacheBuilder(diskCacheBuilder)
             .setListener(eventListener)
+            .withPolicies(policies)
             .build();
     }
+
+    private TieredSpilloverCache<String, String> initializeTieredSpilloverCache(
+        int onHeapCacheSize,
+        int diskCacheSize,
+        StoreAwareCacheEventListener<String, String> eventListener,
+        long diskDeliberateDelay
+    ) {
+        return initializeTieredSpilloverCache(onHeapCacheSize, diskCacheSize, eventListener, diskDeliberateDelay, new ArrayList<>());
+    }
+
 }
 
 class MockOnDiskCache<K, V> implements StoreAwareCache<K, V> {
