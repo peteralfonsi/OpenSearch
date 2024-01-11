@@ -286,7 +286,7 @@ public final class IndicesRequestCache implements RemovalListener<IndicesRequest
         /**
          * Called when this entity instance is removed
          */
-        void onRemoval(RemovalNotification<Key, BytesReference> notification);
+        void onRemoval(RemovalNotification<Key, BytesReference> notification, CacheStoreType cacheStoreType);
 
     }
 

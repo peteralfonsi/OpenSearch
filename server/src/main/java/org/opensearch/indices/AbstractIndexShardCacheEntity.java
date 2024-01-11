@@ -34,6 +34,7 @@ package org.opensearch.indices;
 
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
+import org.opensearch.common.cache.store.StoreAwareCacheRemovalNotification;
 import org.opensearch.common.cache.store.enums.CacheStoreType;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.index.cache.request.ShardRequestCache;
@@ -53,21 +54,34 @@ abstract class AbstractIndexShardCacheEntity implements IndicesRequestCache.Cach
 
     @Override
     public final void onCached(IndicesRequestCache.Key key, BytesReference value, CacheStoreType cacheStoreType) {
-        stats().onCached(key, value);
+        stats().onCached(key, value, cacheStoreType);
     }
 
     @Override
     public final void onHit(CacheStoreType cacheStoreType) {
-        stats().onHit();
+        stats().onHit(cacheStoreType);
     }
 
     @Override
     public final void onMiss(CacheStoreType cacheStoreType) {
-        stats().onMiss();
+        stats().onMiss(cacheStoreType);
     }
 
     @Override
-    public final void onRemoval(RemovalNotification<IndicesRequestCache.Key, BytesReference> notification) {
-        stats().onRemoval(notification.getKey(), notification.getValue(), notification.getRemovalReason() == RemovalReason.EVICTED);
+    public final void onRemoval(RemovalNotification<IndicesRequestCache.Key, BytesReference> notification, CacheStoreType cacheStoreType) {
+        if (notification instanceof StoreAwareCacheRemovalNotification) {
+            stats().onRemoval(
+                notification.getKey(),
+                notification.getValue(),
+                notification.getRemovalReason() == RemovalReason.EVICTED,
+                ((StoreAwareCacheRemovalNotification<IndicesRequestCache.Key, BytesReference>) notification).getCacheStoreType()
+            ); // Pass CacheStoreType if the removal notification contains it, which it always will for non-heap tiers
+        } else {
+            stats().onRemoval(
+                notification.getKey(),
+                notification.getValue(),
+                notification.getRemovalReason() == RemovalReason.EVICTED
+            ); // Use default stats.onRemoval, which is ON_HEAP
+        }
     }
 }

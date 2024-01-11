@@ -15,6 +15,17 @@ package org.opensearch.common.cache.store.enums;
  */
 public enum CacheStoreType {
 
-    ON_HEAP,
-    DISK;
+    ON_HEAP("on_heap"),
+    DISK("disk");
+
+    private final String stringValue;
+
+    CacheStoreType(String stringValue) {
+        // Associate each TierType with a string representation, for use in API responses and elsewhere
+        this.stringValue = stringValue;
+    }
+
+    public String getStringValue() {
+        return this.stringValue;
+    }
 }
