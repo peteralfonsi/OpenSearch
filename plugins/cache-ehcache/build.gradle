@@ -19,6 +19,7 @@ opensearchplugin {
 
 dependencies {
   api "org.ehcache:ehcache:${versions.ehcache}"
+    implementation project(path: ':modules:roaringbitmap-keystore')
 }
 
 thirdPartyAudit {

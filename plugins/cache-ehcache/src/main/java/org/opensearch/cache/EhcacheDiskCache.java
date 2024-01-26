@@ -23,6 +23,7 @@ import org.opensearch.common.cache.store.builders.StoreAwareCacheBuilder;
 import org.opensearch.common.cache.store.config.StoreAwareCacheConfig;
 import org.opensearch.common.cache.store.enums.CacheStoreType;
 import org.opensearch.common.cache.store.listeners.StoreAwareCacheEventListener;
+import org.opensearch.common.cache.tier.keystore.KeyLookupStore;
 import org.opensearch.common.collect.Tuple;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.common.settings.Settings;
@@ -105,6 +106,8 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
 
     private final StoreAwareCacheEventListener<K, V> eventListener;
 
+    private final KeyLookupStore<Integer> keystore;
+
     /**
      * Used in computeIfAbsent to synchronize loading of a given key. This is needed as ehcache doesn't provide a
      * computeIfAbsent method.
@@ -131,6 +134,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
         this.eventListener = builder.getEventListener();
         this.ehCacheEventListener = new EhCacheEventListener<K, V>(builder.getEventListener());
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
+        this.keystore = new RBMIntKeyLookupStore(100000L); // TODO: Debug only - remove!
     }
 
     private Cache<K, V> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {
@@ -216,11 +220,13 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
         if (key == null) {
             throw new IllegalArgumentException("Key passed to ehcache disk cache was null.");
         }
-        V value;
-        try {
-            value = cache.get(key);
-        } catch (CacheLoadingException ex) {
-            throw new OpenSearchException("Exception occurred while trying to fetch item from ehcache disk cache");
+        V value = null;
+        if (keystore.contains(key.hashCode())) {
+            try {
+                value = cache.get(key);
+            } catch (CacheLoadingException ex) {
+                throw new OpenSearchException("Exception occurred while trying to fetch item from ehcache disk cache");
+            }
         }
         if (value != null) {
             eventListener.onHit(key, value, CacheStoreType.DISK);
@@ -239,6 +245,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
     public void put(K key, V value) {
         try {
             cache.put(key, value);
+            keystore.add(key.hashCode());
         } catch (CacheWritingException ex) {
             throw new OpenSearchException("Exception occurred while put item to ehcache disk cache");
         }
