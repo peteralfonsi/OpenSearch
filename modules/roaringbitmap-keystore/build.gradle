@@ -6,8 +6,6 @@
  * compatible open source license.
  */
 
-import org.opensearch.gradle.info.BuildParams
-
 opensearchplugin {
   description 'Roaring bitmap-based implementation of a key lookup store, used for tiered caching.'
   classname 'org.opensearch.cache.RoaringBitmapKeystorePlugin'
