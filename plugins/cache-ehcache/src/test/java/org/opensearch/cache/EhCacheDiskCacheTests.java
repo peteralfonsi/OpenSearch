@@ -8,21 +8,29 @@
 
 package org.opensearch.cache;
 
+import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.store.StoreAwareCache;
 import org.opensearch.common.cache.store.StoreAwareCacheRemovalNotification;
 import org.opensearch.common.cache.store.enums.CacheStoreType;
 import org.opensearch.common.cache.store.listeners.StoreAwareCacheEventListener;
+import org.opensearch.common.cache.tier.BytesReferenceSerializer;
+import org.opensearch.common.cache.tier.Serializer;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.common.bytes.BytesArray;
+import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -45,6 +53,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
@@ -76,6 +86,43 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
         }
     }
 
+    public void testBasicGetAndPutBytesReference() throws Exception {
+        Settings settings = Settings.builder().build();
+        MockEventListener<String, BytesReference> mockEventListener = new MockEventListener<>();
+        try (NodeEnvironment env = newNodeEnvironment(settings)) {
+            StoreAwareCache<String, BytesReference> ehCacheDiskCachingTier = new EhcacheDiskCache.Builder<String, BytesReference>()
+                .setDiskCacheAlias("test1")
+                .setThreadPoolAlias("ehcacheTest")
+                .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
+                .setKeyType(String.class)
+                .setValueType(BytesReference.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new BytesReferenceSerializer())
+                .setSettings(settings)
+                .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES * 2) // bigger so no evictions happen
+                .setExpireAfterAccess(TimeValue.MAX_VALUE)
+                .setEventListener(mockEventListener)
+                .build();
+            int randomKeys = randomIntBetween(10, 100);
+            int valueLength = 1000;
+            Random rand = Randomness.get();
+            Map<String, BytesReference> keyValueMap = new HashMap<>();
+            for (int i = 0; i < randomKeys; i++) {
+                byte[] valueBytes = new byte[valueLength];
+                rand.nextBytes(valueBytes);
+                keyValueMap.put(UUID.randomUUID().toString(), new BytesArray(valueBytes));
+            }
+            for (Map.Entry<String, BytesReference> entry : keyValueMap.entrySet()) {
+                ehCacheDiskCachingTier.put(entry.getKey(), entry.getValue());
+            }
+            for (Map.Entry<String, BytesReference> entry : keyValueMap.entrySet()) {
+                BytesReference value = ehCacheDiskCachingTier.get(entry.getKey());
+                assertEquals(entry.getValue(), value);
+            }
+            ehCacheDiskCachingTier.close();
+        }
+    }
+
     public void testConcurrentPut() throws Exception {
         Settings settings = Settings.builder().build();
         MockEventListener<String, String> mockEventListener = new MockEventListener<>();
@@ -85,6 +132,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
@@ -129,6 +178,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setIsEventListenerModeSync(true) // For accurate count
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
@@ -171,6 +222,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
@@ -208,6 +261,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setThreadPoolAlias("ehcacheTest")
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
@@ -237,6 +292,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setThreadPoolAlias("ehcacheTest")
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
@@ -307,6 +364,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setThreadPoolAlias("ehcacheTest")
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
@@ -363,6 +422,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
@@ -457,6 +518,28 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
         public void onCached(K key, V value, CacheStoreType cacheStoreType) {
             assert cacheStoreType.equals(CacheStoreType.DISK);
             onCachedCount.incrementAndGet();
+        }
+    }
+
+    private static class StringSerializer implements Serializer<String, byte[]> {
+        private final Charset charset = StandardCharsets.UTF_8;
+
+        @Override
+        public byte[] serialize(String object) {
+            return object.getBytes(charset);
+        }
+
+        @Override
+        public String deserialize(byte[] bytes) {
+            if (bytes == null) {
+                return null;
+            }
+            return new String(bytes, charset);
+        }
+
+        @Override
+        public boolean equals(String object, byte[] bytes) {
+            return object.equals(deserialize(bytes));
         }
     }
 }
