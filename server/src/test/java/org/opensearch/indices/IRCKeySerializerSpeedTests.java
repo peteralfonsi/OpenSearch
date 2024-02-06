@@ -42,14 +42,18 @@ public class IRCKeySerializerSpeedTests extends OpenSearchSingleNodeTestCase {
 
         IRCKeyPooledKryoSerializer kryoSer = new IRCKeyPooledKryoSerializer(indicesService, irc, 5);
         IRCKeyWriteableSerializer writeableSer = new IRCKeyWriteableSerializer(irc);
+        IRCKeyProtobufSerializer protobufSer = new IRCKeyProtobufSerializer(indicesService, irc);
 
         int NUM_ITER = 1_000_000;
-        int KEY_SIZE = 2048;
+        int KEY_SIZE = 1024;
 
         long kryoSerializeTimeNanos = 0L;
         long writeableSerializeTimeNanos = 0L;
+        long protobufSerializeTimeNanos = 0L;
         long kryoDeserializeTimeNanos = 0L;
         long writeableDeserializeTimeNanos = 0L;
+        long protobufDeserializeTimeNanos = 0L;
+
         for (int i = 0; i < NUM_ITER; i++) {
             IndicesRequestCache.Key key = IRCKeyWriteableSerializerTests.getRandomIRCKey(KEY_SIZE, rand, irc, entity);
             long now = System.nanoTime();
@@ -58,21 +62,33 @@ public class IRCKeySerializerSpeedTests extends OpenSearchSingleNodeTestCase {
             now = System.nanoTime();
             IndicesRequestCache.Key kryoDeserialized = kryoSer.deserialize(kryoSerialized);
             kryoDeserializeTimeNanos += System.nanoTime() - now;
+
             now = System.nanoTime();
             byte[] writeableSerialized = writeableSer.serialize(key);
             writeableSerializeTimeNanos += System.nanoTime() - now;
             now = System.nanoTime();
             IndicesRequestCache.Key writeableDeserialized = writeableSer.deserialize(writeableSerialized);
             writeableDeserializeTimeNanos += System.nanoTime() - now;
+
+            now = System.nanoTime();
+            byte[] protobufSerialized = protobufSer.serialize(key);
+            protobufSerializeTimeNanos += System.nanoTime() - now;
+            now = System.nanoTime();
+            IndicesRequestCache.Key protobufDeserialized = protobufSer.deserialize(protobufSerialized);
+            protobufDeserializeTimeNanos += System.nanoTime() - now;
         }
         System.out.println("SERIALIZATION:");
         System.out.println("Kryo total time = " + kryoSerializeTimeNanos + " ns");
         System.out.println("Writeable total time = " + writeableSerializeTimeNanos + " ns");
+        System.out.println("Protobuf total time = " + protobufSerializeTimeNanos + " ns");
         System.out.println("Kryo took " + (double) kryoSerializeTimeNanos / writeableSerializeTimeNanos * 100 + "% of writeable");
+        System.out.println("Protobuf took " + (double) protobufSerializeTimeNanos / writeableSerializeTimeNanos * 100 + "% of writeable");
         System.out.println("DESERIALIZATION:");
         System.out.println("Kryo total time = " + kryoDeserializeTimeNanos + " ns");
         System.out.println("Writeable total time = " + writeableDeserializeTimeNanos + " ns");
+        System.out.println("Protobuf total time = " + protobufDeserializeTimeNanos + " ns");
         System.out.println("Kryo took " + (double) kryoDeserializeTimeNanos / writeableDeserializeTimeNanos * 100 + "% of writeable");
+        System.out.println("Protobuf took " + (double) protobufDeserializeTimeNanos / writeableDeserializeTimeNanos * 100 + "% of writeable");
     }
 
     public void testSpeedConcurrency() throws Exception {
@@ -86,22 +102,26 @@ public class IRCKeySerializerSpeedTests extends OpenSearchSingleNodeTestCase {
 
         IRCKeyPooledKryoSerializer kryoSer = new IRCKeyPooledKryoSerializer(indicesService, irc, 32);
         IRCKeyWriteableSerializer writeableSer = new IRCKeyWriteableSerializer(irc);
+        IRCKeyProtobufSerializer protobufSer = new IRCKeyProtobufSerializer(indicesService, irc);
 
-        int numThreads = 6; // total threads, 3 for each serializer
+        int numThreads = 4; // total threads, 2 for each serializer
         int totalKeys = 1_048_576; // total keys for each serializer to process, should be a multiple of numThreads
         int keysPerThread = 2 * totalKeys / (numThreads);
         int valueLength = 1024;
 
-        AtomicLong kryoSerializeTimeNanos = new AtomicLong(0L);
+        //AtomicLong kryoSerializeTimeNanos = new AtomicLong(0L);
         AtomicLong writeableSerializeTimeNanos = new AtomicLong(0L);
-        long kryoDeserializeTimeNanos = 0L;
+        AtomicLong protobufSerializeTimeNanos = new AtomicLong(0L);
+        //long kryoDeserializeTimeNanos = 0L;
         long writeableDeserializeTimeNanos = 0L;
+        long protobufDeserializeTimeNanos = 0L;
 
         Thread[] threads = new Thread[numThreads];
         CyclicBarrier barrier = new CyclicBarrier(numThreads + 1);
         CountDownLatch countDownLatch = new CountDownLatch(keysPerThread * numThreads); // different in case it doesnt divide cleanly
-        Map<IndicesRequestCache.Key, byte[]> kryoSerializedMap = new HashMap<>();
+        //Map<IndicesRequestCache.Key, byte[]> kryoSerializedMap = new HashMap<>();
         Map<IndicesRequestCache.Key, byte[]> writeableSerializedMap = new HashMap<>();
+        Map<IndicesRequestCache.Key, byte[]> protobufSerializedMap = new HashMap<>();
         IndicesRequestCache.Key[] keyArr = new IndicesRequestCache.Key[totalKeys];
 
         for (int i = 0; i < totalKeys; i++) {
@@ -111,7 +131,7 @@ public class IRCKeySerializerSpeedTests extends OpenSearchSingleNodeTestCase {
         for (int j = 0; j < numThreads; j += 2) {
             // set up thread for Kryo serializer
             int threadCounter = j / 2;
-            threads[j] = new Thread(() -> {
+            /*threads[j] = new Thread(() -> {
                 try {
                     barrier.await();
                 } catch (InterruptedException | BrokenBarrierException e) {
@@ -125,10 +145,10 @@ public class IRCKeySerializerSpeedTests extends OpenSearchSingleNodeTestCase {
                     kryoSerializedMap.put(key, ser);
                     countDownLatch.countDown();
                 }
-            });
+            });*/
 
             // set up thread for Writeable serializer
-            threads[j + 1] = new Thread(() -> {
+            threads[j] = new Thread(() -> {
                 try {
                     barrier.await();
                 } catch (InterruptedException | BrokenBarrierException e) {
@@ -144,16 +164,35 @@ public class IRCKeySerializerSpeedTests extends OpenSearchSingleNodeTestCase {
                 }
             });
 
+            threads[j + 1] = new Thread(() -> {
+                try {
+                    barrier.await();
+                } catch (InterruptedException | BrokenBarrierException e) {
+                    throw new RuntimeException(e);
+                }
+                for (int i = threadCounter * keysPerThread; i < (threadCounter +1) * keysPerThread; i++) {
+                    IndicesRequestCache.Key key = keyArr[i];
+                    long now = System.nanoTime();
+                    byte[] ser = protobufSer.serialize(key);
+                    protobufSerializeTimeNanos.addAndGet(System.nanoTime() - now);
+                    protobufSerializedMap.put(key, ser);
+                    countDownLatch.countDown();
+                }
+            });
+
             threads[j].start();
             threads[j + 1].start();
+            //threads[j + 2].start();
         }
         barrier.await(); // Start the threads in parallel
         countDownLatch.await(); // Wait for all keys in all threads to finish
 
         System.out.println("SERIALIZATION:");
-        System.out.println("Kryo total time = " + kryoSerializeTimeNanos.get() + " ns");
+        //System.out.println("Kryo total time = " + kryoSerializeTimeNanos.get() + " ns");
         System.out.println("Writeable total time = " + writeableSerializeTimeNanos.get() + " ns");
-        System.out.println("Kryo took " + (double) kryoSerializeTimeNanos.get() / writeableSerializeTimeNanos.get() * 100 + "% of writeable");
+        System.out.println("Protobuf total time = " + protobufSerializeTimeNanos.get() + " ns");
+        //System.out.println("Kryo took " + (double) kryoSerializeTimeNanos.get() / writeableSerializeTimeNanos.get() * 100 + "% of writeable");
+        System.out.println("Protobuf took " + (double) protobufSerializeTimeNanos.get() / writeableSerializeTimeNanos.get() * 100 + "% of writeable");
         /*System.out.println("DESERIALIZATION:");
         System.out.println("Kryo total time = " + kryoDeserializeTimeNanos + " ns");
         System.out.println("Writeable total time = " + writeableDeserializeTimeNanos + " ns");

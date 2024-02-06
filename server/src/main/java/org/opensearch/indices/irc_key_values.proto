@@ -1,0 +1,13 @@
+syntax = "proto2";
+
+package org.opensearch.indices;
+
+option java_outer_classname = "IRCKeyValues";
+
+message Values {
+  required string index_name = 1;
+  required string index_uuid = 2;
+  required int32 shard_id = 3;
+  required string reader_cache_key_id = 4;
+  required bytes value = 5;
+}

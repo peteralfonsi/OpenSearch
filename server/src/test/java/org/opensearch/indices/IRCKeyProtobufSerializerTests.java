@@ -9,7 +9,6 @@
 package org.opensearch.indices;
 
 import org.opensearch.common.Randomness;
-import org.opensearch.common.cache.tier.CacheValue;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.index.IndexService;
@@ -19,22 +18,19 @@ import org.opensearch.test.OpenSearchSingleNodeTestCase;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
-import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Phaser;
-import java.util.concurrent.ThreadPoolExecutor;
 
-public class IRCKeyKryoSerializerTests extends OpenSearchSingleNodeTestCase {
+public class IRCKeyProtobufSerializerTests extends OpenSearchSingleNodeTestCase {
+    // Largely duplicated from IRCKeyKryoSerializerTests.java
     public void testSerializer() throws Exception {
-        int numComponentSerializers = 5;
         ClusterSettings dummyClusterSettings = new ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS);
         IndicesService indicesService = getInstanceFromNode(IndicesService.class);
         IndicesRequestCache irc = new IndicesRequestCache(Settings.EMPTY, indicesService, dummyClusterSettings);
         IndexService indexService = createIndex("test");
         IndexShard indexShard = indexService.getShardOrNull(0);
         IndicesService.IndexShardCacheEntity entity = indicesService.new IndexShardCacheEntity(indexShard);
-        IRCKeyPooledKryoSerializer ser = new IRCKeyPooledKryoSerializer(indicesService, irc, numComponentSerializers);
+        IRCKeyProtobufSerializer ser = new IRCKeyProtobufSerializer(indicesService, irc);
 
         int NUM_KEYS = 1000;
         Random rand = Randomness.get();
@@ -58,7 +54,7 @@ public class IRCKeyKryoSerializerTests extends OpenSearchSingleNodeTestCase {
         IndexService indexService = createIndex("test");
         IndexShard indexShard = indexService.getShardOrNull(0);
         IndicesService.IndexShardCacheEntity entity = indicesService.new IndexShardCacheEntity(indexShard);
-        IRCKeyPooledKryoSerializer ser = new IRCKeyPooledKryoSerializer(indicesService, irc, numComponentSerializers);
+        IRCKeyProtobufSerializer ser = new IRCKeyProtobufSerializer(indicesService, irc);
 
         Random rand = Randomness.get();
 
