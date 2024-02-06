@@ -30,20 +30,14 @@ public class IRCKeyProtobufSerializer implements Serializer<IndicesRequestCache.
         assert object.entity instanceof IndicesService.IndexShardCacheEntity;
         IndicesService.IndexShardCacheEntity entity = (IndicesService.IndexShardCacheEntity) object.entity;
         Index index = entity.getIndexShard().shardId().getIndex();
-        // Cannot reconstruct Index (no zero-arg constructor), so write its two fields instead
-        String indexName = index.getName();
-        String indexUUID = index.getUUID();
-        int shardId = entity.getIndexShard().shardId().id();
-        String readerCacheKeyId = object.readerCacheKeyId;
-        byte[] value = BytesReference.toBytes(object.value);
-        IRCKeyValues.Values values = IRCKeyValues.Values.newBuilder()
-            .setIndexName(indexName)
-            .setIndexUuid(indexUUID)
-            .setShardId(shardId)
-            .setReaderCacheKeyId(readerCacheKeyId)
-            .setValue(ByteString.copyFrom(value))
-            .build();
-        return values.toByteArray();
+        return IRCKeyValues.Values.newBuilder()
+            .setIndexName(index.getName())
+            .setIndexUuid(index.getUUID())
+            .setShardId(entity.getIndexShard().shardId().id())
+            .setReaderCacheKeyId(object.readerCacheKeyId)
+            .setValue(ByteString.copyFrom(BytesReference.toBytes(object.value)))
+            .build()
+            .toByteArray();
     }
 
     @Override
