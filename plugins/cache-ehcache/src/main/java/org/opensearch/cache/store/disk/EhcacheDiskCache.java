@@ -15,19 +15,17 @@ import org.opensearch.cache.EhcacheSettings;
 import org.opensearch.common.SuppressForbidden;
 import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.common.cache.CacheType;
+import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
+import org.opensearch.common.cache.RemovalListener;
+import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.stats.CacheStats;
+import org.opensearch.common.cache.stats.ICacheKey;
 import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
-import org.opensearch.common.cache.store.StoreAwareCache;
-import org.opensearch.common.cache.store.StoreAwareCacheRemovalNotification;
-import org.opensearch.common.cache.store.builders.StoreAwareCacheBuilder;
-import org.opensearch.common.cache.store.config.StoreAwareCacheConfig;
+import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.store.enums.CacheStoreType;
-import org.opensearch.common.cache.store.listeners.StoreAwareCacheEventListener;
 import org.opensearch.common.collect.Tuple;
-import org.opensearch.common.metrics.CounterMetric;
-import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 
@@ -43,6 +41,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
+import java.util.function.ToLongBiFunction;
 
 import org.ehcache.Cache;
 import org.ehcache.CachePersistenceException;
@@ -61,12 +60,7 @@ import org.ehcache.impl.config.store.disk.OffHeapDiskStoreConfiguration;
 import org.ehcache.spi.loaderwriter.CacheLoadingException;
 import org.ehcache.spi.loaderwriter.CacheWritingException;
 
-import static org.opensearch.cache.EhcacheSettings.DISK_CACHE_ALIAS_KEY;
-import static org.opensearch.cache.EhcacheSettings.DISK_CACHE_EXPIRE_AFTER_ACCESS_KEY;
-import static org.opensearch.cache.EhcacheSettings.DISK_MAX_SIZE_IN_BYTES_KEY;
 import static org.opensearch.cache.EhcacheSettings.DISK_SEGMENT_KEY;
-import static org.opensearch.cache.EhcacheSettings.DISK_STORAGE_PATH_KEY;
-import static org.opensearch.cache.EhcacheSettings.DISK_STORAGE_PATH_SETTING;
 import static org.opensearch.cache.EhcacheSettings.DISK_WRITE_CONCURRENCY_KEY;
 import static org.opensearch.cache.EhcacheSettings.DISK_WRITE_MAXIMUM_THREADS_KEY;
 import static org.opensearch.cache.EhcacheSettings.DISK_WRITE_MIN_THREADS_KEY;
@@ -80,7 +74,7 @@ import static org.opensearch.cache.EhcacheSettings.DISK_WRITE_MIN_THREADS_KEY;
  *
  */
 @ExperimentalApi
-public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
+public class EhcacheDiskCache<K, V> implements ICache<K, V> {
 
     private static final Logger logger = LogManager.getLogger(EhcacheDiskCache.class);
 
@@ -93,7 +87,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
     private final PersistentCacheManager cacheManager;
 
     // Disk cache
-    private Cache<K, V> cache;
+    private Cache<ICacheKey, V> cache;
     private final long maxWeightInBytes;
     private final String storagePath;
     private final Class<K> keyType;
@@ -103,15 +97,41 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
     private final EhCacheEventListener<K, V> ehCacheEventListener;
     private final String threadPoolAlias;
     private final Settings settings;
-    private final StoreAwareCacheEventListener<K, V> eventListener;
     private final CacheType cacheType;
     private final String diskCacheAlias;
+    private final String shardIdDimensionName;
 
     /**
      * Used in computeIfAbsent to synchronize loading of a given key. This is needed as ehcache doesn't provide a
      * computeIfAbsent method.
      */
-    Map<K, CompletableFuture<Tuple<K, V>>> completableFutureMap = new ConcurrentHashMap<>();
+    Map<ICacheKey<K>, CompletableFuture<Tuple<ICacheKey<K>, V>>> completableFutureMap = new ConcurrentHashMap<>();
+
+    // I think we need this to instantiate the cache. We can't pass in values like ICacheKey<String>.class to builders
+    // due to type erasure.
+    private class EhcacheKeyWrapper {
+        private final ICacheKey<K> key;
+        public EhcacheKeyWrapper(ICacheKey<K> key) {
+            this.key = key;
+        }
+        ICacheKey<K> getKey() {
+            return key;
+        }
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null) {
+                return false;
+            }
+            if (o.getClass() != EhcacheKeyWrapper.class) {
+                return false;
+            }
+            EhcacheKeyWrapper other = (EhcacheKeyWrapper) o;
+            return other.getKey().equals(key);
+        }
+    }
 
     private EhcacheDiskCache(Builder<K, V> builder) {
         this.keyType = Objects.requireNonNull(builder.keyType, "Key type shouldn't be null");
@@ -138,34 +158,33 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
         }
         this.settings = Objects.requireNonNull(builder.getSettings(), "Settings objects shouldn't be null");
         this.cacheManager = buildCacheManager();
-        Objects.requireNonNull(builder.getEventListener(), "Listener can't be null");
-        this.eventListener = builder.getEventListener();
-        this.ehCacheEventListener = new EhCacheEventListener<K, V>(builder.getEventListener());
+        this.ehCacheEventListener = new EhCacheEventListener<K, V>(Objects.requireNonNull(builder.getRemovalListener(), "Removal listener can't be null"));
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
-        this.stats = new SingleDimensionCacheStats(builder.shardIdDimensionName);
+        this.shardIdDimensionName = Objects.requireNonNull(builder.shardIdDimensionName, "Dimension name can't be null");
+        this.stats = new SingleDimensionCacheStats(shardIdDimensionName);
     }
 
-    private Cache<K, V> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {
+    private Cache<ICacheKey, V> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {
         try {
             return this.cacheManager.createCache(
                 this.diskCacheAlias,
                 CacheConfigurationBuilder.newCacheConfigurationBuilder(
-                    this.keyType,
+                    ICacheKey.class,
                     this.valueType,
                     ResourcePoolsBuilder.newResourcePoolsBuilder().disk(maxWeightInBytes, MemoryUnit.B)
                 ).withExpiry(new ExpiryPolicy<>() {
                     @Override
-                    public Duration getExpiryForCreation(K key, V value) {
+                    public Duration getExpiryForCreation(ICacheKey key, V value) {
                         return INFINITE;
                     }
 
                     @Override
-                    public Duration getExpiryForAccess(K key, Supplier<? extends V> value) {
+                    public Duration getExpiryForAccess(ICacheKey key, Supplier<? extends V> value) {
                         return expireAfterAccess;
                     }
 
                     @Override
-                    public Duration getExpiryForUpdate(K key, Supplier<? extends V> oldValue, V newValue) {
+                    public Duration getExpiryForUpdate(ICacheKey key, Supplier<? extends V> oldValue, V newValue) {
                         return INFINITE;
                     }
                 })
@@ -208,7 +227,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
     }
 
     // Package private for testing
-    Map<K, CompletableFuture<Tuple<K, V>>> getCompletableFutureMap() {
+    Map<ICacheKey<K>, CompletableFuture<Tuple<ICacheKey<K>, V>>> getCompletableFutureMap() {
         return completableFutureMap;
     }
 
@@ -237,7 +256,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
     }
 
     @Override
-    public V get(K key) {
+    public V get(ICacheKey<K> key) {
         if (key == null) {
             throw new IllegalArgumentException("Key passed to ehcache disk cache was null.");
         }
@@ -248,9 +267,9 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
             throw new OpenSearchException("Exception occurred while trying to fetch item from ehcache disk cache");
         }
         if (value != null) {
-            eventListener.onHit(key, value, CacheStoreType.DISK);
+            stats.incrementHitsByDimensions(key.dimensions);
         } else {
-            eventListener.onMiss(key, CacheStoreType.DISK);
+            stats.incrementMissesByDimensions(key.dimensions);
         }
         return value;
     }
@@ -261,7 +280,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
      * @param value Type of value.
      */
     @Override
-    public void put(K key, V value) {
+    public void put(ICacheKey<K> key, V value) {
         try {
             cache.put(key, value);
         } catch (CacheWritingException ex) {
@@ -277,8 +296,8 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
      * @throws Exception when either internal get or put calls fail.
      */
     @Override
-    public V computeIfAbsent(K key, LoadAwareCacheLoader<K, V> loader) throws Exception {
-        // Ehache doesn't provide any computeIfAbsent function. Exposes putIfAbsent but that works differently and is
+    public V computeIfAbsent(ICacheKey<K> key, LoadAwareCacheLoader<ICacheKey<K>, V> loader) throws Exception {
+        // Ehcache doesn't provide any computeIfAbsent function. Exposes putIfAbsent but that works differently and is
         // not performant in case there are multiple concurrent request for same key. Below is our own custom
         // implementation of computeIfAbsent on top of ehcache. Inspired by OpenSearch Cache implementation.
         V value = cache.get(key);
@@ -286,22 +305,24 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
             value = compute(key, loader);
         }
         if (!loader.isLoaded()) {
-            eventListener.onHit(key, value, CacheStoreType.DISK);
+            //eventListener.onHit(key, value, CacheStoreType.DISK);
+            stats.incrementHitsByDimensions(key.dimensions);
         } else {
-            eventListener.onMiss(key, CacheStoreType.DISK);
+            //eventListener.onMiss(key, CacheStoreType.DISK);
+            stats.incrementMissesByDimensions(key.dimensions);
         }
         return value;
     }
 
-    private V compute(K key, LoadAwareCacheLoader<K, V> loader) throws Exception {
+    private V compute(ICacheKey<K> key, LoadAwareCacheLoader<ICacheKey<K>, V> loader) throws Exception {
         // A future that returns a pair of key/value.
-        CompletableFuture<Tuple<K, V>> completableFuture = new CompletableFuture<>();
+        CompletableFuture<Tuple<ICacheKey<K>, V>> completableFuture = new CompletableFuture<>();
         // Only one of the threads will succeed putting a future into map for the same key.
         // Rest will fetch existing future.
-        CompletableFuture<Tuple<K, V>> future = completableFutureMap.putIfAbsent(key, completableFuture);
+        CompletableFuture<Tuple<ICacheKey<K>, V>> future = completableFutureMap.putIfAbsent(key, completableFuture);
         // Handler to handle results post processing. Takes a tuple<key, value> or exception as an input and returns
         // the value. Also before returning value, puts the value in cache.
-        BiFunction<Tuple<K, V>, Throwable, V> handler = (pair, ex) -> {
+        BiFunction<Tuple<ICacheKey<K>, V>, Throwable, V> handler = (pair, ex) -> {
             V value = null;
             if (pair != null) {
                 cache.put(pair.v1(), pair.v2());
@@ -351,7 +372,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
      * @param key key to be invalidated.
      */
     @Override
-    public void invalidate(K key) {
+    public void invalidate(ICacheKey<K> key) {
         try {
             cache.remove(key);
         } catch (CacheWritingException ex) {
@@ -369,7 +390,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
      * @return Iterable
      */
     @Override
-    public Iterable<K> keys() {
+    public Iterable<ICacheKey<K>> keys() {
         return () -> new EhCacheKeyIterator<>(cache.iterator());
     }
 
@@ -408,24 +429,14 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
     }
 
     /**
-     * Returns the tier type.
-     * @return CacheStoreType.DISK
-     */
-    @Override
-    public CacheStoreType getTierType() {
-        return CacheStoreType.DISK;
-    }
-
-
-    /**
      * This iterator wraps ehCache iterator and only iterates over its keys.
      * @param <K> Type of key
      */
-    class EhCacheKeyIterator<K> implements Iterator<K> {
+    class EhCacheKeyIterator<K> implements Iterator<ICacheKey<K>> {
 
-        Iterator<Cache.Entry<K, V>> iterator;
+        Iterator<Cache.Entry<ICacheKey, V>> iterator;
 
-        EhCacheKeyIterator(Iterator<Cache.Entry<K, V>> iterator) {
+        EhCacheKeyIterator(Iterator<Cache.Entry<ICacheKey, V>> iterator) {
             this.iterator = iterator;
         }
 
@@ -435,7 +446,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
         }
 
         @Override
-        public K next() {
+        public ICacheKey<K> next() {
             if (!hasNext()) {
                 throw new NoSuchElementException();
             }
@@ -448,56 +459,35 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
      * @param <K> Type of key
      * @param <V> Type of value
      */
-    class EhCacheEventListener<K, V> implements CacheEventListener<K, V> {
+    class EhCacheEventListener<K, V> implements CacheEventListener<ICacheKey<K>, V> {
 
-        private final StoreAwareCacheEventListener<K, V> eventListener;
+        //private final StoreAwareCacheEventListener<K, V> eventListener;
+        private final RemovalListener<ICacheKey<K>, V> removalListener;
 
-        EhCacheEventListener(StoreAwareCacheEventListener<K, V> eventListener) {
-            this.eventListener = eventListener;
+        EhCacheEventListener(RemovalListener<ICacheKey<K>, V> removalListener) {
+            this.removalListener = removalListener;
         }
 
         @Override
-        public void onEvent(CacheEvent<? extends K, ? extends V> event) { }
-            /*switch (event.getType()) {
+        public void onEvent(CacheEvent<? extends ICacheKey<K>, ? extends V> event) {
+            switch (event.getType()) {
                 case CREATED:
-                    stats.count.inc();
-                    this.eventListener.onCached(event.getKey(), event.getNewValue(), CacheStoreType.DISK);
+                    stats.incrementEntriesByDimensions(event.getKey().dimensions);
                     assert event.getOldValue() == null;
                     break;
                 case EVICTED:
-                    this.eventListener.onRemoval(
-                        new StoreAwareCacheRemovalNotification<>(
-                            event.getKey(),
-                            event.getOldValue(),
-                            RemovalReason.EVICTED,
-                            CacheStoreType.DISK
-                        )
-                    );
-                    stats.count.dec();
+                    this.removalListener.onRemoval(new RemovalNotification<>(event.getKey(), event.getOldValue(), RemovalReason.EVICTED));
+                    stats.decrementEntriesByDimensions(event.getKey().dimensions);
                     assert event.getNewValue() == null;
                     break;
                 case REMOVED:
-                    stats.count.dec();
-                    this.eventListener.onRemoval(
-                        new StoreAwareCacheRemovalNotification<>(
-                            event.getKey(),
-                            event.getOldValue(),
-                            RemovalReason.EXPLICIT,
-                            CacheStoreType.DISK
-                        )
-                    );
+                    this.removalListener.onRemoval(new RemovalNotification<>(event.getKey(), event.getOldValue(), RemovalReason.EXPLICIT));
+                    stats.decrementEntriesByDimensions(event.getKey().dimensions);
                     assert event.getNewValue() == null;
                     break;
                 case EXPIRED:
-                    this.eventListener.onRemoval(
-                        new StoreAwareCacheRemovalNotification<>(
-                            event.getKey(),
-                            event.getOldValue(),
-                            RemovalReason.INVALIDATED,
-                            CacheStoreType.DISK
-                        )
-                    );
-                    stats.count.dec();
+                    this.removalListener.onRemoval(new RemovalNotification<>(event.getKey(), event.getOldValue(), RemovalReason.INVALIDATED));
+                    stats.decrementEntriesByDimensions(event.getKey().dimensions);
                     assert event.getNewValue() == null;
                     break;
                 case UPDATED:
@@ -505,26 +495,26 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
                 default:
                     break;
             }
-        }*/
+        }
     }
 
     /**
      * Factory to create an ehcache disk cache.
      */
-    public class EhcacheDiskCacheFactory implements StoreAwareCache.Factory {
+    /*public class EhcacheDiskCacheFactory implements ICache.Factory {
 
         /**
          * Ehcache disk cache name.
          */
-        public static final String EHCACHE_DISK_CACHE_NAME = "ehcacheDiskCache";
+        /*public static final String EHCACHE_DISK_CACHE_NAME = "ehcacheDiskCache";
 
         /**
          * Default constructor.
          */
-        public EhcacheDiskCacheFactory() {}
+        /*public EhcacheDiskCacheFactory() {}
 
         @Override
-        public <K, V> StoreAwareCache<K, V> create(StoreAwareCacheConfig<K, V> config, CacheType cacheType) {
+        public <K, V> ICache<K, V> create(ICacheConfig<K, V> config, CacheType cacheType) {
             Map<String, Setting<?>> settingList = EhcacheSettings.getSettingListForCacheTypeAndStore(cacheType, CacheStoreType.DISK);
             Settings settings = config.getSettings();
             Setting<String> stringSetting = DISK_STORAGE_PATH_SETTING.getConcreteSettingForNamespace(
@@ -535,7 +525,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
                 .setCacheType(cacheType)
                 .setKeyType((config.getKeyType()))
                 .setValueType(config.getValueType())
-                .setEventListener(config.getEventListener())
+                .setRemovalListener(config.getRemovalListener())
                 .setExpireAfterAccess((TimeValue) settingList.get(DISK_CACHE_EXPIRE_AFTER_ACCESS_KEY).get(settings))
                 .setMaximumWeightInBytes((Long) settingList.get(DISK_MAX_SIZE_IN_BYTES_KEY).get(settings))
                 .setSettings(settings)
@@ -546,14 +536,15 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
         public String getCacheName() {
             return EHCACHE_DISK_CACHE_NAME;
         }
-    }
+    }*/
 
     /**
      * Builder object to build Ehcache disk tier.
      * @param <K> Type of key
      * @param <V> Type of value
      */
-    public class Builder<K, V> extends StoreAwareCacheBuilder<K, V> {
+    public static class Builder<K, V> extends ICacheBuilder<K, V> {
+        // TODO: Should inherit from whatever new thing Sagar adds (ICacheBuilder?)
 
         private CacheType cacheType;
         private String storagePath;
@@ -650,7 +641,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
             return this;
         }
 
-        @Override
+        //@Override
         public EhcacheDiskCache<K, V> build() {
             return new EhcacheDiskCache<>(this);
         }

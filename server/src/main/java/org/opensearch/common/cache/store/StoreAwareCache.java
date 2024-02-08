@@ -11,7 +11,7 @@ package org.opensearch.common.cache.store;
 import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
-import org.opensearch.common.cache.store.config.StoreAwareCacheConfig;
+import org.opensearch.common.cache.store.config.ICacheConfig;
 import org.opensearch.common.cache.store.enums.CacheStoreType;
 
 /**
@@ -30,7 +30,7 @@ public interface StoreAwareCache<K, V> extends ICache<K, V> {
      */
     @ExperimentalApi
     interface Factory {
-        <K, V> StoreAwareCache<K, V> create(StoreAwareCacheConfig<K, V> config, CacheType cacheType);
+        <K, V> StoreAwareCache<K, V> create(ICacheConfig<K, V> config, CacheType cacheType);
 
         String getCacheName();
     }

@@ -120,6 +120,12 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
                 stats.incrementEntriesByDimensions(dimensions);
                 expectedEntries.put(shardIdString, expectedEntries.get(shardIdString) + 1);
             }
+
+            int numEntryDecrements = rand.nextInt(numEntryIncrements);
+            for (int i = 0; i < numEntryDecrements; i++) {
+                stats.decrementEntriesByDimensions(dimensions);
+                expectedEntries.put(shardIdString, expectedEntries.get(shardIdString) - 1);
+            }
         }
         Map<String, Map<String, Long>> expectedShardResults = new HashMap<>();
         expectedShardResults.put("hits", expectedHits);

@@ -32,7 +32,10 @@ public interface CacheStats extends Writeable { // TODO: Make this extend ToXCon
     void incrementHitsByDimensions(List<CacheStatsDimension> dimensions);
     void incrementMissesByDimensions(List<CacheStatsDimension> dimensions);
     void incrementEvictionsByDimensions(List<CacheStatsDimension> dimensions);
+    // Can also use to decrement, with negative values
     void incrementMemorySizeByDimensions(List<CacheStatsDimension> dimensions, long amountBytes);
     void incrementEntriesByDimensions(List<CacheStatsDimension> dimensions);
+
+    void decrementEntriesByDimensions(List<CacheStatsDimension> dimensions);
 
 }

@@ -9,6 +9,8 @@
 package org.opensearch.common.cache.store.config;
 
 import org.opensearch.common.annotation.ExperimentalApi;
+import org.opensearch.common.cache.RemovalListener;
+import org.opensearch.common.cache.stats.ICacheKey;
 import org.opensearch.common.cache.store.listeners.StoreAwareCacheEventListener;
 import org.opensearch.common.settings.Settings;
 
@@ -18,9 +20,10 @@ import org.opensearch.common.settings.Settings;
  * @opensearch.experimental
  */
 @ExperimentalApi
-public class StoreAwareCacheConfig<K, V> {
+public class ICacheConfig<K, V> {
 
-    private StoreAwareCacheEventListener<K, V> eventListener;
+    //private StoreAwareCacheEventListener<K, V> eventListener;
+    private RemovalListener<ICacheKey<K>, V> removalListener;
 
     private Settings settings;
 
@@ -28,15 +31,15 @@ public class StoreAwareCacheConfig<K, V> {
 
     private Class<V> valueType;
 
-    private StoreAwareCacheConfig(Builder<K, V> builder) {
+    private ICacheConfig(Builder<K, V> builder) {
         this.keyType = builder.keyType;
         this.valueType = builder.valueType;
         this.settings = builder.settings;
-        this.eventListener = builder.eventListener;
+        this.removalListener = builder.removalListener;
     }
 
-    public StoreAwareCacheEventListener<K, V> getEventListener() {
-        return eventListener;
+    public RemovalListener<ICacheKey<K>, V> getRemovalListener() {
+        return removalListener;
     }
 
     public Class<K> getKeyType() {
@@ -58,7 +61,7 @@ public class StoreAwareCacheConfig<K, V> {
      */
     public static class Builder<K, V> {
 
-        private StoreAwareCacheEventListener<K, V> eventListener;
+        private RemovalListener<ICacheKey<K>, V> removalListener;
 
         private Settings settings;
 
@@ -68,8 +71,8 @@ public class StoreAwareCacheConfig<K, V> {
 
         public Builder() {}
 
-        public Builder<K, V> setEventListener(StoreAwareCacheEventListener<K, V> listener) {
-            this.eventListener = listener;
+        public Builder<K, V> setRemovalListener(RemovalListener<ICacheKey<K>, V> listener) {
+            this.removalListener = listener;
             return this;
         }
 
@@ -88,8 +91,8 @@ public class StoreAwareCacheConfig<K, V> {
             return this;
         }
 
-        public StoreAwareCacheConfig<K, V> build() {
-            return new StoreAwareCacheConfig<>(this);
+        public ICacheConfig<K, V> build() {
+            return new ICacheConfig<>(this);
         }
     }
 }

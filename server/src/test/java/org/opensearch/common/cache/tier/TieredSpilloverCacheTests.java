@@ -14,7 +14,7 @@ import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.store.OpenSearchOnHeapCache;
 import org.opensearch.common.cache.store.StoreAwareCache;
 import org.opensearch.common.cache.store.StoreAwareCacheRemovalNotification;
-import org.opensearch.common.cache.store.builders.StoreAwareCacheBuilder;
+import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.store.enums.CacheStoreType;
 import org.opensearch.common.cache.store.listeners.StoreAwareCacheEventListener;
 import org.opensearch.common.metrics.CounterMetric;
@@ -82,11 +82,11 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         int diskCacheSize = randomIntBetween(60, 100);
         int totalSize = onHeapCacheSize + diskCacheSize;
         MockCacheEventListener<String, String> eventListener = new MockCacheEventListener<String, String>();
-        StoreAwareCacheBuilder<String, String> cacheBuilder = new OpenSearchOnHeapCache.Builder<String, String>().setMaximumWeightInBytes(
+        ICacheBuilder<String, String> cacheBuilder = new OpenSearchOnHeapCache.Builder<String, String>().setMaximumWeightInBytes(
             onHeapCacheSize * 50
         ).setWeigher((k, v) -> 50); // Will support onHeapCacheSize entries.
 
-        StoreAwareCacheBuilder<String, String> diskCacheBuilder = new MockOnDiskCache.Builder<String, String>().setMaxSize(diskCacheSize)
+        ICacheBuilder<String, String> diskCacheBuilder = new MockOnDiskCache.Builder<String, String>().setMaxSize(diskCacheSize)
             .setDeliberateDelay(0);
 
         TieredSpilloverCache<String, String> tieredSpilloverCache = new TieredSpilloverCache.Builder<String, String>()
@@ -224,7 +224,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         int onHeapCacheSize = randomIntBetween(10, 30);
         MockCacheEventListener<String, String> eventListener = new MockCacheEventListener<String, String>();
 
-        StoreAwareCacheBuilder<String, String> onHeapCacheBuilder = new OpenSearchOnHeapCache.Builder<String, String>()
+        ICacheBuilder<String, String> onHeapCacheBuilder = new OpenSearchOnHeapCache.Builder<String, String>()
             .setMaximumWeightInBytes(onHeapCacheSize * 20)
             .setWeigher((k, v) -> 20); // Will support upto onHeapCacheSize entries
         TieredSpilloverCache<String, String> tieredSpilloverCache = new TieredSpilloverCache.Builder<String, String>()
@@ -528,11 +528,11 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
 
         MockCacheEventListener<String, String> eventListener = new MockCacheEventListener<>();
 
-        StoreAwareCacheBuilder<String, String> cacheBuilder = new OpenSearchOnHeapCache.Builder<String, String>().setMaximumWeightInBytes(
+        ICacheBuilder<String, String> cacheBuilder = new OpenSearchOnHeapCache.Builder<String, String>().setMaximumWeightInBytes(
             200
         ).setWeigher((k, v) -> 150);
 
-        StoreAwareCacheBuilder<String, String> diskCacheBuilder = new MockOnDiskCache.Builder<String, String>().setMaxSize(diskCacheSize)
+        ICacheBuilder<String, String> diskCacheBuilder = new MockOnDiskCache.Builder<String, String>().setMaxSize(diskCacheSize)
             .setDeliberateDelay(500);
 
         TieredSpilloverCache<String, String> tieredSpilloverCache = new TieredSpilloverCache.Builder<String, String>()
@@ -662,9 +662,9 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         StoreAwareCacheEventListener<String, String> eventListener,
         long diskDeliberateDelay
     ) {
-        StoreAwareCacheBuilder<String, String> diskCacheBuilder = new MockOnDiskCache.Builder<String, String>().setMaxSize(diksCacheSize)
+        ICacheBuilder<String, String> diskCacheBuilder = new MockOnDiskCache.Builder<String, String>().setMaxSize(diksCacheSize)
             .setDeliberateDelay(diskDeliberateDelay);
-        StoreAwareCacheBuilder<String, String> onHeapCacheBuilder = new OpenSearchOnHeapCache.Builder<String, String>()
+        ICacheBuilder<String, String> onHeapCacheBuilder = new OpenSearchOnHeapCache.Builder<String, String>()
             .setMaximumWeightInBytes(onHeapCacheSize * 20)
             .setWeigher((k, v) -> 20); // Will support upto onHeapCacheSize entries
         return new TieredSpilloverCache.Builder<String, String>().setOnHeapCacheBuilder(onHeapCacheBuilder)
@@ -774,7 +774,7 @@ class MockOnDiskCache<K, V> implements StoreAwareCache<K, V> {
         return CacheStoreType.DISK;
     }
 
-    public static class Builder<K, V> extends StoreAwareCacheBuilder<K, V> {
+    public static class Builder<K, V> extends ICacheBuilder<K, V> {
 
         int maxSize;
         long delay;

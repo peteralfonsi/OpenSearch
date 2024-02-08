@@ -10,14 +10,18 @@ package org.opensearch.common.cache.store;
 
 import org.opensearch.common.cache.Cache;
 import org.opensearch.common.cache.CacheBuilder;
+import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.stats.CacheStats;
+import org.opensearch.common.cache.stats.ICacheKey;
 import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
-import org.opensearch.common.cache.store.builders.StoreAwareCacheBuilder;
-import org.opensearch.common.cache.store.enums.CacheStoreType;
-import org.opensearch.common.cache.store.listeners.StoreAwareCacheEventListener;
+import org.opensearch.common.cache.store.builders.ICacheBuilder;
+import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
+
+import java.util.function.ToLongBiFunction;
 
 /**
  * This variant of on-heap cache uses OpenSearch custom cache implementation.
@@ -26,16 +30,14 @@ import org.opensearch.common.cache.store.listeners.StoreAwareCacheEventListener;
  *
  * @opensearch.experimental
  */
-public class OpenSearchOnHeapCache<K, V> implements StoreAwareCache<K, V>, RemovalListener<K, V> {
+public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListener<ICacheKey<K>, V> {
 
-    private final Cache<K, V> cache;
+    private final Cache<ICacheKey<K>, V> cache;
 
-    private final StoreAwareCacheEventListener<K, V> eventListener;
-
-    private final CacheStats stats = new SingleDimensionCacheStats("");
+    private final CacheStats stats;
 
     public OpenSearchOnHeapCache(Builder<K, V> builder) {
-        CacheBuilder<K, V> cacheBuilder = CacheBuilder.<K, V>builder()
+        CacheBuilder<ICacheKey<K>, V> cacheBuilder = CacheBuilder.<ICacheKey<K>, V>builder()
             .setMaximumWeight(builder.getMaxWeightInBytes())
             .weigher(builder.getWeigher())
             .removalListener(this);
@@ -43,40 +45,40 @@ public class OpenSearchOnHeapCache<K, V> implements StoreAwareCache<K, V>, Remov
             cacheBuilder.setExpireAfterAccess(builder.getExpireAfterAcess());
         }
         cache = cacheBuilder.build();
-        this.eventListener = builder.getEventListener();
+        this.stats = new SingleDimensionCacheStats(builder.shardIdDimensionName);
     }
 
     @Override
-    public V get(K key) {
+    public V get(ICacheKey<K> key) {
         V value = cache.get(key);
         if (value != null) {
-            eventListener.onHit(key, value, CacheStoreType.ON_HEAP);
+            //eventListener.onHit(key, value, CacheStoreType.ON_HEAP);
         } else {
-            eventListener.onMiss(key, CacheStoreType.ON_HEAP);
+            //eventListener.onMiss(key, CacheStoreType.ON_HEAP);
         }
         return value;
     }
 
     @Override
-    public void put(K key, V value) {
+    public void put(ICacheKey<K> key, V value) {
         cache.put(key, value);
-        eventListener.onCached(key, value, CacheStoreType.ON_HEAP);
+        //eventListener.onCached(key, value, CacheStoreType.ON_HEAP);
     }
 
     @Override
-    public V computeIfAbsent(K key, LoadAwareCacheLoader<K, V> loader) throws Exception {
+    public V computeIfAbsent(ICacheKey<K> key, LoadAwareCacheLoader<ICacheKey<K>, V> loader) throws Exception {
         V value = cache.computeIfAbsent(key, key1 -> loader.load(key));
         if (!loader.isLoaded()) {
-            eventListener.onHit(key, value, CacheStoreType.ON_HEAP);
+            //eventListener.onHit(key, value, CacheStoreType.ON_HEAP);
         } else {
-            eventListener.onMiss(key, CacheStoreType.ON_HEAP);
-            eventListener.onCached(key, value, CacheStoreType.ON_HEAP);
+            //eventListener.onMiss(key, CacheStoreType.ON_HEAP);
+            //eventListener.onCached(key, value, CacheStoreType.ON_HEAP);
         }
         return value;
     }
 
     @Override
-    public void invalidate(K key) {
+    public void invalidate(ICacheKey<K> key) {
         cache.invalidate(key);
     }
 
@@ -86,7 +88,7 @@ public class OpenSearchOnHeapCache<K, V> implements StoreAwareCache<K, V>, Remov
     }
 
     @Override
-    public Iterable<K> keys() {
+    public Iterable<ICacheKey<K>> keys() {
         return cache.keys();
     }
 
@@ -109,20 +111,8 @@ public class OpenSearchOnHeapCache<K, V> implements StoreAwareCache<K, V>, Remov
     }
 
     @Override
-    public CacheStoreType getTierType() {
-        return CacheStoreType.ON_HEAP;
-    }
-
-    @Override
-    public void onRemoval(RemovalNotification<K, V> notification) {
-        eventListener.onRemoval(
-            new StoreAwareCacheRemovalNotification<>(
-                notification.getKey(),
-                notification.getValue(),
-                notification.getRemovalReason(),
-                CacheStoreType.ON_HEAP
-            )
-        );
+    public void onRemoval(RemovalNotification<ICacheKey<K>, V> notification) {
+        // TODO
     }
 
     /**
@@ -140,10 +130,15 @@ public class OpenSearchOnHeapCache<K, V> implements StoreAwareCache<K, V>, Remov
      * @param <K> Type of key
      * @param <V> Type of value
      */
-    public static class Builder<K, V> extends StoreAwareCacheBuilder<K, V> {
+    public static class Builder<K, V> extends ICacheBuilder<K, V> {
 
-        @Override
-        public StoreAwareCache<K, V> build() {
+        private String shardIdDimensionName;
+
+        public Builder<K, V> setShardIdDimensionName(String dimensionName) {
+            this.shardIdDimensionName = dimensionName;
+            return this;
+        }
+        public ICache<K, V> build() {
             return new OpenSearchOnHeapCache<K, V>(this);
         }
     }

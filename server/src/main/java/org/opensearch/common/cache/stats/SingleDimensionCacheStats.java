@@ -177,6 +177,11 @@ public class SingleDimensionCacheStats implements CacheStats {
     }
 
     @Override
+    public void decrementEntriesByDimensions(List<CacheStatsDimension> dimensions) {
+        internalIncrement(dimensions, entriesMap, totalEntries, -1);
+    }
+
+    @Override
     public void writeTo(StreamOutput out) throws IOException {
         out.writeMap(convertCounterMapToLong(hitsMap), StreamOutput::writeString, StreamOutput::writeVLong);
         out.writeMap(convertCounterMapToLong(missesMap), StreamOutput::writeString, StreamOutput::writeVLong);

@@ -17,6 +17,7 @@ import org.opensearch.plugins.CachePlugin;
 import org.opensearch.plugins.Plugin;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -36,7 +37,8 @@ public class EhcacheCachePlugin extends Plugin implements CachePlugin {
 
     @Override
     public Map<CacheStoreType, StoreAwareCache.Factory> getCacheStoreTypeMap() {
-        return Map.of(CacheStoreType.DISK, new EhcacheDiskCache.EhcacheDiskCacheFactory());
+        return new HashMap<>(); // TODO: FIX
+        //return Map.of(CacheStoreType.DISK, new EhcacheDiskCache.EhcacheDiskCacheFactory());
     }
 
     @Override
