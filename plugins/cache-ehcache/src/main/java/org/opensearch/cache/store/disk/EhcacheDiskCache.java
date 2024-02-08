@@ -18,6 +18,7 @@ import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.stats.CacheStats;
+import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
 import org.opensearch.common.cache.store.StoreAwareCache;
 import org.opensearch.common.cache.store.StoreAwareCacheRemovalNotification;
 import org.opensearch.common.cache.store.builders.StoreAwareCacheBuilder;
@@ -98,7 +99,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
     private final Class<K> keyType;
     private final Class<V> valueType;
     private final TimeValue expireAfterAccess;
-    private final DiskCacheStats stats = new DiskCacheStats();
+    private final CacheStats stats;
     private final EhCacheEventListener<K, V> ehCacheEventListener;
     private final String threadPoolAlias;
     private final Settings settings;
@@ -141,6 +142,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
         this.eventListener = builder.getEventListener();
         this.ehCacheEventListener = new EhCacheEventListener<K, V>(builder.getEventListener());
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
+        this.stats = new SingleDimensionCacheStats(builder.shardIdDimensionName);
     }
 
     private Cache<K, V> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {
@@ -377,7 +379,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
      */
     @Override
     public long count() {
-        return stats.count();
+        return stats.getTotalEntries();
     }
 
     @Override
@@ -414,17 +416,6 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
         return CacheStoreType.DISK;
     }
 
-    /**
-     * Stats related to disk cache.
-     */
-    static class DiskCacheStats implements CacheStats {
-        private final CounterMetric count = new CounterMetric();
-
-        @Override
-        public long count() {
-            return count.count();
-        }
-    }
 
     /**
      * This iterator wraps ehCache iterator and only iterates over its keys.
@@ -466,8 +457,8 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
         }
 
         @Override
-        public void onEvent(CacheEvent<? extends K, ? extends V> event) {
-            switch (event.getType()) {
+        public void onEvent(CacheEvent<? extends K, ? extends V> event) { }
+            /*switch (event.getType()) {
                 case CREATED:
                     stats.count.inc();
                     this.eventListener.onCached(event.getKey(), event.getNewValue(), CacheStoreType.DISK);
@@ -514,13 +505,13 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
                 default:
                     break;
             }
-        }
+        }*/
     }
 
     /**
      * Factory to create an ehcache disk cache.
      */
-    public static class EhcacheDiskCacheFactory implements StoreAwareCache.Factory {
+    public class EhcacheDiskCacheFactory implements StoreAwareCache.Factory {
 
         /**
          * Ehcache disk cache name.
@@ -539,7 +530,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
             Setting<String> stringSetting = DISK_STORAGE_PATH_SETTING.getConcreteSettingForNamespace(
                 CacheType.INDICES_REQUEST_CACHE.getSettingPrefix()
             );
-            return new Builder<K, V>().setStoragePath((String) settingList.get(DISK_STORAGE_PATH_KEY).get(settings))
+            return new EhcacheDiskCache.Builder<K, V>().setStoragePath((String) settingList.get(DISK_STORAGE_PATH_KEY).get(settings))
                 .setDiskCacheAlias((String) settingList.get(DISK_CACHE_ALIAS_KEY).get(settings))
                 .setCacheType(cacheType)
                 .setKeyType((config.getKeyType()))
@@ -562,7 +553,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
      * @param <K> Type of key
      * @param <V> Type of value
      */
-    public static class Builder<K, V> extends StoreAwareCacheBuilder<K, V> {
+    public class Builder<K, V> extends StoreAwareCacheBuilder<K, V> {
 
         private CacheType cacheType;
         private String storagePath;
@@ -577,6 +568,7 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
         private Class<K> keyType;
 
         private Class<V> valueType;
+        private String shardIdDimensionName;
 
         /**
          * Default constructor. Added to fix javadocs.
@@ -650,6 +642,11 @@ public class EhcacheDiskCache<K, V> implements StoreAwareCache<K, V> {
          */
         public Builder<K, V> setIsEventListenerModeSync(boolean isEventListenerModeSync) {
             this.isEventListenerModeSync = isEventListenerModeSync;
+            return this;
+        }
+
+        public Builder<K, V> setShardIdDimensionName(String dimensionName) {
+            this.shardIdDimensionName = dimensionName;
             return this;
         }
 

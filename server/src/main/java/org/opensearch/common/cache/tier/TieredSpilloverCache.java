@@ -47,7 +47,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V>, StoreAwareCache
     private final Optional<StoreAwareCache<K, V>> onDiskCache;
     private final StoreAwareCache<K, V> onHeapCache;
     private final StoreAwareCacheEventListener<K, V> listener;
-    private final CacheStats stats = new TieredSpillOverCacheStats();
+    //private final CacheStats stats = new TieredSpillOverCacheStats();
     ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
     ReleasableLock readLock = new ReleasableLock(readWriteLock.readLock());
     ReleasableLock writeLock = new ReleasableLock(readWriteLock.writeLock());
@@ -165,7 +165,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V>, StoreAwareCache
 
     @Override
     public long count() {
-        return stats.count();
+        return 0;
     }
 
     @Override
@@ -186,7 +186,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V>, StoreAwareCache
 
     @Override
     public CacheStats stats() {
-        return stats;
+        return null;
     }
 
     @Override
@@ -248,7 +248,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V>, StoreAwareCache
     /**
      * Stats for tiered spillover cache.
      */
-    class TieredSpillOverCacheStats implements CacheStats {
+    /*class TieredSpillOverCacheStats implements CacheStats {
 
         @Override
         public long count() {
@@ -258,7 +258,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V>, StoreAwareCache
             }
             return totalCount;
         }
-    }
+    }*/
 
     /**
      * Builder object for tiered spillover cache.
