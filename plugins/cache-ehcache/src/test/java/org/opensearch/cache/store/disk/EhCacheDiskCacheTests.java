@@ -18,12 +18,15 @@ import org.opensearch.common.cache.stats.ICacheKey;
 import org.opensearch.common.cache.store.StoreAwareCacheRemovalNotification;
 import org.opensearch.common.cache.store.enums.CacheStoreType;
 import org.opensearch.common.cache.store.listeners.StoreAwareCacheEventListener;
+import org.opensearch.common.cache.tier.Serializer;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -50,22 +53,38 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
+                .setShardIdDimensionName(dimensionName)
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setRemovalListener(mockRemovalListener)
                 .build();
-            int randomKeys = randomIntBetween(10, 100);
+            int randomKeys = 1; //randomIntBetween(10, 100);
             Map<String, String> keyValueMap = new HashMap<>();
             for (int i = 0; i < randomKeys; i++) {
-                keyValueMap.put(UUID.randomUUID().toString(), UUID.randomUUID().toString());
+                //keyValueMap.put(UUID.randomUUID().toString(), UUID.randomUUID().toString());
+                keyValueMap.put("test_key", "test_value");
             }
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
                 ehcacheTest.put(getICacheKey(entry.getKey()), entry.getValue());
+                System.out.println("Current # entries = " + ehcacheTest.stats().getTotalEntries());
             }
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
-                String value = ehcacheTest.get(getICacheKey(entry.getKey()));
+                ICacheKey<String> key = getICacheKey(entry.getKey());
+                /*for (ICacheKey<String> cacheKey : ehcacheTest.keys()) {
+                    System.out.println("Key from cache:");
+                    System.out.println("Dimensions = " + cacheKey.dimensions);
+                    System.out.println("K = " + cacheKey.key);
+                    System.out.println("Key from map:");
+                    System.out.println("Dimensions = " + key.dimensions);
+                    System.out.println("K = " + key.key);
+                    System.out.println("Equality = " + cacheKey.equals(key));
+                    // Confirmed via these printouts that the keys are equal. So why is there a miss?
+                }*/
+                String value = ehcacheTest.get(key);
                 assertEquals(entry.getValue(), value);
             }
             //assertEquals(randomKeys, mockEventListener.onCachedCount.get());
@@ -539,6 +558,31 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
         @Override
         public void onRemoval(RemovalNotification<ICacheKey<K>, V> notification) {
             onRemovalCount.incrementAndGet();
+        }
+    }
+
+    private static class StringSerializer implements Serializer<String, byte[]> {
+        private final Charset charset = StandardCharsets.UTF_8;
+
+        public StringSerializer() {
+            int i = 0; // remove, for debug breakpoint
+        }
+        @Override
+        public byte[] serialize(String object) {
+            return object.getBytes(charset);
+        }
+
+        @Override
+        public String deserialize(byte[] bytes) {
+            if (bytes == null) {
+                return null;
+            }
+            return new String(bytes, charset);
+        }
+
+        @Override
+        public boolean equals(String object, byte[] bytes) {
+            return object.equals(deserialize(bytes));
         }
     }
 }

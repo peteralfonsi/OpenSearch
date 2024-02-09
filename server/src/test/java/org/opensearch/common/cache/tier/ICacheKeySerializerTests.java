@@ -15,6 +15,8 @@ import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.test.OpenSearchTestCase;
 
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -34,6 +36,7 @@ public class ICacheKeySerializerTests extends OpenSearchTestCase {
             assertTrue(serializer.equals(key, serialized));
             ICacheKey<BytesReference> deserialized = serializer.deserialize(serialized);
             assertEquals(key, deserialized);
+            assertTrue(serializer.equals(deserialized, serialized));
         }
     }
 
@@ -74,5 +77,4 @@ public class ICacheKeySerializerTests extends OpenSearchTestCase {
         rand.nextBytes(bytesValue);
         return new BytesArray(bytesValue);
     }
-
 }

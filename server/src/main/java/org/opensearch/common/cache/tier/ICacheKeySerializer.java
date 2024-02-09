@@ -8,6 +8,7 @@
 
 package org.opensearch.common.cache.tier;
 
+import org.apache.lucene.util.BytesRef;
 import org.opensearch.OpenSearchException;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.stats.ICacheKey;
@@ -37,13 +38,14 @@ public class ICacheKeySerializer<K> implements Serializer<ICacheKey<K>, byte[]> 
         try {
             BytesStreamOutput os = new BytesStreamOutput();
             // First write the number of dimensions
-            os.writeInt(object.dimensions.size());
+            os.writeVInt(object.dimensions.size());
             for (CacheStatsDimension dim : object.dimensions) {
                 dim.writeTo(os);
             }
             os.writeVInt(serializedKey.length); // ?? Is the read byte[] fn broken such that we have to do this?
             os.writeBytes(serializedKey); // TODO: Is this re-copying unnecessarily? Come back to this
-            return BytesReference.toBytes(os.bytes());
+            byte[] finalBytes = BytesReference.toBytes(os.bytes());
+            return finalBytes;
         } catch (IOException e) {
             throw new OpenSearchException(e);
         }
@@ -57,12 +59,12 @@ public class ICacheKeySerializer<K> implements Serializer<ICacheKey<K>, byte[]> 
         List<CacheStatsDimension> dimensionList = new ArrayList<>();
         try {
             BytesStreamInput is = new BytesStreamInput(bytes, 0, bytes.length);
-            int numDimensions = is.readInt();
+            int numDimensions = is.readVInt();
             for (int i = 0; i < numDimensions; i++) {
                 dimensionList.add(new CacheStatsDimension(is));
             }
-            int length = is.readVInt();
 
+            int length = is.readVInt();
             byte[] serializedKey = new byte[length];
             is.readBytes(serializedKey, 0, length); // not sure why is.readByteArray doesn't work??
             return new ICacheKey<>(keySerializer.deserialize(serializedKey), dimensionList);

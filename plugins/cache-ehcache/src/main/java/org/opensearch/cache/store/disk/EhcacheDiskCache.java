@@ -27,6 +27,7 @@ import org.opensearch.common.cache.stats.ICacheKey;
 import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.store.enums.CacheStoreType;
+import org.opensearch.common.cache.tier.ICacheKeySerializer;
 import org.opensearch.common.cache.tier.Serializer;
 import org.opensearch.common.collect.Tuple;
 import org.opensearch.common.settings.Settings;
@@ -274,7 +275,8 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         }
         V value;
         try {
-            value = valueSerializer.deserialize(cache.get(key));
+            byte[] serializedValue = cache.get(key);
+            value = valueSerializer.deserialize(serializedValue);
         } catch (CacheLoadingException ex) {
             throw new OpenSearchException("Exception occurred while trying to fetch item from ehcache disk cache");
         }
@@ -485,6 +487,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
             switch (event.getType()) {
                 case CREATED:
                     stats.incrementEntriesByDimensions(event.getKey().dimensions);
+                    // TODO: Add memory values in all of these cases!
                     assert event.getOldValue() == null;
                     break;
                 case EVICTED:
@@ -510,7 +513,11 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         }
     }
 
-    private class KeySerializerWrapper<K> implements org.ehcache.spi.serialization.Serializer<ICacheKey<K>> {
+    private class KeySerializerWrapper implements org.ehcache.spi.serialization.Serializer<ICacheKey> {
+        private ICacheKeySerializer<K> serializer;
+        public KeySerializerWrapper(Serializer<K, byte[]> internalKeySerializer) {
+            this.serializer = new ICacheKeySerializer<>(internalKeySerializer);
+        }
 
 
 
@@ -519,18 +526,22 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         // See https://www.ehcache.org/documentation/3.0/serializers-copiers.html#persistent-vs-transient-caches
         public KeySerializerWrapper(ClassLoader classLoader, FileBasedPersistenceContext persistenceContext) {}
         @Override
-        public ByteBuffer serialize(ICacheKey<K> object) throws SerializerException {
-            return null;
+        public ByteBuffer serialize(ICacheKey object) throws SerializerException {
+            return ByteBuffer.wrap(serializer.serialize(object));
         }
 
         @Override
         public ICacheKey<K> read(ByteBuffer binary) throws ClassNotFoundException, SerializerException {
-            return null;
+            byte[] arr = new byte[binary.remaining()];
+            binary.get(arr);
+            return serializer.deserialize(arr);
         }
 
         @Override
-        public boolean equals(ICacheKey<K> object, ByteBuffer binary) throws ClassNotFoundException, SerializerException {
-            return false;
+        public boolean equals(ICacheKey object, ByteBuffer binary) throws ClassNotFoundException, SerializerException {
+            byte[] arr = new byte[binary.remaining()];
+            binary.get(arr);
+            return serializer.equals(object, arr);
         }
     }
 
