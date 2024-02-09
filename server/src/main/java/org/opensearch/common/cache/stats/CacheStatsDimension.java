@@ -13,6 +13,7 @@ import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 
 import java.io.IOException;
+import java.util.Objects;
 
 public class CacheStatsDimension implements Writeable {
     public final String dimensionName;
@@ -49,5 +50,10 @@ public class CacheStatsDimension implements Writeable {
             return false;
         }
         return other.dimensionName.equals(dimensionName) && other.dimensionValue.equals(dimensionValue);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(dimensionName, dimensionValue);
     }
 }

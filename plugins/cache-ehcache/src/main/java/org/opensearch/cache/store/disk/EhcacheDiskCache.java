@@ -117,32 +117,6 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
      */
     Map<ICacheKey<K>, CompletableFuture<Tuple<ICacheKey<K>, V>>> completableFutureMap = new ConcurrentHashMap<>();
 
-    // I think we need this to instantiate the cache. We can't pass in values like ICacheKey<String>.class to builders
-    // due to type erasure.
-    private class EhcacheKeyWrapper {
-        private final ICacheKey<K> key;
-        public EhcacheKeyWrapper(ICacheKey<K> key) {
-            this.key = key;
-        }
-        ICacheKey<K> getKey() {
-            return key;
-        }
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null) {
-                return false;
-            }
-            if (o.getClass() != EhcacheKeyWrapper.class) {
-                return false;
-            }
-            EhcacheKeyWrapper other = (EhcacheKeyWrapper) o;
-            return other.getKey().equals(key);
-        }
-    }
-
     private EhcacheDiskCache(Builder<K, V> builder) {
         this.keyType = Objects.requireNonNull(builder.keyType, "Key type shouldn't be null");
         this.valueType = Objects.requireNonNull(builder.valueType, "Value type shouldn't be null");
@@ -275,8 +249,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         }
         V value;
         try {
-            byte[] serializedValue = cache.get(key);
-            value = valueSerializer.deserialize(serializedValue);
+            value = valueSerializer.deserialize(cache.get(key));
         } catch (CacheLoadingException ex) {
             throw new OpenSearchException("Exception occurred while trying to fetch item from ehcache disk cache");
         }

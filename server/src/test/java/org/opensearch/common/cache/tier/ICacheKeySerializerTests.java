@@ -56,6 +56,14 @@ public class ICacheKeySerializerTests extends OpenSearchTestCase {
             assertEquals(key, deserialized);
         }
     }
+
+    public void testHashCodes() throws Exception {
+        ICacheKey<String> key1 = new ICacheKey<>("key", List.of(new CacheStatsDimension("dimension_name", "dimension_value")));
+        ICacheKey<String> key2 = new ICacheKey<>("key", List.of(new CacheStatsDimension("dimension_name", "dimension_value")));
+
+        assertEquals(key1, key2);
+        assertEquals(key1.hashCode(), key2.hashCode());
+    }
     public void testNullInputs() throws Exception {
         BytesReferenceSerializer keySer = new BytesReferenceSerializer();
         ICacheKeySerializer<BytesReference> serializer = new ICacheKeySerializer<>(keySer);

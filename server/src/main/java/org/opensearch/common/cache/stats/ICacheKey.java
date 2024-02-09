@@ -8,9 +8,9 @@
 
 package org.opensearch.common.cache.stats;
 
-import org.opensearch.common.cache.tier.ICacheKeySerializer;
 
 import java.util.List;
+import java.util.Objects;
 
 public class ICacheKey<K> {
     public final K key; // K must implement equals()
@@ -34,5 +34,10 @@ public class ICacheKey<K> {
         }
         ICacheKey other = (ICacheKey) o;
         return key.equals(other.key) && dimensions.equals(other.dimensions);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(key, dimensions);
     }
 }

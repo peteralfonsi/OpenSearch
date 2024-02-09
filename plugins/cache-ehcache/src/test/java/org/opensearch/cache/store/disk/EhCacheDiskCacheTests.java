@@ -62,29 +62,16 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setRemovalListener(mockRemovalListener)
                 .build();
-            int randomKeys = 1; //randomIntBetween(10, 100);
+            int randomKeys = randomIntBetween(10, 100);
             Map<String, String> keyValueMap = new HashMap<>();
             for (int i = 0; i < randomKeys; i++) {
-                //keyValueMap.put(UUID.randomUUID().toString(), UUID.randomUUID().toString());
-                keyValueMap.put("test_key", "test_value");
+                keyValueMap.put(UUID.randomUUID().toString(), UUID.randomUUID().toString());
             }
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
                 ehcacheTest.put(getICacheKey(entry.getKey()), entry.getValue());
-                System.out.println("Current # entries = " + ehcacheTest.stats().getTotalEntries());
             }
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
-                ICacheKey<String> key = getICacheKey(entry.getKey());
-                /*for (ICacheKey<String> cacheKey : ehcacheTest.keys()) {
-                    System.out.println("Key from cache:");
-                    System.out.println("Dimensions = " + cacheKey.dimensions);
-                    System.out.println("K = " + cacheKey.key);
-                    System.out.println("Key from map:");
-                    System.out.println("Dimensions = " + key.dimensions);
-                    System.out.println("K = " + key.key);
-                    System.out.println("Equality = " + cacheKey.equals(key));
-                    // Confirmed via these printouts that the keys are equal. So why is there a miss?
-                }*/
-                String value = ehcacheTest.get(key);
+                String value = ehcacheTest.get(getICacheKey(entry.getKey()));
                 assertEquals(entry.getValue(), value);
             }
             //assertEquals(randomKeys, mockEventListener.onCachedCount.get());
@@ -563,10 +550,6 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
 
     private static class StringSerializer implements Serializer<String, byte[]> {
         private final Charset charset = StandardCharsets.UTF_8;
-
-        public StringSerializer() {
-            int i = 0; // remove, for debug breakpoint
-        }
         @Override
         public byte[] serialize(String object) {
             return object.getBytes(charset);
