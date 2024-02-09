@@ -8,11 +8,46 @@
 
 package org.opensearch.common.cache.stats;
 
-public class CacheStatsDimension {
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.common.io.stream.Writeable;
+
+import java.io.IOException;
+
+public class CacheStatsDimension implements Writeable {
     public final String dimensionName;
     public final String dimensionValue;
     public CacheStatsDimension(String dimensionName, String dimensionValue) {
         this.dimensionName = dimensionName;
         this.dimensionValue = dimensionValue;
+    }
+
+    public CacheStatsDimension(StreamInput in) throws IOException {
+        this.dimensionName = in.readString();
+        this.dimensionValue = in.readString();
+    }
+
+    @Override
+    public void writeTo(StreamOutput out) throws IOException {
+        out.writeString(dimensionName);
+        out.writeString(dimensionValue);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == this) {
+            return true;
+        }
+        if (o == null) {
+            return false;
+        }
+        if (o.getClass() != CacheStatsDimension.class) {
+            return false;
+        }
+        CacheStatsDimension other = (CacheStatsDimension) o;
+        if (other.dimensionName == null || other.dimensionValue == null) {
+            return false;
+        }
+        return other.dimensionName.equals(dimensionName) && other.dimensionValue.equals(dimensionValue);
     }
 }

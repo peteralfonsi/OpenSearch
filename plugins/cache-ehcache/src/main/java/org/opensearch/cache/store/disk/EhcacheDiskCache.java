@@ -10,6 +10,8 @@ package org.opensearch.cache.store.disk;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.ehcache.core.spi.service.FileBasedPersistenceContext;
+import org.ehcache.spi.serialization.SerializerException;
 import org.opensearch.OpenSearchException;
 import org.opensearch.cache.EhcacheSettings;
 import org.opensearch.common.SuppressForbidden;
@@ -25,11 +27,13 @@ import org.opensearch.common.cache.stats.ICacheKey;
 import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.store.enums.CacheStoreType;
+import org.opensearch.common.cache.tier.Serializer;
 import org.opensearch.common.collect.Tuple;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 
 import java.io.File;
+import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Iterator;
 import java.util.Map;
@@ -87,7 +91,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
     private final PersistentCacheManager cacheManager;
 
     // Disk cache
-    private Cache<ICacheKey, V> cache;
+    private Cache<ICacheKey, byte[]> cache;
     private final long maxWeightInBytes;
     private final String storagePath;
     private final Class<K> keyType;
@@ -100,6 +104,11 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
     private final CacheType cacheType;
     private final String diskCacheAlias;
     private final String shardIdDimensionName;
+
+    private final Serializer<K, byte[]> keySerializer;
+    private final Serializer<V, byte[]> valueSerializer;
+
+
 
     /**
      * Used in computeIfAbsent to synchronize loading of a given key. This is needed as ehcache doesn't provide a
@@ -157,6 +166,8 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
             this.threadPoolAlias = builder.threadPoolAlias;
         }
         this.settings = Objects.requireNonNull(builder.getSettings(), "Settings objects shouldn't be null");
+        this.keySerializer = Objects.requireNonNull(builder.keySerializer, "Key serializer shouldn't be null");
+        this.valueSerializer = Objects.requireNonNull(builder.valueSerializer, "Value serializer shouldn't be null");
         this.cacheManager = buildCacheManager();
         this.ehCacheEventListener = new EhCacheEventListener<K, V>(Objects.requireNonNull(builder.getRemovalListener(), "Removal listener can't be null"));
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
@@ -164,27 +175,27 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         this.stats = new SingleDimensionCacheStats(shardIdDimensionName);
     }
 
-    private Cache<ICacheKey, V> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {
+    private Cache<ICacheKey, byte[]> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {
         try {
             return this.cacheManager.createCache(
                 this.diskCacheAlias,
                 CacheConfigurationBuilder.newCacheConfigurationBuilder(
                     ICacheKey.class,
-                    this.valueType,
+                    byte[].class,
                     ResourcePoolsBuilder.newResourcePoolsBuilder().disk(maxWeightInBytes, MemoryUnit.B)
                 ).withExpiry(new ExpiryPolicy<>() {
                     @Override
-                    public Duration getExpiryForCreation(ICacheKey key, V value) {
+                    public Duration getExpiryForCreation(ICacheKey key, byte[] value) {
                         return INFINITE;
                     }
 
                     @Override
-                    public Duration getExpiryForAccess(ICacheKey key, Supplier<? extends V> value) {
+                    public Duration getExpiryForAccess(ICacheKey key, Supplier<? extends byte[]> value) {
                         return expireAfterAccess;
                     }
 
                     @Override
-                    public Duration getExpiryForUpdate(ICacheKey key, Supplier<? extends V> oldValue, V newValue) {
+                    public Duration getExpiryForUpdate(ICacheKey key, Supplier<? extends byte[]> oldValue, byte[] newValue) {
                         return INFINITE;
                     }
                 })
@@ -200,6 +211,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
                                 .get(settings)
                         )
                     )
+                    .withKeySerializer(new KeySerializerWrapper(keySerializer))
             );
         } catch (IllegalArgumentException ex) {
             logger.error("Ehcache disk cache initialization failed due to illegal argument: {}", ex.getMessage());
@@ -262,7 +274,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         }
         V value;
         try {
-            value = cache.get(key);
+            value = valueSerializer.deserialize(cache.get(key));
         } catch (CacheLoadingException ex) {
             throw new OpenSearchException("Exception occurred while trying to fetch item from ehcache disk cache");
         }
@@ -282,7 +294,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
     @Override
     public void put(ICacheKey<K> key, V value) {
         try {
-            cache.put(key, value);
+            cache.put(key, valueSerializer.serialize(value));
         } catch (CacheWritingException ex) {
             throw new OpenSearchException("Exception occurred while put item to ehcache disk cache");
         }
@@ -300,7 +312,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         // Ehcache doesn't provide any computeIfAbsent function. Exposes putIfAbsent but that works differently and is
         // not performant in case there are multiple concurrent request for same key. Below is our own custom
         // implementation of computeIfAbsent on top of ehcache. Inspired by OpenSearch Cache implementation.
-        V value = cache.get(key);
+        V value = valueSerializer.deserialize(cache.get(key));
         if (value == null) {
             value = compute(key, loader);
         }
@@ -325,7 +337,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         BiFunction<Tuple<ICacheKey<K>, V>, Throwable, V> handler = (pair, ex) -> {
             V value = null;
             if (pair != null) {
-                cache.put(pair.v1(), pair.v2());
+                cache.put(pair.v1(), valueSerializer.serialize(pair.v2()));
                 value = pair.v2(); // Returning a value itself assuming that a next get should return the same. Should
                 // be safe to assume if we got no exception and reached here.
             }
@@ -434,9 +446,9 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
      */
     class EhCacheKeyIterator<K> implements Iterator<ICacheKey<K>> {
 
-        Iterator<Cache.Entry<ICacheKey, V>> iterator;
+        Iterator<Cache.Entry<ICacheKey, byte[]>> iterator;
 
-        EhCacheKeyIterator(Iterator<Cache.Entry<ICacheKey, V>> iterator) {
+        EhCacheKeyIterator(Iterator<Cache.Entry<ICacheKey, byte[]>> iterator) {
             this.iterator = iterator;
         }
 
@@ -495,6 +507,30 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
                 default:
                     break;
             }
+        }
+    }
+
+    private class KeySerializerWrapper<K> implements org.ehcache.spi.serialization.Serializer<ICacheKey<K>> {
+
+
+
+        // This constructor must be present, but does not have to work as we are not actually persisting the disk
+        // cache after a restart.
+        // See https://www.ehcache.org/documentation/3.0/serializers-copiers.html#persistent-vs-transient-caches
+        public KeySerializerWrapper(ClassLoader classLoader, FileBasedPersistenceContext persistenceContext) {}
+        @Override
+        public ByteBuffer serialize(ICacheKey<K> object) throws SerializerException {
+            return null;
+        }
+
+        @Override
+        public ICacheKey<K> read(ByteBuffer binary) throws ClassNotFoundException, SerializerException {
+            return null;
+        }
+
+        @Override
+        public boolean equals(ICacheKey<K> object, ByteBuffer binary) throws ClassNotFoundException, SerializerException {
+            return false;
         }
     }
 
@@ -560,6 +596,8 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
 
         private Class<V> valueType;
         private String shardIdDimensionName;
+        private Serializer<K, byte[]> keySerializer;
+        private Serializer<V, byte[]> valueSerializer;
 
         /**
          * Default constructor. Added to fix javadocs.
@@ -638,6 +676,16 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
 
         public Builder<K, V> setShardIdDimensionName(String dimensionName) {
             this.shardIdDimensionName = dimensionName;
+            return this;
+        }
+
+        public Builder<K, V> setKeySerializer(Serializer<K, byte[]> keySerializer) {
+            this.keySerializer = keySerializer;
+            return this;
+        }
+
+        public Builder<K, V> setValueSerializer(Serializer<V, byte[]> valueSerializer) {
+            this.valueSerializer = valueSerializer;
             return this;
         }
 

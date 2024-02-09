@@ -8,14 +8,31 @@
 
 package org.opensearch.common.cache.stats;
 
+import org.opensearch.common.cache.tier.ICacheKeySerializer;
+
 import java.util.List;
 
 public class ICacheKey<K> {
-    public final K key;
+    public final K key; // K must implement equals()
     public final List<CacheStatsDimension> dimensions;
 
     public ICacheKey(K key, List<CacheStatsDimension> dimensions) {
         this.key = key;
         this.dimensions = dimensions;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == this) {
+            return true;
+        }
+        if (o == null) {
+            return false;
+        }
+        if (o.getClass() != ICacheKey.class) {
+            return false;
+        }
+        ICacheKey other = (ICacheKey) o;
+        return key.equals(other.key) && dimensions.equals(other.dimensions);
     }
 }
