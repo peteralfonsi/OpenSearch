@@ -30,6 +30,9 @@ public class ICacheKeySerializer<K> implements Serializer<ICacheKey<K>, byte[]> 
 
     @Override
     public byte[] serialize(ICacheKey<K> object) {
+        if (object == null || object.key == null || object.dimensions == null) {
+            return null;
+        }
         byte[] serializedKey = keySerializer.serialize(object.key);
         try {
             BytesStreamOutput os = new BytesStreamOutput();

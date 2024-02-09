@@ -15,6 +15,7 @@ import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.test.OpenSearchTestCase;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
@@ -25,7 +26,7 @@ public class ICacheKeySerializerTests extends OpenSearchTestCase {
         BytesReferenceSerializer keySer = new BytesReferenceSerializer();
         ICacheKeySerializer<BytesReference> serializer = new ICacheKeySerializer<>(keySer);
 
-        int numDimensionsTested = 10;
+        int numDimensionsTested = 100;
         for (int i = 0; i < numDimensionsTested; i++) {
             CacheStatsDimension dim = getRandomDim();
             ICacheKey<BytesReference> key = new ICacheKey<>(getRandomBytesReference(), List.of(dim));
@@ -34,6 +35,33 @@ public class ICacheKeySerializerTests extends OpenSearchTestCase {
             ICacheKey<BytesReference> deserialized = serializer.deserialize(serialized);
             assertEquals(key, deserialized);
         }
+    }
+
+    public void testDimNumbers() throws Exception {
+        BytesReferenceSerializer keySer = new BytesReferenceSerializer();
+        ICacheKeySerializer<BytesReference> serializer = new ICacheKeySerializer<>(keySer);
+
+        for (int numDims : new int[]{0, 5, 1000}) {
+            List<CacheStatsDimension> dims = new ArrayList<>();
+            for (int j = 0; j < numDims; j++) {
+                dims.add(getRandomDim());
+            }
+            ICacheKey<BytesReference> key = new ICacheKey<>(getRandomBytesReference(), dims);
+            byte[] serialized = serializer.serialize(key);
+            assertTrue(serializer.equals(key, serialized));
+            ICacheKey<BytesReference> deserialized = serializer.deserialize(serialized);
+            assertEquals(key, deserialized);
+        }
+    }
+    public void testNullInputs() throws Exception {
+        BytesReferenceSerializer keySer = new BytesReferenceSerializer();
+        ICacheKeySerializer<BytesReference> serializer = new ICacheKeySerializer<>(keySer);
+
+        assertNull(serializer.deserialize(null));
+        ICacheKey<BytesReference> nullKey = new ICacheKey<>(null, List.of(getRandomDim()));
+        assertNull(serializer.serialize(nullKey));
+        assertNull(serializer.serialize(null));
+        assertNull(serializer.serialize(new ICacheKey<>(getRandomBytesReference(), null)));
     }
 
     private CacheStatsDimension getRandomDim() {
