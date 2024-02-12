@@ -37,6 +37,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
 
@@ -48,6 +49,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
     public void testBasicGetAndPut() throws IOException {
         Settings settings = Settings.builder().build();
         MockRemovalListener<String, String> mockRemovalListener = new MockRemovalListener<>();
+        Function<ICacheKey<String>, Long> keySizeFunction = getKeyWeigherFn();
+        Function<String, Long> valueSizeFunction = getValueWeigherFn();
         try (NodeEnvironment env = newNodeEnvironment(settings)) {
             ICache<String, String> ehcacheTest = new EhcacheDiskCache.Builder<String, String>().setThreadPoolAlias("ehcacheTest")
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
@@ -56,6 +59,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .setShardIdDimensionName(dimensionName)
+                .setKeySizeFunction(keySizeFunction)
+                .setValueSizeFunction(valueSizeFunction)
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
@@ -63,19 +68,27 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setRemovalListener(mockRemovalListener)
                 .build();
             int randomKeys = randomIntBetween(10, 100);
+            long expectedSize = 0;
             Map<String, String> keyValueMap = new HashMap<>();
             for (int i = 0; i < randomKeys; i++) {
                 keyValueMap.put(UUID.randomUUID().toString(), UUID.randomUUID().toString());
             }
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
-                ehcacheTest.put(getICacheKey(entry.getKey()), entry.getValue());
+                ICacheKey<String> iCacheKey = getICacheKey(entry.getKey());
+                ehcacheTest.put(iCacheKey, entry.getValue());
+                expectedSize += keySizeFunction.apply(iCacheKey);
+                expectedSize += valueSizeFunction.apply(entry.getValue());
             }
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
                 String value = ehcacheTest.get(getICacheKey(entry.getKey()));
                 assertEquals(entry.getValue(), value);
             }
-            //assertEquals(randomKeys, mockEventListener.onCachedCount.get());
-            //assertEquals(randomKeys, mockEventListener.onHitCount.get());
+            assertEquals(randomKeys, ehcacheTest.stats().getTotalEntries());
+            assertEquals(randomKeys, ehcacheTest.stats().getEntriesByDimension(getMockDimensions().get(0)));
+            assertEquals(randomKeys, ehcacheTest.stats().getTotalHits());
+            assertEquals(randomKeys, ehcacheTest.stats().getHitsByDimension(getMockDimensions().get(0)));
+            assertEquals(expectedSize, ehcacheTest.stats().getTotalMemorySize());
+            assertEquals(expectedSize, ehcacheTest.stats().getMemorySizeByDimension(getMockDimensions().get(0)));
 
             // Validate misses
             int expectedNumberOfMisses = randomIntBetween(10, 200);
@@ -83,7 +96,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 ehcacheTest.get(getICacheKey(UUID.randomUUID().toString()));
             }
 
-            //assertEquals(expectedNumberOfMisses, mockEventListener.onMissCount.get());
+            assertEquals(expectedNumberOfMisses, ehcacheTest.stats().getTotalMisses());
+            assertEquals(expectedNumberOfMisses, ehcacheTest.stats().getMissesByDimension(getMockDimensions().get(0)));
             ehcacheTest.close();
         }
     }
@@ -504,6 +518,23 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
 
     private ICacheKey<String> getICacheKey(String key) {
         return new ICacheKey<>(key, getMockDimensions());
+    }
+
+    private Function<ICacheKey<String>, Long> getKeyWeigherFn() {
+        // TODO: Should this function come from the serializer impl?
+        return (iCacheKey) -> {
+            long totalSize = iCacheKey.key.length();
+            for (CacheStatsDimension dim : iCacheKey.dimensions) {
+                totalSize += dim.dimensionName.length();
+                totalSize += dim.dimensionValue.length();
+            }
+            totalSize += 10; // The ICacheKeySerializer writes 2 VInts to record array lengths, which can be 1-5 bytes each
+            return totalSize;
+        };
+    }
+
+    private Function<String, Long> getValueWeigherFn() {
+        return (value) -> (long) value.length();
     }
 
     class MockEventListener<K, V> implements StoreAwareCacheEventListener<K, V> {
