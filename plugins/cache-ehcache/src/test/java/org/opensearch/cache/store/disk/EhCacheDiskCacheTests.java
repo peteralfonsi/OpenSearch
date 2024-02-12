@@ -164,6 +164,11 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
+                .setShardIdDimensionName(dimensionName)
+                .setKeySizeFunction(getKeyWeigherFn())
+                .setValueSizeFunction(getValueWeigherFn())
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
@@ -194,7 +199,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 String value = ehcacheTest.get(getICacheKey(entry.getKey()));
                 assertEquals(entry.getValue(), value);
             }
-            //assertEquals(randomKeys, mockEventListener.onCachedCount.get());
+            assertEquals(randomKeys, ehcacheTest.stats().getTotalEntries());
             ehcacheTest.close();
         }
     }
@@ -209,6 +214,11 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setIsEventListenerModeSync(true) // For accurate count
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
+                .setShardIdDimensionName(dimensionName)
+                .setKeySizeFunction(getKeyWeigherFn())
+                .setValueSizeFunction(getValueWeigherFn())
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
@@ -239,7 +249,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             }
             phaser.arriveAndAwaitAdvance(); // Will trigger parallel puts above.
             countDownLatch.await(); // Wait for all threads to finish
-            //assertEquals(randomKeys, mockEventListener.onHitCount.get());
+            assertEquals(randomKeys, ehcacheTest.stats().getTotalHits());
             ehcacheTest.close();
         }
     }
@@ -252,6 +262,11 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
+                .setShardIdDimensionName(dimensionName)
+                .setKeySizeFunction(getKeyWeigherFn())
+                .setValueSizeFunction(getValueWeigherFn())
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
@@ -274,7 +289,6 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 keysCount++;
                 assertNotNull(ehcacheTest.get(key));
             }
-            //assertEquals(CacheStoreType.DISK, ehcacheTest.getTierType());
             assertEquals(keysCount, randomKeys);
             ehcacheTest.close();
         }
@@ -290,6 +304,11 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setThreadPoolAlias("ehcacheTest")
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
+                .setShardIdDimensionName(dimensionName)
+                .setKeySizeFunction(getKeyWeigherFn())
+                .setValueSizeFunction(getValueWeigherFn())
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
@@ -305,7 +324,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 String key = "Key" + i;
                 ehcacheTest.put(getICacheKey(key), value);
             }
-            //assertTrue(mockEventListener.onRemovalCount.get() > 0);
+            assertTrue(mockRemovalListener.onRemovalCount.get() > 0);
             ehcacheTest.close();
         }
     }
@@ -320,6 +339,11 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setThreadPoolAlias("ehcacheTest")
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
+                .setShardIdDimensionName(dimensionName)
+                .setKeySizeFunction(getKeyWeigherFn())
+                .setValueSizeFunction(getValueWeigherFn())
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
@@ -374,9 +398,9 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             }
             assertEquals(1, numberOfTimesValueLoaded);
             assertEquals(0, ((EhcacheDiskCache) ehcacheTest).getCompletableFutureMap().size());
-            //assertEquals(1, mockEventListener.onMissCount.get());
-            //assertEquals(1, mockEventListener.onCachedCount.get());
-            //assertEquals(numberOfRequest - 1, mockEventListener.onHitCount.get());
+            assertEquals(1, ehcacheTest.stats().getTotalMisses());
+            assertEquals(1, ehcacheTest.stats().getTotalEntries());
+            assertEquals(numberOfRequest - 1, ehcacheTest.stats().getTotalHits());
             ehcacheTest.close();
         }
     }
@@ -391,6 +415,11 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setThreadPoolAlias("ehcacheTest")
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
+                .setShardIdDimensionName(dimensionName)
+                .setKeySizeFunction(getKeyWeigherFn())
+                .setValueSizeFunction(getValueWeigherFn())
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
@@ -448,6 +477,11 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
                 .setKeyType(String.class)
                 .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
+                .setShardIdDimensionName(dimensionName)
+                .setKeySizeFunction(getKeyWeigherFn())
+                .setValueSizeFunction(getValueWeigherFn())
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
@@ -535,40 +569,6 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
 
     private Function<String, Long> getValueWeigherFn() {
         return (value) -> (long) value.length();
-    }
-
-    class MockEventListener<K, V> implements StoreAwareCacheEventListener<K, V> {
-
-        AtomicInteger onMissCount = new AtomicInteger();
-        AtomicInteger onHitCount = new AtomicInteger();
-        AtomicInteger onCachedCount = new AtomicInteger();
-        AtomicInteger onRemovalCount = new AtomicInteger();
-
-        MockEventListener() {}
-
-        @Override
-        public void onMiss(K key, CacheStoreType cacheStoreType) {
-            assert cacheStoreType.equals(CacheStoreType.DISK);
-            onMissCount.incrementAndGet();
-        }
-
-        @Override
-        public void onRemoval(StoreAwareCacheRemovalNotification<K, V> notification) {
-            assert notification.getCacheStoreType().equals(CacheStoreType.DISK);
-            onRemovalCount.incrementAndGet();
-        }
-
-        @Override
-        public void onHit(K key, V value, CacheStoreType cacheStoreType) {
-            assert cacheStoreType.equals(CacheStoreType.DISK);
-            onHitCount.incrementAndGet();
-        }
-
-        @Override
-        public void onCached(K key, V value, CacheStoreType cacheStoreType) {
-            assert cacheStoreType.equals(CacheStoreType.DISK);
-            onCachedCount.incrementAndGet();
-        }
     }
 
     class MockRemovalListener<K, V> implements RemovalListener<ICacheKey<K>, V> {
