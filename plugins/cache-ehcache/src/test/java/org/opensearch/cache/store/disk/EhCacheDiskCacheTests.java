@@ -86,11 +86,11 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 assertEquals(entry.getValue(), value);
             }
             assertEquals(randomKeys, ehcacheTest.stats().getTotalEntries());
-            assertEquals(randomKeys, ehcacheTest.stats().getEntriesByDimension(getMockDimensions().get(0)));
+            assertEquals(randomKeys, ehcacheTest.stats().getEntriesByDimensions(List.of(getMockDimensions().get(0))));
             assertEquals(randomKeys, ehcacheTest.stats().getTotalHits());
-            assertEquals(randomKeys, ehcacheTest.stats().getHitsByDimension(getMockDimensions().get(0)));
+            assertEquals(randomKeys, ehcacheTest.stats().getHitsByDimensions(List.of(getMockDimensions().get(0))));
             assertEquals(expectedSize, ehcacheTest.stats().getTotalMemorySize());
-            assertEquals(expectedSize, ehcacheTest.stats().getMemorySizeByDimension(getMockDimensions().get(0)));
+            assertEquals(expectedSize, ehcacheTest.stats().getMemorySizeByDimensions(List.of(getMockDimensions().get(0))));
 
             // Validate misses
             int expectedNumberOfMisses = randomIntBetween(10, 200);
@@ -99,7 +99,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             }
 
             assertEquals(expectedNumberOfMisses, ehcacheTest.stats().getTotalMisses());
-            assertEquals(expectedNumberOfMisses, ehcacheTest.stats().getMissesByDimension(getMockDimensions().get(0)));
+            assertEquals(expectedNumberOfMisses, ehcacheTest.stats().getMissesByDimensions(List.of(getMockDimensions().get(0))));
             ehcacheTest.close();
         }
     }
@@ -549,6 +549,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
     }
 
     public void testMemoryTracking() throws Exception {
+        // This test leaks threads because of an issue in Ehcache:
+        // https://github.com/ehcache/ehcache3/issues/3204
         // Test all cases for EhCacheEventListener.onEvent and check stats memory usage is updated correctly
         Settings settings = Settings.builder().build();
         Function<ICacheKey<String>, Long> keySizeFunction = getKeyWeigherFn();

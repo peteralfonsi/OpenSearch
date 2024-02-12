@@ -23,11 +23,11 @@ public interface CacheStats extends Writeable { // TODO: Make this extend ToXCon
     long getTotalEvictions();
     long getTotalMemorySize();
     long getTotalEntries();
-    long getHitsByDimension(CacheStatsDimension dimension);
-    long getMissesByDimension(CacheStatsDimension dimension);
-    long getEvictionsByDimension(CacheStatsDimension dimension);
-    long getMemorySizeByDimension(CacheStatsDimension dimension);
-    long getEntriesByDimension(CacheStatsDimension dimension);
+    long getHitsByDimensions(List<CacheStatsDimension> dimensions);
+    long getMissesByDimensions(List<CacheStatsDimension> dimensions);
+    long getEvictionsByDimensions(List<CacheStatsDimension> dimensions);
+    long getMemorySizeByDimensions(List<CacheStatsDimension> dimensions);
+    long getEntriesByDimensions(List<CacheStatsDimension> dimensions);
 
     void incrementHitsByDimensions(List<CacheStatsDimension> dimensions);
     void incrementMissesByDimensions(List<CacheStatsDimension> dimensions);

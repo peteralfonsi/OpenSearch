@@ -30,8 +30,8 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
         checkTotalResults(statsAndExpectedResults);
 
         // Check values returned for a nonexistent dimension value or name return 0
-        assertEquals(0, stats.getHitsByDimension(new CacheStatsDimension(dimensionName, "nonexistent")));
-        assertEquals(0, stats.getHitsByDimension(new CacheStatsDimension("nonexistentName", "nonexistentValue")));
+        assertEquals(0, stats.getHitsByDimensions(List.of(new CacheStatsDimension(dimensionName, "nonexistent"))));
+        assertEquals(0, stats.getHitsByDimensions(List.of(new CacheStatsDimension("nonexistentName", "nonexistentValue"))));
     }
 
     public void testSerialization() throws Exception {
@@ -144,11 +144,11 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
             String shardIdString = String.valueOf(shardId);
             CacheStatsDimension dimension = getDim(shardId);
 
-            assertEquals((long) expectedResults.get("hits").get(shardIdString), stats.getHitsByDimension(dimension));
-            assertEquals((long) expectedResults.get("misses").get(shardIdString), stats.getMissesByDimension(dimension));
-            assertEquals((long) expectedResults.get("evictions").get(shardIdString), stats.getEvictionsByDimension(dimension));
-            assertEquals((long) expectedResults.get("memory_size").get(shardIdString), stats.getMemorySizeByDimension(dimension));
-            assertEquals((long) expectedResults.get("entries").get(shardIdString), stats.getEntriesByDimension(dimension));
+            assertEquals((long) expectedResults.get("hits").get(shardIdString), stats.getHitsByDimensions(List.of(dimension)));
+            assertEquals((long) expectedResults.get("misses").get(shardIdString), stats.getMissesByDimensions(List.of(dimension)));
+            assertEquals((long) expectedResults.get("evictions").get(shardIdString), stats.getEvictionsByDimensions(List.of(dimension)));
+            assertEquals((long) expectedResults.get("memory_size").get(shardIdString), stats.getMemorySizeByDimensions(List.of(dimension)));
+            assertEquals((long) expectedResults.get("entries").get(shardIdString), stats.getEntriesByDimensions(List.of(dimension)));
         }
     }
 

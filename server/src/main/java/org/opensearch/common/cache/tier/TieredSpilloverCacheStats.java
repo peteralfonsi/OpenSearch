@@ -56,27 +56,27 @@ public class TieredSpilloverCacheStats implements CacheStats {
     }
 
     @Override
-    public long getHitsByDimension(CacheStatsDimension dimension) {
+    public long getHitsByDimensions(List<CacheStatsDimension> dimensions) {
         return 0;
     }
 
     @Override
-    public long getMissesByDimension(CacheStatsDimension dimension) {
+    public long getMissesByDimensions(List<CacheStatsDimension> dimensions) {
         return 0;
     }
 
     @Override
-    public long getEvictionsByDimension(CacheStatsDimension dimension) {
+    public long getEvictionsByDimensions(List<CacheStatsDimension> dimensions) {
         return 0;
     }
 
     @Override
-    public long getMemorySizeByDimension(CacheStatsDimension dimension) {
+    public long getMemorySizeByDimensions(List<CacheStatsDimension> dimensions) {
         return 0;
     }
 
     @Override
-    public long getEntriesByDimension(CacheStatsDimension dimension) {
+    public long getEntriesByDimensions(List<CacheStatsDimension> dimensions) {
         return 0;
     }
 

@@ -102,8 +102,9 @@ public class SingleDimensionCacheStats implements CacheStats {
         return this.totalEntries.count();
     }
 
-    private long internalGetByDimension(CacheStatsDimension dimension, Map<String, CounterMetric> metricsMap) {
-        CounterMetric counter = metricsMap.get(dimension.dimensionValue);
+    private long internalGetByDimension(List<CacheStatsDimension> dimensions, Map<String, CounterMetric> metricsMap) {
+        assert dimensions.size() == 1;
+        CounterMetric counter = metricsMap.get(dimensions.get(0).dimensionValue);
         if (counter == null) {
             return 0;
         }
@@ -111,28 +112,28 @@ public class SingleDimensionCacheStats implements CacheStats {
     }
 
     @Override
-    public long getHitsByDimension(CacheStatsDimension dimension) {
-        return internalGetByDimension(dimension, hitsMap);
+    public long getHitsByDimensions(List<CacheStatsDimension> dimensions) {
+        return internalGetByDimension(dimensions, hitsMap);
     }
 
     @Override
-    public long getMissesByDimension(CacheStatsDimension dimension) {
-        return internalGetByDimension(dimension, missesMap);
+    public long getMissesByDimensions(List<CacheStatsDimension> dimensions) {
+        return internalGetByDimension(dimensions, missesMap);
     }
 
     @Override
-    public long getEvictionsByDimension(CacheStatsDimension dimension) {
-        return internalGetByDimension(dimension, evictionsMap);
+    public long getEvictionsByDimensions(List<CacheStatsDimension> dimensions) {
+        return internalGetByDimension(dimensions, evictionsMap);
     }
 
     @Override
-    public long getMemorySizeByDimension(CacheStatsDimension dimension) {
-        return internalGetByDimension(dimension, memorySizeMap);
+    public long getMemorySizeByDimensions(List<CacheStatsDimension> dimensions) {
+        return internalGetByDimension(dimensions, memorySizeMap);
     }
 
     @Override
-    public long getEntriesByDimension(CacheStatsDimension dimension) {
-        return internalGetByDimension(dimension, entriesMap);
+    public long getEntriesByDimensions(List<CacheStatsDimension> dimensions) {
+        return internalGetByDimension(dimensions, entriesMap);
     }
 
     private boolean checkDimensionList(List<CacheStatsDimension> dimensions) {
