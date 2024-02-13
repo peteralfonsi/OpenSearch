@@ -21,9 +21,9 @@ import java.util.Map;
 import java.util.Random;
 
 public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
-    private final String dimensionName = "shardId";
+    private static final String dimensionName = "shardId";
     public void testAddAndGet() throws Exception {
-        StatsAndExpectedResults statsAndExpectedResults = getPopulatedStats();
+        StatsAndExpectedResults statsAndExpectedResults = getPopulatedStats(dimensionName);
         SingleDimensionCacheStats stats = statsAndExpectedResults.stats;
 
         checkShardResults(statsAndExpectedResults);
@@ -35,7 +35,7 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
     }
 
     public void testSerialization() throws Exception {
-        StatsAndExpectedResults statsAndExpectedResults = getPopulatedStats();
+        StatsAndExpectedResults statsAndExpectedResults = getPopulatedStats(dimensionName);
         SingleDimensionCacheStats stats = statsAndExpectedResults.stats;
         Map<String, Map<String, Long>> expectedResults = statsAndExpectedResults.expectedShardResults;
 
@@ -50,17 +50,17 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
         assertEquals(deserialized.getAllowedDimensionName(), stats.getAllowedDimensionName());
     }
 
-    private CacheStatsDimension getDim(int i) {
+    static CacheStatsDimension getDim(int i, String dimensionName) {
         return new CacheStatsDimension(dimensionName, String.valueOf(i));
     }
 
-    private List<CacheStatsDimension> getDimList(int i) {
+    static List<CacheStatsDimension> getDimList(int i, String dimensionName) {
         ArrayList<CacheStatsDimension> result = new ArrayList<>();
-        result.add(getDim(i));
+        result.add(getDim(i, dimensionName));
         return result;
     }
 
-    private long sumMap(Map<String, Long> inputMap) {
+    static long sumMap(Map<String, Long> inputMap) {
         long result = 0;
         for (String key : inputMap.keySet()) {
             result += inputMap.get(key);
@@ -68,7 +68,8 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
         return result;
     }
 
-    private StatsAndExpectedResults getPopulatedStats() {
+    // package private; used in TieredSpilloverCacheStatsTests
+    static StatsAndExpectedResults getPopulatedStats(String dimensionName) {
         SingleDimensionCacheStats stats = new SingleDimensionCacheStats(dimensionName);
 
         int numShardIds = 10;
@@ -84,7 +85,7 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
         for (int shardId = 0; shardId < numShardIds; shardId++) {
 
             String shardIdString = String.valueOf(shardId);
-            List<CacheStatsDimension> dimensions = getDimList(shardId);
+            List<CacheStatsDimension> dimensions = getDimList(shardId, dimensionName);
 
             for (Map<String, Long> map : new Map[]{expectedHits, expectedMisses, expectedEvictions, expectedMemorySize, expectedEntries}) {
                 map.put(shardIdString, 0L);
@@ -115,7 +116,7 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
                 expectedMemorySize.put(shardIdString, expectedMemorySize.get(shardIdString) + memIncrementAmount);
             }
 
-            int numEntryIncrements = rand.nextInt(10);
+            int numEntryIncrements = rand.nextInt(9) + 1;
             for (int i = 0; i < numEntryIncrements; i++) {
                 stats.incrementEntriesByDimensions(dimensions);
                 expectedEntries.put(shardIdString, expectedEntries.get(shardIdString) + 1);
@@ -136,13 +137,13 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
         return new StatsAndExpectedResults(stats, expectedShardResults, numShardIds);
     }
 
-    private void checkShardResults(StatsAndExpectedResults statsAndExpectedResults) {
+     static void checkShardResults(StatsAndExpectedResults statsAndExpectedResults) {
         // check the resulting values on dimension level are what we expect
         Map<String, Map<String, Long>> expectedResults = statsAndExpectedResults.expectedShardResults;
         SingleDimensionCacheStats stats = statsAndExpectedResults.stats;
         for (int shardId = 0; shardId < statsAndExpectedResults.numShardIds; shardId++) {
             String shardIdString = String.valueOf(shardId);
-            CacheStatsDimension dimension = getDim(shardId);
+            CacheStatsDimension dimension = getDim(shardId, dimensionName);
 
             assertEquals((long) expectedResults.get("hits").get(shardIdString), stats.getHitsByDimensions(List.of(dimension)));
             assertEquals((long) expectedResults.get("misses").get(shardIdString), stats.getMissesByDimensions(List.of(dimension)));
@@ -152,7 +153,7 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
         }
     }
 
-    private void checkTotalResults(StatsAndExpectedResults statsAndExpectedResults) {
+    static void checkTotalResults(StatsAndExpectedResults statsAndExpectedResults) {
         // check resulting total values are what we expect
         Map<String, Map<String, Long>> expectedResults = statsAndExpectedResults.expectedShardResults;
         SingleDimensionCacheStats stats = statsAndExpectedResults.stats;
@@ -164,11 +165,11 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
     }
 
     // Convenience class to allow reusing setup code across tests
-    private class StatsAndExpectedResults {
-        private final SingleDimensionCacheStats stats;
-        private final Map<String, Map<String, Long>> expectedShardResults;
-        private final int numShardIds;
-        private StatsAndExpectedResults(SingleDimensionCacheStats stats, Map<String, Map<String, Long>> expectedShardResults, int numShardIds) {
+     static class StatsAndExpectedResults {
+        final SingleDimensionCacheStats stats;
+        final Map<String, Map<String, Long>> expectedShardResults;
+        final int numShardIds;
+        StatsAndExpectedResults(SingleDimensionCacheStats stats, Map<String, Map<String, Long>> expectedShardResults, int numShardIds) {
             this.stats = stats;
             this.expectedShardResults = expectedShardResults;
             this.numShardIds = numShardIds;

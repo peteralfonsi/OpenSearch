@@ -12,15 +12,11 @@ import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
-import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.stats.ICacheKey;
-import org.opensearch.common.cache.store.StoreAwareCache;
-import org.opensearch.common.cache.store.StoreAwareCacheRemovalNotification;
-import org.opensearch.common.cache.store.StoreAwareCacheValue;
+import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
+import org.opensearch.common.cache.stats.TieredSpilloverCacheStats;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
-import org.opensearch.common.cache.store.enums.CacheStoreType;
-import org.opensearch.common.cache.store.listeners.StoreAwareCacheEventListener;
 import org.opensearch.common.util.concurrent.ReleasableLock;
 import org.opensearch.common.util.iterable.Iterables;
 
@@ -69,6 +65,8 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         Objects.requireNonNull(builder.onHeapCacheBuilder, "onHeap cache builder can't be null");
         this.onHeapRemovalListener = new TierRemovalListener<>();
         this.onDiskRemovalListener = new TierRemovalListener<>();
+        String shardIdDimensionName = Objects.requireNonNull(builder.shardIdDimensionName, "Shard ID dimension name can't be null");
+        // TODO: Pass shardIdDimensionName into onHeap and onDisk builders. (Currently can't because they are ICacheBuilder, not the specific builders)
         this.onHeapCache = builder.onHeapCacheBuilder.setRemovalListener(onHeapRemovalListener).build();
         if (builder.onDiskCacheBuilder != null) {
             this.onDiskCache = Optional.of(builder.onDiskCacheBuilder.setRemovalListener(onDiskRemovalListener).build());
@@ -77,7 +75,14 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         }
         this.removalListener = builder.removalListener;
         this.cacheList = this.onDiskCache.map(diskTier -> Arrays.asList(this.onHeapCache, diskTier)).orElse(List.of(this.onHeapCache));
-        this.stats = new TieredSpilloverCacheStats(onHeapCache.stats(), onDiskCache.get().stats());
+
+        SingleDimensionCacheStats diskStats;
+        if (this.onDiskCache.isPresent()) {
+            diskStats = (SingleDimensionCacheStats) this.onDiskCache.get().stats();
+        } else {
+            diskStats = new SingleDimensionCacheStats("shardId"); // TODO: get this from builder
+        }
+        this.stats = new TieredSpilloverCacheStats((SingleDimensionCacheStats) onHeapCache.stats(), diskStats);
     }
 
     // Package private for testing
@@ -107,7 +112,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
     public V computeIfAbsent(ICacheKey<K> key, LoadAwareCacheLoader<ICacheKey<K>, V> loader) throws Exception {
         // We are skipping calling event listeners at this step as we do another get inside below computeIfAbsent.
         // Where we might end up calling onMiss twice for a key not present in onHeap cache.
-        // Similary we might end up calling both onMiss and onHit for a key, in case we are receiving concurrent
+        // Similarly we might end up calling both onMiss and onHit for a key, in case we are receiving concurrent
         // requests for the same key which requires loading only once.
         V cacheValue = getValueFromTieredCache(false).apply(key);
         if (cacheValue == null) {
@@ -256,6 +261,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         private ICacheBuilder<K, V> onHeapCacheBuilder;
         private ICacheBuilder<K, V> onDiskCacheBuilder;
         private RemovalListener<ICacheKey<K>, V> removalListener;
+        private String shardIdDimensionName;
 
         public Builder() {}
 
@@ -271,6 +277,11 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
 
         public Builder<K, V> setRemovalListener(RemovalListener<ICacheKey<K>, V> listener) {
             this.removalListener = listener;
+            return this;
+        }
+
+        public Builder<K, V> setShardIdDimensionName(String name) {
+            this.shardIdDimensionName = name;
             return this;
         }
 
