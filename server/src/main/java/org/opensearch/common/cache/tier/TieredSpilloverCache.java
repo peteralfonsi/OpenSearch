@@ -12,15 +12,9 @@ import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
-import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.ICacheKey;
-import org.opensearch.common.cache.store.StoreAwareCache;
-import org.opensearch.common.cache.store.StoreAwareCacheRemovalNotification;
-import org.opensearch.common.cache.store.StoreAwareCacheValue;
+import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
-import org.opensearch.common.cache.store.enums.CacheStoreType;
-import org.opensearch.common.cache.store.listeners.StoreAwareCacheEventListener;
 import org.opensearch.common.util.concurrent.ReleasableLock;
 import org.opensearch.common.util.iterable.Iterables;
 

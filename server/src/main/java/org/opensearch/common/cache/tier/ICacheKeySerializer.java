@@ -8,10 +8,9 @@
 
 package org.opensearch.common.cache.tier;
 
-import org.apache.lucene.util.BytesRef;
 import org.opensearch.OpenSearchException;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
-import org.opensearch.common.cache.stats.ICacheKey;
+import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.BytesStreamInput;

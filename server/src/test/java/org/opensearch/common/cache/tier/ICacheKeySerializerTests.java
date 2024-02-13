@@ -10,13 +10,11 @@ package org.opensearch.common.cache.tier;
 
 import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
-import org.opensearch.common.cache.stats.ICacheKey;
+import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.test.OpenSearchTestCase;
 
-import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;

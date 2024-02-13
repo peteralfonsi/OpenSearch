@@ -8,11 +8,7 @@
 
 package org.opensearch.common.cache;
 
-import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.ICacheKey;
-import org.opensearch.common.cache.store.StoreAwareCache;
-import org.opensearch.common.cache.store.config.ICacheConfig;
 
 import java.io.Closeable;
 

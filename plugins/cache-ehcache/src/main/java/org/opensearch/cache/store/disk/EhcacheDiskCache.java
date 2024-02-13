@@ -23,7 +23,7 @@ import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.ICacheKey;
+import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.store.enums.CacheStoreType;
@@ -47,7 +47,6 @@ import java.util.concurrent.ExecutionException;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.function.ToLongBiFunction;
 
 import org.ehcache.Cache;
 import org.ehcache.CachePersistenceException;

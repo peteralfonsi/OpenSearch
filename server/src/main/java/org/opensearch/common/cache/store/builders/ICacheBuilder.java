@@ -10,9 +10,7 @@ package org.opensearch.common.cache.store.builders;
 
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.RemovalListener;
-import org.opensearch.common.cache.stats.ICacheKey;
-import org.opensearch.common.cache.store.StoreAwareCache;
-import org.opensearch.common.cache.store.listeners.StoreAwareCacheEventListener;
+import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 

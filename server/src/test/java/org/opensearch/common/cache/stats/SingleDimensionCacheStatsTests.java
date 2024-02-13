@@ -115,7 +115,7 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
                 expectedMemorySize.put(shardIdString, expectedMemorySize.get(shardIdString) + memIncrementAmount);
             }
 
-            int numEntryIncrements = rand.nextInt(10);
+            int numEntryIncrements = rand.nextInt(9) + 1;
             for (int i = 0; i < numEntryIncrements; i++) {
                 stats.incrementEntriesByDimensions(dimensions);
                 expectedEntries.put(shardIdString, expectedEntries.get(shardIdString) + 1);

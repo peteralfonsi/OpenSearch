@@ -8,32 +8,11 @@
 
 package org.opensearch.common.cache.tier;
 
-import org.opensearch.common.cache.LoadAwareCacheLoader;
-import org.opensearch.common.cache.RemovalReason;
-import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.ICacheKey;
-import org.opensearch.common.cache.store.OpenSearchOnHeapCache;
-import org.opensearch.common.cache.store.StoreAwareCache;
-import org.opensearch.common.cache.store.StoreAwareCacheRemovalNotification;
-import org.opensearch.common.cache.store.builders.ICacheBuilder;
-import org.opensearch.common.cache.store.enums.CacheStoreType;
-import org.opensearch.common.cache.store.listeners.StoreAwareCacheEventListener;
-import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.test.OpenSearchTestCase;
 
-import java.util.ArrayList;
-import java.util.EnumMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Phaser;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicReference;
-
 public class TieredSpilloverCacheTests extends OpenSearchTestCase {
+
+    // TODO: Implementation of new stats is not yet down for TieredSpilloverCache
 
     /*public void testComputeIfAbsentWithoutAnyOnHeapCacheEviction() throws Exception {
         int onHeapCacheSize = randomIntBetween(10, 30);

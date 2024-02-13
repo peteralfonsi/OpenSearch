@@ -6,8 +6,10 @@
  * compatible open source license.
  */
 
-package org.opensearch.common.cache.stats;
+package org.opensearch.common.cache;
 
+
+import org.opensearch.common.cache.stats.CacheStatsDimension;
 
 import java.util.List;
 import java.util.Objects;
