@@ -45,8 +45,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.function.BiFunction;
-import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.function.ToLongBiFunction;
 
 import org.ehcache.Cache;
 import org.ehcache.CachePersistenceException;
@@ -144,8 +144,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         this.cacheManager = buildCacheManager();
         this.ehCacheEventListener = new EhCacheEventListener<K, V>(
             Objects.requireNonNull(builder.getRemovalListener(), "Removal listener can't be null"),
-            Objects.requireNonNull(builder.keySizeFunction, "Key sizing function shouldn't be null"),
-            Objects.requireNonNull(builder.valueSizeFunction, "Value sizing function shouldn't be null"),
+            Objects.requireNonNull(builder.getWeigher(), "Weigher function can't be null"),
             this.valueSerializer);
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
         this.shardIdDimensionName = Objects.requireNonNull(builder.shardIdDimensionName, "Dimension name can't be null");
@@ -452,22 +451,23 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
 
         //private final StoreAwareCacheEventListener<K, V> eventListener;
         private final RemovalListener<ICacheKey<K>, V> removalListener;
-        private Function<ICacheKey<K>, Long> keySizeFunction;
-        private Function<V, Long> valueSizeFunction;
+        private ToLongBiFunction<ICacheKey<K>, V> weigher;
         private Serializer<V, byte[]> valueSerializer;
 
         EhCacheEventListener(RemovalListener<ICacheKey<K>, V> removalListener,
-                             Function<ICacheKey<K>, Long> keySizeFunction,
-                             Function<V, Long> valueSizeFunction,
+                             ToLongBiFunction<ICacheKey<K>, V> weigher,
                              Serializer<V, byte[]> valueSerializer) {
             this.removalListener = removalListener;
-            this.keySizeFunction = keySizeFunction;
-            this.valueSizeFunction = valueSizeFunction;
+            this.weigher = weigher;
             this.valueSerializer = valueSerializer;
         }
 
-        private long getKeyAndOldValueSize(CacheEvent<? extends ICacheKey<K>, ? extends byte[]> event) {
-            return keySizeFunction.apply(event.getKey()) + valueSizeFunction.apply(valueSerializer.deserialize(event.getOldValue()));
+        private long getOldValuePairSize(CacheEvent<? extends ICacheKey<K>, ? extends byte[]> event) {
+            return weigher.applyAsLong(event.getKey(), valueSerializer.deserialize(event.getOldValue()));
+        }
+
+        private long getNewValuePairSize(CacheEvent<? extends ICacheKey<K>, ? extends byte[]> event) {
+            return weigher.applyAsLong(event.getKey(), valueSerializer.deserialize(event.getNewValue()));
         }
 
         @Override
@@ -475,32 +475,31 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
             switch (event.getType()) {
                 case CREATED:
                     stats.incrementEntriesByDimensions(event.getKey().dimensions);
-                    long totalSize = keySizeFunction.apply(event.getKey()) + valueSizeFunction.apply(valueSerializer.deserialize(event.getNewValue()));
-                    stats.incrementMemorySizeByDimensions(event.getKey().dimensions, totalSize);
+                    stats.incrementMemorySizeByDimensions(event.getKey().dimensions, getNewValuePairSize(event));
                     assert event.getOldValue() == null;
                     break;
                 case EVICTED:
                     this.removalListener.onRemoval(new RemovalNotification<>(event.getKey(), valueSerializer.deserialize(event.getOldValue()), RemovalReason.EVICTED));
                     stats.decrementEntriesByDimensions(event.getKey().dimensions);
-                    stats.incrementMemorySizeByDimensions(event.getKey().dimensions, -getKeyAndOldValueSize(event));
+                    stats.incrementMemorySizeByDimensions(event.getKey().dimensions, -getOldValuePairSize(event));
                     assert event.getNewValue() == null;
                     break;
                 case REMOVED:
                     this.removalListener.onRemoval(new RemovalNotification<>(event.getKey(), valueSerializer.deserialize(event.getOldValue()), RemovalReason.EXPLICIT));
                     stats.decrementEntriesByDimensions(event.getKey().dimensions);
-                    stats.incrementMemorySizeByDimensions(event.getKey().dimensions, -getKeyAndOldValueSize(event));
+                    stats.incrementMemorySizeByDimensions(event.getKey().dimensions, -getOldValuePairSize(event));
                     assert event.getNewValue() == null;
                     break;
                 case EXPIRED:
                     this.removalListener.onRemoval(new RemovalNotification<>(event.getKey(), valueSerializer.deserialize(event.getOldValue()), RemovalReason.INVALIDATED));
                     stats.decrementEntriesByDimensions(event.getKey().dimensions);
-                    stats.incrementMemorySizeByDimensions(event.getKey().dimensions, -getKeyAndOldValueSize(event));
+                    stats.incrementMemorySizeByDimensions(event.getKey().dimensions, -getOldValuePairSize(event));
                     assert event.getNewValue() == null;
                     break;
                 case UPDATED:
-                    long newKeySize = valueSizeFunction.apply(valueSerializer.deserialize(event.getNewValue()));
-                    long oldKeySize = valueSizeFunction.apply(valueSerializer.deserialize(event.getOldValue()));
-                    stats.incrementMemorySizeByDimensions(event.getKey().dimensions, newKeySize - oldKeySize);
+                    long newSize = getNewValuePairSize(event);
+                    long oldSize = getOldValuePairSize(event);
+                    stats.incrementMemorySizeByDimensions(event.getKey().dimensions, newSize - oldSize);
                     break;
                 default:
                     break;
@@ -596,8 +595,6 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         private String shardIdDimensionName;
         private Serializer<K, byte[]> keySerializer;
         private Serializer<V, byte[]> valueSerializer;
-        private Function<ICacheKey<K>, Long> keySizeFunction;
-        private Function<V, Long> valueSizeFunction;
 
         /**
          * Default constructor. Added to fix javadocs.
@@ -686,16 +683,6 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
 
         public Builder<K, V> setValueSerializer(Serializer<V, byte[]> valueSerializer) {
             this.valueSerializer = valueSerializer;
-            return this;
-        }
-
-        public Builder<K, V> setKeySizeFunction(Function<ICacheKey<K>, Long> fn) {
-            this.keySizeFunction = fn;
-            return this;
-        }
-
-        public Builder<K, V> setValueSizeFunction(Function<V, Long> fn) {
-            this.valueSizeFunction = fn;
             return this;
         }
 

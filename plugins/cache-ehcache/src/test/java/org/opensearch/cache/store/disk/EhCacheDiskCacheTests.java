@@ -36,6 +36,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+import java.util.function.ToLongBiFunction;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
 
@@ -47,8 +48,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
     public void testBasicGetAndPut() throws IOException {
         Settings settings = Settings.builder().build();
         MockRemovalListener<String, String> mockRemovalListener = new MockRemovalListener<>();
-        Function<ICacheKey<String>, Long> keySizeFunction = getKeyWeigherFn();
-        Function<String, Long> valueSizeFunction = getValueWeigherFn();
+        ToLongBiFunction<ICacheKey<String>, String> weigher = getWeigher();
         try (NodeEnvironment env = newNodeEnvironment(settings)) {
             ICache<String, String> ehcacheTest = new EhcacheDiskCache.Builder<String, String>().setThreadPoolAlias("ehcacheTest")
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
@@ -57,13 +57,12 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .setShardIdDimensionName(dimensionName)
-                .setKeySizeFunction(keySizeFunction)
-                .setValueSizeFunction(valueSizeFunction)
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setRemovalListener(mockRemovalListener)
+                .setWeigher(weigher)
                 .build();
             int randomKeys = randomIntBetween(10, 100);
             long expectedSize = 0;
@@ -74,8 +73,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
                 ICacheKey<String> iCacheKey = getICacheKey(entry.getKey());
                 ehcacheTest.put(iCacheKey, entry.getValue());
-                expectedSize += keySizeFunction.apply(iCacheKey);
-                expectedSize += valueSizeFunction.apply(entry.getValue());
+                expectedSize += weigher.applyAsLong(iCacheKey, entry.getValue());
             }
             for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
                 String value = ehcacheTest.get(getICacheKey(entry.getKey()));
@@ -165,13 +163,12 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .setShardIdDimensionName(dimensionName)
-                .setKeySizeFunction(getKeyWeigherFn())
-                .setValueSizeFunction(getValueWeigherFn())
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setRemovalListener(mockRemovalListener)
+                .setWeigher(getWeigher())
                 .build();
             int randomKeys = randomIntBetween(20, 100);
             Thread[] threads = new Thread[randomKeys];
@@ -215,13 +212,12 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .setShardIdDimensionName(dimensionName)
-                .setKeySizeFunction(getKeyWeigherFn())
-                .setValueSizeFunction(getValueWeigherFn())
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setRemovalListener(mockRemovalListener)
+                .setWeigher(getWeigher())
                 .build();
             int randomKeys = randomIntBetween(20, 100);
             Thread[] threads = new Thread[randomKeys];
@@ -263,13 +259,12 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .setShardIdDimensionName(dimensionName)
-                .setKeySizeFunction(getKeyWeigherFn())
-                .setValueSizeFunction(getValueWeigherFn())
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setRemovalListener(new MockRemovalListener<>())
+                .setWeigher(getWeigher())
                 .build();
 
             int randomKeys = randomIntBetween(2, 100);
@@ -295,8 +290,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
     public void testEvictions() throws Exception {
         Settings settings = Settings.builder().build();
         MockRemovalListener<String, String> mockRemovalListener = new MockRemovalListener<>();
-        Function<ICacheKey<String>, Long> keySizeFunction = getKeyWeigherFn();
-        Function<String, Long> valueSizeFunction = getValueWeigherFn();
+        ToLongBiFunction<ICacheKey<String>, String> weigher = getWeigher();
         try (NodeEnvironment env = newNodeEnvironment(settings)) {
             ICache<String, String> ehcacheTest = new EhcacheDiskCache.Builder<String, String>().setDiskCacheAlias("test1")
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
@@ -307,13 +301,12 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .setShardIdDimensionName(dimensionName)
-                .setKeySizeFunction(keySizeFunction)
-                .setValueSizeFunction(valueSizeFunction)
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setRemovalListener(mockRemovalListener)
+                .setWeigher(weigher)
                 .build();
 
             // Generate a string with 100 characters
@@ -325,8 +318,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             for (int i = 0; i < 1000; i++) {
                 String key = "Key" + i;
                 ICacheKey<String> iCacheKey = getICacheKey((key));
-                sizeOfAttemptedAdds += keySizeFunction.apply(iCacheKey) + valueSizeFunction.apply(value);
-                sizeOfAttemptedAddsValue += valueSizeFunction.apply(value);
+                sizeOfAttemptedAdds += weigher.applyAsLong(iCacheKey, value);
                 ehcacheTest.put(iCacheKey, value);
 
             }
@@ -352,13 +344,12 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .setShardIdDimensionName(dimensionName)
-                .setKeySizeFunction(getKeyWeigherFn())
-                .setValueSizeFunction(getValueWeigherFn())
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setRemovalListener(mockRemovalListener)
+                .setWeigher(getWeigher())
                 .build();
 
             int numberOfRequest = 2;// randomIntBetween(200, 400);
@@ -428,13 +419,12 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .setShardIdDimensionName(dimensionName)
-                .setKeySizeFunction(getKeyWeigherFn())
-                .setValueSizeFunction(getValueWeigherFn())
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setRemovalListener(mockRemovalListener)
+                .setWeigher(getWeigher())
                 .build();
 
             int numberOfRequest = randomIntBetween(200, 400);
@@ -490,13 +480,12 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .setShardIdDimensionName(dimensionName)
-                .setKeySizeFunction(getKeyWeigherFn())
-                .setValueSizeFunction(getValueWeigherFn())
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setRemovalListener(mockRemovalListener)
+                .setWeigher(getWeigher())
                 .build();
 
             int numberOfRequest = randomIntBetween(200, 400);
@@ -549,11 +538,10 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
         // https://github.com/ehcache/ehcache3/issues/3204
         // Test all cases for EhCacheEventListener.onEvent and check stats memory usage is updated correctly
         Settings settings = Settings.builder().build();
-        Function<ICacheKey<String>, Long> keySizeFunction = getKeyWeigherFn();
-        Function<String, Long> valueSizeFunction = getValueWeigherFn();
+        ToLongBiFunction<ICacheKey<String>, String> weigher = getWeigher();
         int initialKeyLength = 40;
         int initialValueLength = 40;
-        long sizeForOneInitialEntry = keySizeFunction.apply(new ICacheKey<>(generateRandomString(initialKeyLength), getMockDimensions())) + valueSizeFunction.apply(generateRandomString(initialValueLength));
+        long sizeForOneInitialEntry = weigher.applyAsLong(new ICacheKey<>(generateRandomString(initialKeyLength), getMockDimensions()), generateRandomString(initialValueLength));
         int maxEntries = 2000;
         try (NodeEnvironment env = newNodeEnvironment(settings)) {
             ICache<String, String> ehcacheTest = new EhcacheDiskCache.Builder<String, String>().setDiskCacheAlias("test1")
@@ -564,14 +552,13 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 .setKeySerializer(new StringSerializer())
                 .setValueSerializer(new StringSerializer())
                 .setShardIdDimensionName(dimensionName)
-                .setKeySizeFunction(keySizeFunction)
-                .setValueSizeFunction(valueSizeFunction)
                 .setIsEventListenerModeSync(true) // Test fails if async; probably not all updates happen before checking stats
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(settings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(maxEntries * sizeForOneInitialEntry)
                 .setRemovalListener(new MockRemovalListener<>())
+                .setWeigher(weigher)
                 .build();
             long expectedSize = 0;
 
@@ -583,7 +570,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 String value = generateRandomString(initialValueLength);
                 ehcacheTest.put(key, value);
                 initialKeys.add(key);
-                expectedSize += keySizeFunction.apply(key) + valueSizeFunction.apply(value);
+                expectedSize += weigher.applyAsLong(key, value);
                 assertEquals(expectedSize, ehcacheTest.stats().getTotalMemorySize());
             }
 
@@ -602,7 +589,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             for (int i = 0; i < numInitialKeys * 0.5; i++) {
                 ICacheKey<String> removedKey = initialKeys.get(i);
                 ehcacheTest.invalidate(removedKey);
-                expectedSize -= keySizeFunction.apply(removedKey) + valueSizeFunction.apply(updatedValues.get(removedKey));
+                expectedSize -= weigher.applyAsLong(removedKey, updatedValues.get(removedKey));
                 assertEquals(expectedSize, ehcacheTest.stats().getTotalMemorySize());
             }
 
@@ -640,21 +627,19 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
         return new ICacheKey<>(key, getMockDimensions());
     }
 
-    private Function<ICacheKey<String>, Long> getKeyWeigherFn() {
-        // TODO: Should this function come from the serializer impl?
-        return (iCacheKey) -> {
+    private ToLongBiFunction<ICacheKey<String>, String> getWeigher() {
+        return (iCacheKey, value) -> {
+            // Size consumed by key
             long totalSize = iCacheKey.key.length();
             for (CacheStatsDimension dim : iCacheKey.dimensions) {
                 totalSize += dim.dimensionName.length();
                 totalSize += dim.dimensionValue.length();
             }
             totalSize += 10; // The ICacheKeySerializer writes 2 VInts to record array lengths, which can be 1-5 bytes each
+            // Size consumed by value
+            totalSize += value.length();
             return totalSize;
         };
-    }
-
-    private Function<String, Long> getValueWeigherFn() {
-        return (value) -> (long) value.length();
     }
 
     class MockRemovalListener<K, V> implements RemovalListener<ICacheKey<K>, V> {
