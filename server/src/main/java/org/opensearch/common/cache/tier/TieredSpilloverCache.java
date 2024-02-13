@@ -12,6 +12,7 @@ import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.stats.ICacheKey;
 import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
@@ -63,8 +64,8 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
 
     TieredSpilloverCache(Builder<K, V> builder) {
         Objects.requireNonNull(builder.onHeapCacheBuilder, "onHeap cache builder can't be null");
-        this.onHeapRemovalListener = new TierRemovalListener<>();
-        this.onDiskRemovalListener = new TierRemovalListener<>();
+        this.onHeapRemovalListener = new HeapTierRemovalListener(this);
+        this.onDiskRemovalListener = new DiskTierRemovalListener(this);
         String shardIdDimensionName = Objects.requireNonNull(builder.shardIdDimensionName, "Shard ID dimension name can't be null");
         // TODO: Pass shardIdDimensionName into onHeap and onDisk builders. (Currently can't because they are ICacheBuilder, not the specific builders)
         this.onHeapCache = builder.onHeapCacheBuilder.setRemovalListener(onHeapRemovalListener).build();
@@ -124,6 +125,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                 value = onHeapCache.computeIfAbsent(key, loader);
             }
             if (loader.isLoaded()) {
+
                 //listener.onMiss(key, CacheStoreType.ON_HEAP);
                 //onDiskCache.ifPresent(diskTier -> listener.onMiss(key, CacheStoreType.DISK));
                 //listener.onCached(key, value, CacheStoreType.ON_HEAP);
@@ -225,17 +227,10 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         return key -> {
             try (ReleasableLock ignore = readLock.acquire()) {
                 for (ICache<K, V> cache : cacheList) {
-                    V value = cache.get(key);
+                    V value;
+                    value = cache.get(key);
                     if (value != null) {
-                        if (triggerEventListener) {
-                            //listener.onHit(key, value, cache.getTierType());
-                        }
-                        //return new StoreAwareCacheValue<>(value, cache.getTierType());
                         return value;
-                    } else {
-                        if (triggerEventListener) {
-                            //listener.onMiss(key, cache.getTierType());
-                        }
                     }
                 }
             }
@@ -243,12 +238,51 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         };
     }
 
-    // A class which receives removal events from a tier present in the spillover cache.
-    private class TierRemovalListener<K, V> implements RemovalListener<ICacheKey<K>, V> {
+    void handleRemovalFromHeapTier(RemovalNotification<ICacheKey<K>, V> notification) {
+        if (RemovalReason.EVICTED.equals(notification.getRemovalReason())
+            || RemovalReason.CAPACITY.equals(notification.getRemovalReason())) {
+            try (ReleasableLock ignore = writeLock.acquire()) {
+                onDiskCache.ifPresentOrElse(
+                    diskTier -> { diskTier.put(notification.getKey(), notification.getValue()); }, // If disk tier present, spill over to the disk tier
+                    () -> removalListener.onRemoval(notification) // If there's no disk tier, send this notification to the TSC's removal listener
+                );
+            }
+        } else {
+            // If the removal was for another reason, send this notification to the TSC's removal listener, as the value is leaving the TSC entirely
+            removalListener.onRemoval(notification);
+        }
+    }
 
+    void handleRemovalFromDiskTier(RemovalNotification<ICacheKey<K>, V> notification) {
+        removalListener.onRemoval(notification);
+    }
+
+    /**
+     * A class which receives removal events from the heap tier.
+     */
+    private class HeapTierRemovalListener implements RemovalListener<ICacheKey<K>, V> {
+        private final TieredSpilloverCache<K, V> tsc;
+        HeapTierRemovalListener(TieredSpilloverCache<K, V> tsc) {
+            this.tsc = tsc;
+        }
         @Override
         public void onRemoval(RemovalNotification<ICacheKey<K>, V> notification) {
-            // TODO
+            tsc.handleRemovalFromHeapTier(notification);
+        }
+    }
+
+    /**
+     * A class which receives removal events from the disk tier.
+     */
+    private class DiskTierRemovalListener implements RemovalListener<ICacheKey<K>, V> {
+        private final TieredSpilloverCache<K, V> tsc;
+
+        DiskTierRemovalListener(TieredSpilloverCache<K, V> tsc) {
+            this.tsc = tsc;
+        }
+        @Override
+        public void onRemoval(RemovalNotification<ICacheKey<K>, V> notification) {
+            tsc.handleRemovalFromDiskTier(notification);
         }
     }
 

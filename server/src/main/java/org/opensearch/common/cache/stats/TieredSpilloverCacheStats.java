@@ -24,6 +24,9 @@ public class TieredSpilloverCacheStats implements CacheStats {
     public static final String TIER_DIMENSION_VALUE_ON_HEAP = "on_heap";
     public static final String TIER_DIMENSION_VALUE_DISK = "disk";
 
+    public static final List<CacheStatsDimension> HEAP_DIMS = List.of(new CacheStatsDimension(TIER_DIMENSION_NAME, TIER_DIMENSION_VALUE_ON_HEAP));
+    public static final List<CacheStatsDimension> DISK_DIMS = List.of(new CacheStatsDimension(TIER_DIMENSION_NAME, TIER_DIMENSION_VALUE_DISK));
+
     public TieredSpilloverCacheStats(SingleDimensionCacheStats heapStats, SingleDimensionCacheStats diskStats) {
         this.heapStats = heapStats;
         this.diskStats = diskStats;
