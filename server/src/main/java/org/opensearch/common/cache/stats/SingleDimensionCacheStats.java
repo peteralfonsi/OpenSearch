@@ -17,6 +17,8 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 /**
  * A CacheStats implementation for caches that aggregate over a single dimension.
@@ -24,11 +26,11 @@ import java.util.Map;
  */
 public class SingleDimensionCacheStats implements CacheStats {
     // Maintain a counter metric for each shard id (dimension values)
-    private final Map<String, CounterMetric> hitsMap;
-    private final Map<String, CounterMetric> missesMap;
-    private final Map<String, CounterMetric> evictionsMap;
-    private final Map<String, CounterMetric> memorySizeMap;
-    private final Map<String, CounterMetric> entriesMap;
+    private final ConcurrentMap<String, CounterMetric> hitsMap;
+    private final ConcurrentMap<String, CounterMetric> missesMap;
+    private final ConcurrentMap<String, CounterMetric> evictionsMap;
+    private final ConcurrentMap<String, CounterMetric> memorySizeMap;
+    private final ConcurrentMap<String, CounterMetric> entriesMap;
 
     // Also maintain a single total counter metric, to avoid having to sum over many values for shards
     private final CounterMetric totalHits;
@@ -41,11 +43,11 @@ public class SingleDimensionCacheStats implements CacheStats {
     private final String allowedDimensionName;
 
     public SingleDimensionCacheStats(String allowedDimensionName) {
-        this.hitsMap = new HashMap<>();
-        this.missesMap = new HashMap<>();
-        this.evictionsMap = new HashMap<>();
-        this.memorySizeMap = new HashMap<>();
-        this.entriesMap = new HashMap<>();
+        this.hitsMap = new ConcurrentHashMap<>();
+        this.missesMap = new ConcurrentHashMap<>();
+        this.evictionsMap = new ConcurrentHashMap<>();
+        this.memorySizeMap = new ConcurrentHashMap<>();
+        this.entriesMap = new ConcurrentHashMap<>();
 
         this.totalHits = new CounterMetric();
         this.totalMisses = new CounterMetric();
@@ -212,8 +214,8 @@ public class SingleDimensionCacheStats implements CacheStats {
         return result;
     }
 
-    private Map<String, CounterMetric> convertLongMapToCounterMetric(Map<String, Long> inputMap) {
-        Map<String, CounterMetric> result = new HashMap<>();
+    private ConcurrentMap<String, CounterMetric> convertLongMapToCounterMetric(Map<String, Long> inputMap) {
+        ConcurrentMap<String, CounterMetric> result = new ConcurrentHashMap<>();
         for (String key: inputMap.keySet()) {
             CounterMetric counter = new CounterMetric();
             counter.inc(inputMap.get(key));
