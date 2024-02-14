@@ -280,17 +280,4 @@ public class SingleDimensionCacheStats implements CacheStats {
         }
         return result;
     }
-
-    /*@Override
-    public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
-        return null;
-    }*/
-
-    /*static final class Fields {
-        static final String MEMORY_SIZE = "memory_size";
-        static final String EVICTIONS = "evictions";
-        static final String HIT_COUNT = "hit_count";
-        static final String MISS_COUNT = "miss_count";
-        static final String ENTRIES = "entries";
-    }*/
 }
