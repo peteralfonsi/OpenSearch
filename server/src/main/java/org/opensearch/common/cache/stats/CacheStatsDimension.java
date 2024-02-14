@@ -16,6 +16,10 @@ import java.io.IOException;
 import java.util.Objects;
 
 public class CacheStatsDimension implements Writeable {
+    // Values for tier dimensions, that are reused across CacheStats implementations
+    public static final String TIER_DIMENSION_NAME = "tier";
+    public static final String TIER_DIMENSION_VALUE_ON_HEAP = "on_heap";
+    public static final String TIER_DIMENSION_VALUE_DISK = "disk";
     public final String dimensionName;
     public final String dimensionValue;
     public CacheStatsDimension(String dimensionName, String dimensionValue) {

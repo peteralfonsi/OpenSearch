@@ -14,6 +14,7 @@ import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.XContentBuilder;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,7 +22,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
 /**
- * A CacheStats implementation for caches that aggregate over a single dimension.
+ * A CacheStats implementation for caches that aggregate over a single dimension, as well as holding a tier dimension.
  * For example, caches in the IndicesRequestCache only aggregate over ShardId value.
  */
 public class SingleDimensionCacheStats implements CacheStats {
@@ -39,10 +40,12 @@ public class SingleDimensionCacheStats implements CacheStats {
     private final CounterMetric totalMemorySize;
     private final CounterMetric totalEntries;
 
-    // The allowed dimension name. This stats only allows a single dimension name
-    private final String allowedDimensionName;
+    // The allowed dimension name. This stats only allows a single dimension name. Package-private for testing.
+    final String allowedDimensionName;
+    // The value of the tier dimension for entries in this Stats object. Package-private for testing.
+    final String tierDimensionValue;
 
-    public SingleDimensionCacheStats(String allowedDimensionName) {
+    public SingleDimensionCacheStats(String allowedDimensionName, String tierDimensionValue) {
         this.hitsMap = new ConcurrentHashMap<>();
         this.missesMap = new ConcurrentHashMap<>();
         this.evictionsMap = new ConcurrentHashMap<>();
@@ -56,6 +59,7 @@ public class SingleDimensionCacheStats implements CacheStats {
         this.totalEntries = new CounterMetric();
 
         this.allowedDimensionName = allowedDimensionName;
+        this.tierDimensionValue = tierDimensionValue;
     }
 
     public SingleDimensionCacheStats(StreamInput in) throws IOException {
@@ -77,6 +81,7 @@ public class SingleDimensionCacheStats implements CacheStats {
         totalEntries.inc(in.readVLong());
 
         this.allowedDimensionName = in.readString();
+        this.tierDimensionValue = in.readString();
     }
 
     @Override
@@ -104,7 +109,34 @@ public class SingleDimensionCacheStats implements CacheStats {
         return this.totalEntries.count();
     }
 
-    private long internalGetByDimension(List<CacheStatsDimension> dimensions, Map<String, CounterMetric> metricsMap) {
+    private long internalGetByDimension(List<CacheStatsDimension> dimensions, Map<String, CounterMetric> metricsMap, CounterMetric totalMetric) {
+        CacheStatsDimension tierDimension = getTierDimensionIfPresent(dimensions);
+        if (tierDimension != null) {
+            // This get request includes a tier dimension. Return values only if the tier dimension value
+            // matches the one for this stats object, otherwise return 0
+            assert dimensions.size() == 1 || dimensions.size() == 2; // There can be at most one non-tier dimension value
+            if (tierDimension.dimensionValue.equals(tierDimensionValue)) {
+                // The list passed in may not be mutable; create a mutable copy to remove the tier dimension
+                ArrayList<CacheStatsDimension> modifiedDimensions = new ArrayList<>(dimensions);
+                modifiedDimensions.remove(tierDimension);
+
+                if (modifiedDimensions.size() == 1){
+                    return internalGetHelper(modifiedDimensions, metricsMap);
+                } else {
+                    return totalMetric.count();
+                }
+
+            } else {
+                // Return 0 for incorrect tier value
+                return 0;
+            }
+        } else {
+            // This get request doesn't include a tier dimension. Return the appropriate values.
+            return internalGetHelper(dimensions, metricsMap);
+        }
+    }
+
+    private long internalGetHelper(List<CacheStatsDimension> dimensions, Map<String, CounterMetric> metricsMap) {
         assert dimensions.size() == 1;
         CounterMetric counter = metricsMap.get(dimensions.get(0).dimensionValue);
         if (counter == null) {
@@ -113,29 +145,41 @@ public class SingleDimensionCacheStats implements CacheStats {
         return counter.count();
     }
 
+    /**
+     * Returns the dimension that represents a tier value, if one is present. Otherwise return null.
+     */
+    private CacheStatsDimension getTierDimensionIfPresent(List<CacheStatsDimension> dimensions) {
+        for (CacheStatsDimension dim : dimensions) {
+            if (dim.dimensionName.equals(CacheStatsDimension.TIER_DIMENSION_NAME)) {
+                return dim;
+            }
+        }
+        return null;
+    }
+
     @Override
     public long getHitsByDimensions(List<CacheStatsDimension> dimensions) {
-        return internalGetByDimension(dimensions, hitsMap);
+        return internalGetByDimension(dimensions, hitsMap, totalHits);
     }
 
     @Override
     public long getMissesByDimensions(List<CacheStatsDimension> dimensions) {
-        return internalGetByDimension(dimensions, missesMap);
+        return internalGetByDimension(dimensions, missesMap, totalMisses);
     }
 
     @Override
     public long getEvictionsByDimensions(List<CacheStatsDimension> dimensions) {
-        return internalGetByDimension(dimensions, evictionsMap);
+        return internalGetByDimension(dimensions, evictionsMap, totalEvictions);
     }
 
     @Override
     public long getMemorySizeByDimensions(List<CacheStatsDimension> dimensions) {
-        return internalGetByDimension(dimensions, memorySizeMap);
+        return internalGetByDimension(dimensions, memorySizeMap, totalMemorySize);
     }
 
     @Override
     public long getEntriesByDimensions(List<CacheStatsDimension> dimensions) {
-        return internalGetByDimension(dimensions, entriesMap);
+        return internalGetByDimension(dimensions, entriesMap, totalEntries);
     }
 
     private boolean checkDimensionList(List<CacheStatsDimension> dimensions) {
@@ -199,10 +243,7 @@ public class SingleDimensionCacheStats implements CacheStats {
         out.writeVLong(totalEntries.count());
 
         out.writeString(allowedDimensionName);
-    }
-
-    public String getAllowedDimensionName() {
-        return allowedDimensionName;
+        out.writeString(tierDimensionValue);
     }
 
     // For converting to StreamOutput/StreamInput, write maps of longs rather than CounterMetrics which don't support writing

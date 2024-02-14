@@ -17,6 +17,7 @@ import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.ICacheKey;
+import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.settings.Settings;
@@ -49,7 +50,7 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
         }
         cache = cacheBuilder.build();
         String dimensionName = Objects.requireNonNull(builder.shardIdDimensionName, "Shard id dimension name can't be null");
-        this.stats = new SingleDimensionCacheStats(dimensionName);
+        this.stats = new SingleDimensionCacheStats(dimensionName, CacheStatsDimension.TIER_DIMENSION_VALUE_ON_HEAP);
         this.removalListener = builder.getRemovalListener();
     }
 

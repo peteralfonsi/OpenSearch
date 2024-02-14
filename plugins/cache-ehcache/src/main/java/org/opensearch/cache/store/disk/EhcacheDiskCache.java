@@ -24,6 +24,7 @@ import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.ICacheKey;
+import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.store.enums.CacheStoreType;
@@ -148,7 +149,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
             this.valueSerializer);
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
         this.shardIdDimensionName = Objects.requireNonNull(builder.shardIdDimensionName, "Dimension name can't be null");
-        this.stats = new SingleDimensionCacheStats(shardIdDimensionName);
+        this.stats = new SingleDimensionCacheStats(shardIdDimensionName, CacheStatsDimension.TIER_DIMENSION_VALUE_DISK);
     }
 
     private Cache<ICacheKey, byte[]> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {

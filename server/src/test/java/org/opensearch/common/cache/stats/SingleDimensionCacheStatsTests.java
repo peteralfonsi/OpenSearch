@@ -22,8 +22,9 @@ import java.util.Random;
 
 public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
     private final String dimensionName = "shardId";
+    private final String tierName = "test_tier";
     public void testAddAndGet() throws Exception {
-        StatsAndExpectedResults statsAndExpectedResults = getPopulatedStats();
+        StatsAndExpectedResults statsAndExpectedResults = getPopulatedStats(tierName);
         SingleDimensionCacheStats stats = statsAndExpectedResults.stats;
 
         checkShardResults(statsAndExpectedResults);
@@ -32,10 +33,34 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
         // Check values returned for a nonexistent dimension value or name return 0
         assertEquals(0, stats.getHitsByDimensions(List.of(new CacheStatsDimension(dimensionName, "nonexistent"))));
         assertEquals(0, stats.getHitsByDimensions(List.of(new CacheStatsDimension("nonexistentName", "nonexistentValue"))));
+
+        // Check sending too many values causes an assertion error
+        assertThrows(AssertionError.class, () -> stats.getHitsByDimensions(List.of(getDim(0), new CacheStatsDimension("test", "value"))));
+    }
+
+    public void testTierFiltering() throws Exception {
+        StatsAndExpectedResults statsAndExpectedResults = getPopulatedStats(tierName);
+        SingleDimensionCacheStats stats = statsAndExpectedResults.stats;
+
+        // Values should be returned if the tier dimension value matches the one passed to SingleDimensionCacheStats. Otherwise we should get 0.
+        CacheStatsDimension matchingTierDim = new CacheStatsDimension(CacheStatsDimension.TIER_DIMENSION_NAME, tierName);
+        CacheStatsDimension nonMatchingTierDim = new CacheStatsDimension(CacheStatsDimension.TIER_DIMENSION_NAME, "another_tier");
+
+        assertEquals(stats.getTotalHits(), stats.getHitsByDimensions(List.of(matchingTierDim)));
+        assertEquals(0, stats.getHitsByDimensions(List.of(nonMatchingTierDim)));
+        for (int i = 0; i < statsAndExpectedResults.numShardIds; i++) {
+            assertEquals(stats.getHitsByDimensions(List.of(getDim(i))), stats.getHitsByDimensions(List.of(getDim(i), matchingTierDim)));
+            assertEquals(stats.getHitsByDimensions(List.of(getDim(i))), stats.getHitsByDimensions(List.of(matchingTierDim, getDim(i))));
+            assertEquals(0, stats.getHitsByDimensions(List.of(getDim(i), nonMatchingTierDim)));
+            assertEquals(0, stats.getHitsByDimensions(List.of(nonMatchingTierDim, getDim(i))));
+
+        }
+        // Check sending too many values causes an assertion error
+        assertThrows(AssertionError.class, () -> stats.getHitsByDimensions(List.of(getDim(0), matchingTierDim, new CacheStatsDimension("test", "value"))));
     }
 
     public void testSerialization() throws Exception {
-        StatsAndExpectedResults statsAndExpectedResults = getPopulatedStats();
+        StatsAndExpectedResults statsAndExpectedResults = getPopulatedStats(tierName);
         SingleDimensionCacheStats stats = statsAndExpectedResults.stats;
         Map<String, Map<String, Long>> expectedResults = statsAndExpectedResults.expectedShardResults;
 
@@ -47,7 +72,8 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
         StatsAndExpectedResults deserializedStatsAndExpectedResults = new StatsAndExpectedResults(deserialized, expectedResults, statsAndExpectedResults.numShardIds);
         checkShardResults(deserializedStatsAndExpectedResults);
         checkTotalResults(deserializedStatsAndExpectedResults);
-        assertEquals(deserialized.getAllowedDimensionName(), stats.getAllowedDimensionName());
+        assertEquals(deserialized.allowedDimensionName, stats.allowedDimensionName);
+        assertEquals(deserialized.tierDimensionValue, stats.tierDimensionValue);
     }
 
     private CacheStatsDimension getDim(int i) {
@@ -68,8 +94,8 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
         return result;
     }
 
-    private StatsAndExpectedResults getPopulatedStats() {
-        SingleDimensionCacheStats stats = new SingleDimensionCacheStats(dimensionName);
+    private StatsAndExpectedResults getPopulatedStats(String tierName) {
+        SingleDimensionCacheStats stats = new SingleDimensionCacheStats(dimensionName, tierName);
 
         int numShardIds = 10;
         Map<String, Long> expectedHits = new HashMap<>();
