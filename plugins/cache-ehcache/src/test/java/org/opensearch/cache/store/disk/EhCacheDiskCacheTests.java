@@ -46,7 +46,7 @@ import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_STORAGE_PATH_KE
 public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
 
     private static final int CACHE_SIZE_IN_BYTES = 1024 * 101;
-    private final String dimensionName = "shardId";
+    private final String dimensionName = CacheStatsDimension.SHARDS_DIMENSION_NAME;
 
     public void testBasicGetAndPut() throws IOException {
         Settings settings = Settings.builder().build();

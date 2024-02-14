@@ -16,7 +16,8 @@ import java.io.IOException;
 import java.util.Objects;
 
 public class CacheStatsDimension implements Writeable {
-    // Values for tier dimensions, that are reused across CacheStats implementations
+    // Common values for dimension names and values below:
+    // TODO: Should these live somewhere else?
     public static final String TIER_DIMENSION_NAME = "tier";
     public final String dimensionName;
     public final String dimensionValue;
