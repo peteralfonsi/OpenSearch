@@ -85,6 +85,22 @@ public class SingleDimensionCacheStats implements CacheStats {
     }
 
     @Override
+    public CacheStatsResponse getTotalStats() {
+        return new CacheStatsResponse(getTotalHits(), getTotalMisses(), getTotalEvictions(), getTotalMemorySize(), getTotalEntries());
+    }
+
+    @Override
+    public CacheStatsResponse getStatsByDimensions(List<CacheStatsDimension> dimensions) {
+        return new CacheStatsResponse(
+            getHitsByDimensions(dimensions),
+            getMissesByDimensions(dimensions),
+            getEvictionsByDimensions(dimensions),
+            getMemorySizeByDimensions(dimensions),
+            getEntriesByDimensions(dimensions)
+        );
+    }
+
+    @Override
     public long getTotalHits() {
         return this.totalHits.count();
     }

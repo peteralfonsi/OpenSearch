@@ -170,11 +170,20 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
             String shardIdString = String.valueOf(shardId);
             CacheStatsDimension dimension = getDim(shardId);
 
+            // Check the individual metric getters
             assertEquals((long) expectedResults.get("hits").get(shardIdString), stats.getHitsByDimensions(List.of(dimension)));
             assertEquals((long) expectedResults.get("misses").get(shardIdString), stats.getMissesByDimensions(List.of(dimension)));
             assertEquals((long) expectedResults.get("evictions").get(shardIdString), stats.getEvictionsByDimensions(List.of(dimension)));
             assertEquals((long) expectedResults.get("memory_size").get(shardIdString), stats.getMemorySizeByDimensions(List.of(dimension)));
             assertEquals((long) expectedResults.get("entries").get(shardIdString), stats.getEntriesByDimensions(List.of(dimension)));
+
+            // Check the total metric getter
+            CacheStatsResponse response = stats.getStatsByDimensions(List.of(dimension));
+            assertEquals((long) expectedResults.get("hits").get(shardIdString), response.hits);
+            assertEquals((long) expectedResults.get("misses").get(shardIdString), response.misses);
+            assertEquals((long) expectedResults.get("evictions").get(shardIdString), response.evictions);
+            assertEquals((long) expectedResults.get("memory_size").get(shardIdString), response.memorySize);
+            assertEquals((long) expectedResults.get("entries").get(shardIdString), response.entries);
         }
     }
 
@@ -182,11 +191,21 @@ public class SingleDimensionCacheStatsTests extends OpenSearchTestCase {
         // check resulting total values are what we expect
         Map<String, Map<String, Long>> expectedResults = statsAndExpectedResults.expectedShardResults;
         SingleDimensionCacheStats stats = statsAndExpectedResults.stats;
+
+        // Check the individual metric getters
         assertEquals(sumMap(expectedResults.get("hits")), stats.getTotalHits());
         assertEquals(sumMap(expectedResults.get("misses")), stats.getTotalMisses());
         assertEquals(sumMap(expectedResults.get("evictions")), stats.getTotalEvictions());
         assertEquals(sumMap(expectedResults.get("memory_size")), stats.getTotalMemorySize());
         assertEquals(sumMap(expectedResults.get("entries")), stats.getTotalEntries());
+
+        // Check the total metric getter
+        CacheStatsResponse totalResponse = stats.getTotalStats();
+        assertEquals(sumMap(expectedResults.get("hits")), totalResponse.hits);
+        assertEquals(sumMap(expectedResults.get("misses")), totalResponse.misses);
+        assertEquals(sumMap(expectedResults.get("evictions")), totalResponse.evictions);
+        assertEquals(sumMap(expectedResults.get("memory_size")), totalResponse.memorySize);
+        assertEquals(sumMap(expectedResults.get("entries")), totalResponse.entries);
     }
 
     // Convenience class to allow reusing setup code across tests

@@ -8,7 +8,7 @@
 
 package org.opensearch.common.cache.stats;
 
-import org.opensearch.core.xcontent.ToXContentFragment;
+import org.opensearch.core.common.io.stream.Writeable;
 
 import java.util.List;
 
@@ -18,7 +18,28 @@ import java.util.List;
  * When updating stats, we take in the list of dimensions associated with the key/value pair that caused the update.
  * This allows us to aggregate stats by dimension when accessing them.
  */
-public interface CacheStats extends CacheStatsBase { // TODO: Make this extend ToXContentFragment too
+public interface CacheStats extends Writeable {
+
+    // Methods to get all 5 values at once, either in total or for a specific set of dimensions.
+    CacheStatsResponse getTotalStats();
+    CacheStatsResponse getStatsByDimensions(List<CacheStatsDimension> dimensions);
+
+    // Methods to get total values.
+    long getTotalHits();
+    long getTotalMisses();
+    long getTotalEvictions();
+    long getTotalMemorySize();
+    long getTotalEntries();
+
+    // Methods to get values for a specific set of dimensions.
+    // Returns the sum of values for cache entries that match all dimensions in the list.
+    long getHitsByDimensions(List<CacheStatsDimension> dimensions);
+    long getMissesByDimensions(List<CacheStatsDimension> dimensions);
+    long getEvictionsByDimensions(List<CacheStatsDimension> dimensions);
+    long getMemorySizeByDimensions(List<CacheStatsDimension> dimensions);
+    long getEntriesByDimensions(List<CacheStatsDimension> dimensions);
+
+
     void incrementHitsByDimensions(List<CacheStatsDimension> dimensions);
     void incrementMissesByDimensions(List<CacheStatsDimension> dimensions);
     void incrementEvictionsByDimensions(List<CacheStatsDimension> dimensions);

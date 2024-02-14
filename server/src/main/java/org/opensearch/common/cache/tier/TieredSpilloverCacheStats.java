@@ -10,6 +10,7 @@ package org.opensearch.common.cache.tier;
 
 import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
+import org.opensearch.common.cache.stats.CacheStatsResponse;
 import org.opensearch.core.common.io.stream.StreamOutput;
 
 import java.io.IOException;
@@ -28,6 +29,16 @@ public class TieredSpilloverCacheStats implements CacheStats {
     @Override
     public void writeTo(StreamOutput out) throws IOException {
 
+    }
+
+    @Override
+    public CacheStatsResponse getTotalStats() {
+        return null;
+    }
+
+    @Override
+    public CacheStatsResponse getStatsByDimensions(List<CacheStatsDimension> dimensions) {
+        return null;
     }
 
     @Override
