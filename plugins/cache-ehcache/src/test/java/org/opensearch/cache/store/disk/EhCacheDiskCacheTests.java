@@ -9,6 +9,7 @@
 package org.opensearch.cache.store.disk;
 
 import org.opensearch.cache.EhcacheDiskCacheSettings;
+import org.opensearch.common.cache.CacheService;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
@@ -46,7 +47,7 @@ import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_STORAGE_PATH_KE
 public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
 
     private static final int CACHE_SIZE_IN_BYTES = 1024 * 101;
-    private final String dimensionName = CacheStatsDimension.SHARDS_DIMENSION_NAME;
+    private final String dimensionName = CacheService.SHARDS_DIMENSION_NAME;
 
     public void testBasicGetAndPut() throws IOException {
         Settings settings = Settings.builder().build();

@@ -13,6 +13,7 @@ import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Objects;
 
 public class CacheStatsDimension implements Writeable {

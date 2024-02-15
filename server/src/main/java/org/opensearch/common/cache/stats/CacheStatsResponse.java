@@ -107,4 +107,14 @@ public class CacheStatsResponse implements Writeable { // TODO: Make this extend
         out.writeVLong(memorySize.count());
         out.writeVLong(entries.count());
     }
+
+    public CacheStatsResponse add(CacheStatsResponse other) {
+        return new CacheStatsResponse(
+            hits + other.hits,
+            misses + other.misses,
+            evictions + other.evictions,
+            memorySize + other.memorySize,
+            entries + other.entries
+        );
+    }
 }

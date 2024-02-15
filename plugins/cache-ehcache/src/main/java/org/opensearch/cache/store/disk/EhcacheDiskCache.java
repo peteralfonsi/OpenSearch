@@ -16,6 +16,7 @@ import org.opensearch.OpenSearchException;
 import org.opensearch.cache.EhcacheDiskCacheSettings;
 import org.opensearch.common.SuppressForbidden;
 import org.opensearch.common.annotation.ExperimentalApi;
+import org.opensearch.common.cache.CacheService;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
