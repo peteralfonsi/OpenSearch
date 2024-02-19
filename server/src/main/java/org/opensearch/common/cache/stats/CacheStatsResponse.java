@@ -109,6 +109,9 @@ public class CacheStatsResponse implements Writeable { // TODO: Make this extend
     }
 
     public CacheStatsResponse add(CacheStatsResponse other) {
+        if (other == null) {
+            return this;
+        }
         return new CacheStatsResponse(
             hits + other.hits,
             misses + other.misses,
@@ -117,4 +120,21 @@ public class CacheStatsResponse implements Writeable { // TODO: Make this extend
             entries + other.entries
         );
     }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null) {
+            return false;
+        }
+        if (o.getClass() != CacheStatsResponse.class) {
+            return false;
+        }
+        CacheStatsResponse other = (CacheStatsResponse) o;
+        return (hits == other.hits)
+            && (misses == other.misses)
+            && (evictions == other.evictions)
+            && (memorySize == other.memorySize)
+            && (entries == other.entries);
+    }
+
 }

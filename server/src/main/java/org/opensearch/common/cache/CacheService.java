@@ -39,16 +39,16 @@ public class CacheService extends AbstractLifecycleComponent {
     // TODO: This is a placeholder - probably this should be defined elsewhere
     public static final List<String> API_SUPPORTED_TIERS = List.of(TIER_DIMENSION_VALUE_ON_HEAP, TIER_DIMENSION_VALUE_DISK);
 
-
     public static final String INDICES_DIMENSION_NAME = "indices";
     public static final String SHARDS_DIMENSION_NAME = "shardId";
 
-    private EnumMap<CacheType, ICache> cacheMap;
 
-    private IndicesService indicesService; // Used to map indices to shards for request cache
+    private final EnumMap<CacheType, ICache> cacheMap;
+    private final IndicesService indicesService; // Used to map indices to shards for request cache
 
     public CacheService(IndicesService indicesService) {
         this.indicesService = indicesService;
+        this.cacheMap = new EnumMap<>(CacheType.class);
     }
     @Override
     protected void doStart() {
@@ -76,9 +76,15 @@ public class CacheService extends AbstractLifecycleComponent {
         cacheMap.remove(cacheType);
     }
 
-    private ICache getCache(CacheType cacheType) {
+    // pkg private for testing
+    ICache getCache(CacheType cacheType) {
         assert cacheMap.containsKey(cacheType) : "No registered ICache for " + cacheType.toString();
         return cacheMap.get(cacheType);
+    }
+
+    // for testing
+    IndicesService getIndicesService() {
+        return indicesService;
     }
 
     /**
@@ -101,8 +107,8 @@ public class CacheService extends AbstractLifecycleComponent {
         HashSet<String> dimensionNames = new HashSet<>();
         List<String> allowedNames = List.of(INDICES_DIMENSION_NAME, SHARDS_DIMENSION_NAME, TIER_DIMENSION_NAME);
         for (CacheStatsDimension dim : dimensions) {
-            if (allowedNames.contains(dim.dimensionValue)) {
-                dimensionNames.add(dim.dimensionValue);
+            if (allowedNames.contains(dim.dimensionName)) {
+                dimensionNames.add(dim.dimensionName);
                 // TODO: What to do with unrecognized names? For now, ignoring them.
             }
         }
@@ -218,14 +224,21 @@ public class CacheService extends AbstractLifecycleComponent {
         return null;
     }
 
-    private String getIndexName(IndexService indexService) {
+    // pkg-private for testing
+    String getIndexName(IndexService indexService) {
         // TODO: Is this correct?
         return indexService.getIndexSettings().getIndex().getName();
     }
 
-    private String getShardName(IndexShard indexShard) {
+    // pkg-private for testing
+    String getShardName(IndexShard indexShard) {
         // TODO: Is this correct?
-        return indexShard.toString();
+        return indexShard.shardId().toString();
+    }
+
+    String getIndexNameFromShardName(String shardName) {
+        String[] parts = shardName.split("\\[");
+        return parts[1].split("]")[0];
     }
 
     NodeCacheStats stats() {
@@ -243,6 +256,15 @@ public class CacheService extends AbstractLifecycleComponent {
         ResponseAndDimensions(CacheStatsResponse response, Set<CacheStatsDimension> dimensions) {
             this.response = response;
             this.dimensions = dimensions;
+        }
+
+        CacheStatsDimension getDimensionWithName(String dimName) {
+            for (CacheStatsDimension dim : dimensions) {
+                if (dim.dimensionName.equals(dimName)) {
+                    return dim;
+                }
+            }
+            return null;
         }
     }
 }
