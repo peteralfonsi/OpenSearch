@@ -15,11 +15,15 @@ import org.opensearch.core.common.io.stream.Writeable;
 
 import java.io.IOException;
 import java.util.Objects;
+import org.opensearch.core.xcontent.ToXContentFragment;
+import org.opensearch.core.xcontent.XContentBuilder;
+
+import java.io.IOException;
 
 /**
  * A class containing the 5 metrics tracked by a CacheStats object.
  */
-public class CacheStatsResponse implements Writeable { // TODO: Make this extend ToXContent.
+public class CacheStatsResponse implements Writeable, ToXContentFragment {
     public CounterMetric hits;
     public CounterMetric misses;
     public CounterMetric evictions;
@@ -137,4 +141,28 @@ public class CacheStatsResponse implements Writeable { // TODO: Make this extend
             && (entries == other.entries);
     }
 
+    // toXContent modified from RequestCacheStats.java
+    @Override
+    public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
+        builder.humanReadableField(CacheStatsResponse.Fields.MEMORY_SIZE_IN_BYTES, CacheStatsResponse.Fields.MEMORY_SIZE, memorySize);
+        builder.field(CacheStatsResponse.Fields.EVICTIONS, evictions);
+        builder.field(CacheStatsResponse.Fields.HIT_COUNT, hits);
+        builder.field(CacheStatsResponse.Fields.MISS_COUNT, misses);
+        builder.field(Fields.ENTRIES, entries);
+        return builder;
+    }
+
+    /**
+     * Fields used for parsing and toXContent
+     *
+     * @opensearch.internal
+     */
+    static final class Fields {
+        static final String MEMORY_SIZE = "memory_size";
+        static final String MEMORY_SIZE_IN_BYTES = "memory_size_in_bytes";
+        static final String EVICTIONS = "evictions";
+        static final String HIT_COUNT = "hit_count";
+        static final String MISS_COUNT = "miss_count";
+        static final String ENTRIES = "entries";
+    }
 }

@@ -11,7 +11,6 @@ package org.opensearch.common.cache;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.stats.CacheStatsResponse;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
-import org.opensearch.core.xcontent.XContent;
 import org.opensearch.index.IndexService;
 import org.opensearch.index.shard.IndexShard;
 import org.opensearch.indices.IndicesService;
@@ -21,6 +20,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -90,7 +90,7 @@ public class CacheService extends AbstractLifecycleComponent {
     /**
      * Returns a list of aggregated CacheStatsResponse objects, bundled with the dimensions that apply to them
      */
-    List<ResponseAndDimensions> getStats(CacheType cacheType, List<CacheStatsDimension> dimensions) {
+    AggregatedStats getStats(CacheType cacheType, List<CacheStatsDimension> dimensions) {
         // NodeCacheStats calls this when it's running toXContent
         switch (cacheType) {
             case INDICES_REQUEST_CACHE:
@@ -100,7 +100,7 @@ public class CacheService extends AbstractLifecycleComponent {
         }
     }
 
-    List<ResponseAndDimensions> getRequestCacheStats(List<CacheStatsDimension> dimensions) {
+    AggregatedStats getRequestCacheStats(List<CacheStatsDimension> dimensions) {
         // Allowed combinations are: empty list, "shardId", "tier", "indices", "tier" + "indices", "tier + shard"
         ICache cache = getCache(CacheType.INDICES_REQUEST_CACHE);
 
@@ -112,40 +112,38 @@ public class CacheService extends AbstractLifecycleComponent {
                 // TODO: What to do with unrecognized names? For now, ignoring them.
             }
         }
+
         if (dimensionNames.isEmpty()) {
             // Don't aggregate by anything; return totals.
-            return List.of(new ResponseAndDimensions(cache.stats().getTotalStats(), new HashSet<>()));
-        } else if (dimensionNames.equals(Set.of(TIER_DIMENSION_NAME))) {
+            AggregatedStats totalStats = new AggregatedStats(List.of());
+            totalStats.put(List.of(), cache.stats().getTotalStats());
+            return totalStats; //List.of();
+        }
+
+        else if (dimensionNames.equals(Set.of(TIER_DIMENSION_NAME))) {
             // Aggregate by tiers
-            return List.of(
-                new ResponseAndDimensions(
-                    cache.stats().getStatsByDimensions(TIER_ON_HEAP_DIMS),
-                    Set.of(TIER_ON_HEAP_DIMS.get(0))
-                ),
-                new ResponseAndDimensions(
-                    cache.stats().getStatsByDimensions(TIER_DISK_DIMS),
-                    Set.of(TIER_DISK_DIMS.get(0))
-                )
-            );
-        } else if (dimensionNames.equals(Set.of(SHARDS_DIMENSION_NAME))) {
+            AggregatedStats tierStats = new AggregatedStats(List.of(CacheService.TIER_DIMENSION_NAME));
+            tierStats.put(List.of(CacheService.TIER_DIMENSION_VALUE_ON_HEAP), cache.stats().getStatsByDimensions(TIER_ON_HEAP_DIMS));
+            tierStats.put(List.of(CacheService.TIER_DIMENSION_VALUE_DISK), cache.stats().getStatsByDimensions(TIER_DISK_DIMS));
+            return tierStats;
+        }
+
+        else if (dimensionNames.equals(Set.of(SHARDS_DIMENSION_NAME))) {
             // Aggregate by shards
-            List<ResponseAndDimensions> result = new ArrayList<>();
+            AggregatedStats shardStats = new AggregatedStats(List.of(CacheService.SHARDS_DIMENSION_NAME));
             for (final IndexService indexService : indicesService) {
                 for (final IndexShard indexShard : indexService) {
                     String indexShardName = getShardName(indexShard);
                     CacheStatsDimension shardDimension = new CacheStatsDimension(SHARDS_DIMENSION_NAME, indexShardName);
-                    result.add(
-                        new ResponseAndDimensions(
-                            cache.stats().getStatsByDimensions(List.of(shardDimension)),
-                            Set.of(shardDimension)
-                        )
-                    );
+                    shardStats.put(List.of(indexShardName), cache.stats().getStatsByDimensions(List.of(shardDimension)));
                 }
             }
-            return result;
-        } else if (dimensionNames.equals(Set.of(INDICES_DIMENSION_NAME))) {
+            return shardStats;
+        }
+
+        else if (dimensionNames.equals(Set.of(INDICES_DIMENSION_NAME))) {
             // Aggregate by indices
-            List<ResponseAndDimensions> result = new ArrayList<>();
+            AggregatedStats indicesStats = new AggregatedStats(List.of(CacheService.INDICES_DIMENSION_NAME));
             for (final IndexService indexService : indicesService) {
                 String indexName = getIndexName(indexService);
                 CacheStatsResponse summedIndexShardResponses = null;
@@ -159,17 +157,14 @@ public class CacheService extends AbstractLifecycleComponent {
                         summedIndexShardResponses = summedIndexShardResponses.add(response);
                     }
                 }
-                result.add(
-                    new ResponseAndDimensions(
-                        summedIndexShardResponses,
-                        Set.of(new CacheStatsDimension(INDICES_DIMENSION_NAME, indexName))
-                    )
-                );
+                indicesStats.put(List.of(indexName), summedIndexShardResponses);
             }
-            return result;
-        } else if (dimensionNames.equals(Set.of(INDICES_DIMENSION_NAME, TIER_DIMENSION_NAME))) {
+            return indicesStats;
+        }
+
+        else if (dimensionNames.equals(Set.of(INDICES_DIMENSION_NAME, TIER_DIMENSION_NAME))) {
             // Aggregate by indices and tiers
-            List<ResponseAndDimensions> result = new ArrayList<>();
+            AggregatedStats indicesAndTierStats = new AggregatedStats(List.of(CacheService.INDICES_DIMENSION_NAME, CacheService.TIER_DIMENSION_NAME));
             for (final IndexService indexService : indicesService) {
                 String indexName = getIndexName(indexService);
                 Map<String, CacheStatsResponse> summedIndexShardResponsesMap = new HashMap<>();
@@ -189,36 +184,26 @@ public class CacheService extends AbstractLifecycleComponent {
                     }
                 }
                 for (String tier : API_SUPPORTED_TIERS) {
-                    result.add(
-                        new ResponseAndDimensions(
-                            summedIndexShardResponsesMap.get(tier),
-                            Set.of(new CacheStatsDimension(INDICES_DIMENSION_NAME, indexName), new CacheStatsDimension(TIER_DIMENSION_NAME, tier))
-                        )
-                    );
-                    // We could switch the order of the shard/tier for loops, but this way we keep the order it'll be in for the API response.
-                    // TBD if that's gonna matter or not to the NodeCacheStats implementation.
+                    indicesAndTierStats.put(List.of(indexName, tier), summedIndexShardResponsesMap.get(tier));
                 }
             }
-            return result;
-        } else if (dimensionNames.equals(Set.of(SHARDS_DIMENSION_NAME, TIER_DIMENSION_NAME))) {
+            return indicesAndTierStats;
+        }
+
+        else if (dimensionNames.equals(Set.of(SHARDS_DIMENSION_NAME, TIER_DIMENSION_NAME))) {
             // Aggregate by shards and tiers
-            List<ResponseAndDimensions> result = new ArrayList<>();
+            AggregatedStats shardsAndTierStats = new AggregatedStats(List.of(CacheService.SHARDS_DIMENSION_NAME, CacheService.TIER_DIMENSION_NAME));
             for (final IndexService indexService : indicesService) {
                 for (final IndexShard indexShard : indexService) {
                     String indexShardName = getShardName(indexShard);
                     CacheStatsDimension shardDimension = new CacheStatsDimension(SHARDS_DIMENSION_NAME, indexShardName);
                     for (String tier : API_SUPPORTED_TIERS) {
                         CacheStatsDimension tierDimension = new CacheStatsDimension(TIER_DIMENSION_NAME, tier);
-                        result.add(
-                            new ResponseAndDimensions(
-                                cache.stats().getStatsByDimensions(List.of(shardDimension, tierDimension)),
-                                Set.of(shardDimension, tierDimension)
-                            )
-                        );
+                        shardsAndTierStats.put(List.of(indexShardName, tier), cache.stats().getStatsByDimensions(List.of(shardDimension, tierDimension)));
                     }
                 }
             }
-            return result;
+            return shardsAndTierStats;
         }
         // TODO: Return some error
         return null;
@@ -246,25 +231,91 @@ public class CacheService extends AbstractLifecycleComponent {
     }
 
     /**
-     * Contains the CacheStatsResponse and the dimensions associated with that response.
-     * This can't be bundled into the CacheStatsResponse, because (for example) the request
-     * cache CacheStats implementations don't know what index a request was for.
+     * Holds potentially nested maps from the aggregated dimension values to the cache stats responses. The values are ordered by insertion order.
+     * For example, if we aggregate by indices and tiers, the outer map's keys are index names, and the inner ones are tier names.
      */
-    class ResponseAndDimensions {
-        CacheStatsResponse response;
-        Set<CacheStatsDimension> dimensions;
-        ResponseAndDimensions(CacheStatsResponse response, Set<CacheStatsDimension> dimensions) {
-            this.response = response;
-            this.dimensions = dimensions;
+    static class AggregatedStats {
+        private final LinkedHashMap<String, Object> outerMap; // Object will be either another map or a CacheStatsResponse object for the innermost map
+
+        // Ordered list of dimension names, for example "tier", "indices", "shards"
+        // Not directly used to access values, but useful for consumers to know what dimension the values are associated with
+        private final List<String> dimensionNames;
+
+        private int size; // Total number of entries
+
+        public AggregatedStats(List<String> dimensionNames) {
+            this.dimensionNames = dimensionNames;
+            this.outerMap = new LinkedHashMap<>();
+            this.size = 0;
         }
 
-        CacheStatsDimension getDimensionWithName(String dimName) {
-            for (CacheStatsDimension dim : dimensions) {
-                if (dim.dimensionName.equals(dimName)) {
-                    return dim;
+        public List<String> getDimensionNames() {
+            return dimensionNames;
+        }
+
+        public void put(List<String> dimensionValues, CacheStatsResponse response) {
+            assert dimensionValues.size() == dimensionNames.size();
+            LinkedHashMap<String, Object> currentMap = outerMap;
+            if (dimensionNames.isEmpty()) {
+                currentMap.put("", response);
+                return;
+            }
+            for (int i = 0; i < dimensionValues.size(); i++) {
+                String dimensionValue = dimensionValues.get(i);
+                if (i < dimensionValues.size() - 1) {
+                    // Walk through nested maps
+                    Object entry = currentMap.get(dimensionValue);
+                    if (entry == null) {
+                        entry = new LinkedHashMap<String, Object>();
+                        currentMap.put(dimensionValue, entry);
+                    }
+                    currentMap = (LinkedHashMap<String, Object>) entry;
+                } else {
+                    // Add the value to the innermost map, ensuring we don't overwrite an existing value
+                    CacheStatsResponse previousValue = (CacheStatsResponse) currentMap.put(dimensionValue, response);
+                    assert previousValue == null : "Cannot overwrite existing value for " + dimensionValues;
+                    size++;
+                }
+            }
+        }
+
+        public CacheStatsResponse getResponse(List<String> dimensionValues) {
+            assert dimensionValues.size() == dimensionNames.size();
+            LinkedHashMap<String, Object> currentMap = outerMap;
+            if (dimensionNames.isEmpty()) {
+                return (CacheStatsResponse) currentMap.get("");
+            }
+            for (int i = 0; i < dimensionValues.size(); i++) {
+                String dimensionValue = dimensionValues.get(i);
+                Object entry = currentMap.get(dimensionValue);
+                assert entry != null : "No nested map or response for value " + dimensionValue;
+                if (i < dimensionValues.size() - 1) {
+                    currentMap = (LinkedHashMap<String, Object>) entry;
+                } else {
+                    return (CacheStatsResponse) entry;
                 }
             }
             return null;
+        }
+
+        /**
+         * Returns a list of the keys of the map specified by dimensionValues.
+         * The keys are returned in insertion order.
+         */
+        public List<String> getInnerMapKeySet(List<String> dimensionValues) {
+            assert dimensionValues.size() < dimensionNames.size() : "Too many values passed in as nested keys";
+            LinkedHashMap<String, Object> currentMap = outerMap;
+            for (int i = 0; i < dimensionValues.size(); i++) {
+                String dimensionValue = dimensionValues.get(i);
+                Object entry = currentMap.get(dimensionValue);
+                assert entry != null : "No nested map for value " + dimensionValue;
+                currentMap = (LinkedHashMap<String, Object>) entry;
+            }
+            return new ArrayList<>(currentMap.keySet());
+        }
+
+        public int getSize() {
+            return size;
         }
     }
 }

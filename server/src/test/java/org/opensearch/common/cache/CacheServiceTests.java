@@ -50,20 +50,22 @@ public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
         service.registerCache(CacheType.INDICES_REQUEST_CACHE, onHeap);
         CacheStats stats = service.getCache(CacheType.INDICES_REQUEST_CACHE).stats();
         Map<String, Map<String, CacheStatsResponse>> expectedResults = populateStats(service, stats, numIndexShards);
-        List<CacheService.ResponseAndDimensions> aggregated = service.getStats(
+        CacheService.AggregatedStats aggregated = service.getStats(
             CacheType.INDICES_REQUEST_CACHE,
             List.of(new CacheStatsDimension(CacheService.SHARDS_DIMENSION_NAME, "")));
 
-        for (CacheService.ResponseAndDimensions responseAndDimensions : aggregated) {
-            String shardName = responseAndDimensions.getDimensionWithName(CacheService.SHARDS_DIMENSION_NAME).dimensionValue;
+        assertEquals(List.of(CacheService.SHARDS_DIMENSION_NAME), aggregated.getDimensionNames());
+
+        for (String shardName : aggregated.getInnerMapKeySet(List.of())) {
             String indexName = service.getIndexNameFromShardName(shardName);
-            assertEquals(expectedResults.get(indexName).get(shardName), responseAndDimensions.response);
+            CacheStatsResponse shardResponse = aggregated.getResponse(List.of(shardName));
+            assertEquals(expectedResults.get(indexName).get(shardName), shardResponse);
         }
         int shardsInExpectedResults = 0;
         for (String indexName : expectedResults.keySet()) {
             shardsInExpectedResults += expectedResults.get(indexName).keySet().size();
         }
-        assertEquals(shardsInExpectedResults, aggregated.size());
+        assertEquals(shardsInExpectedResults, aggregated.getSize());
     }
 
     public void testRequestCacheIndicesAggregation() throws Exception {
@@ -75,17 +77,15 @@ public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
         service.registerCache(CacheType.INDICES_REQUEST_CACHE, onHeap);
         CacheStats stats = service.getCache(CacheType.INDICES_REQUEST_CACHE).stats();
         Map<String, Map<String, CacheStatsResponse>> expectedResults = populateStats(service, stats, numIndexShards);
-        List<CacheService.ResponseAndDimensions> aggregated = service.getStats(
+        CacheService.AggregatedStats aggregated = service.getStats(
             CacheType.INDICES_REQUEST_CACHE,
             List.of(new CacheStatsDimension(CacheService.INDICES_DIMENSION_NAME, "")));
 
-        for (CacheService.ResponseAndDimensions responseAndDimensions : aggregated) {
-            String indexName = responseAndDimensions.getDimensionWithName(CacheService.INDICES_DIMENSION_NAME).dimensionValue;
+        for (String indexName : aggregated.getInnerMapKeySet(List.of())) {
             CacheStatsResponse expectedIndexResult = sumByIndexName(expectedResults, indexName);
-            assertEquals(expectedIndexResult, responseAndDimensions.response);
-            assertEquals((long) numIndexShards.get(indexName), (long) expectedResults.get(indexName).keySet().size());
+            assertEquals(expectedIndexResult, aggregated.getResponse(List.of(indexName)));
         }
-        assertEquals(indexNames.size(), aggregated.size());
+        assertEquals(indexNames.size(), aggregated.getSize());
     }
 
     public void testRequestCacheTiersAggregation() throws Exception {
@@ -104,20 +104,16 @@ public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
         Map<String, Map<String, CacheStatsResponse>> expectedDiskResults = populateStats(service, diskStats, numIndexShards);
         Map<String, Map<String, Map<String, CacheStatsResponse>>> expectedResultsByTier = Map.of(CacheService.TIER_DIMENSION_VALUE_ON_HEAP, expectedHeapResults, CacheService.TIER_DIMENSION_VALUE_DISK, expectedDiskResults);
 
-        List<CacheService.ResponseAndDimensions> aggregated = service.getStats(
+        CacheService.AggregatedStats aggregated = service.getStats(
             CacheType.INDICES_REQUEST_CACHE,
             List.of(new CacheStatsDimension(CacheService.TIER_DIMENSION_NAME, "")));
 
-        for (CacheService.ResponseAndDimensions responseAndDimensions : aggregated) {
-            assertEquals(1, responseAndDimensions.dimensions.size());
-            String tierName = responseAndDimensions.getDimensionWithName(CacheService.TIER_DIMENSION_NAME).dimensionValue;
-
-            CacheStatsResponse tierTotal = null;
-            tierTotal = sumTotal(expectedResultsByTier.get(tierName));
-            assertEquals(tierTotal, responseAndDimensions.response);
+        for (String tierName : aggregated.getInnerMapKeySet(List.of())) {
+            CacheStatsResponse tierTotal = sumTotal(expectedResultsByTier.get(tierName));
+            assertEquals(tierTotal, aggregated.getResponse(List.of(tierName)));
         }
 
-        assertEquals(CacheService.API_SUPPORTED_TIERS.size(), aggregated.size());
+        assertEquals(CacheService.API_SUPPORTED_TIERS.size(), aggregated.getSize());
     }
 
     public void testRequestCacheShardsAndTiersAggregation() throws Exception {
@@ -136,19 +132,18 @@ public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
         Map<String, Map<String, CacheStatsResponse>> expectedDiskResults = populateStats(service, diskStats, numIndexShards);
         Map<String, Map<String, Map<String, CacheStatsResponse>>> expectedResultsByTier = Map.of(CacheService.TIER_DIMENSION_VALUE_ON_HEAP, expectedHeapResults, CacheService.TIER_DIMENSION_VALUE_DISK, expectedDiskResults);
 
-        List<CacheService.ResponseAndDimensions> aggregated = service.getStats(
+        CacheService.AggregatedStats aggregated = service.getStats(
             CacheType.INDICES_REQUEST_CACHE,
             List.of(
                 new CacheStatsDimension(CacheService.TIER_DIMENSION_NAME, ""),
                 new CacheStatsDimension(CacheService.SHARDS_DIMENSION_NAME, ""))
         );
 
-        for (CacheService.ResponseAndDimensions responseAndDimensions : aggregated) {
-            String tierName = responseAndDimensions.getDimensionWithName(CacheService.TIER_DIMENSION_NAME).dimensionValue;
-            String shardName = responseAndDimensions.getDimensionWithName(CacheService.SHARDS_DIMENSION_NAME).dimensionValue;
-            String indexName = service.getIndexNameFromShardName(shardName);
-
-            assertEquals(expectedResultsByTier.get(tierName).get(indexName).get(shardName), responseAndDimensions.response);
+        for (String shardName : aggregated.getInnerMapKeySet(List.of())) {
+            for (String tierName : aggregated.getInnerMapKeySet(List.of(shardName))) {
+                String indexName = service.getIndexNameFromShardName(shardName);
+                assertEquals(expectedResultsByTier.get(tierName).get(indexName).get(shardName), aggregated.getResponse(List.of(shardName, tierName)));
+            }
         }
 
         int shardsInExpectedResults = 0;
@@ -158,7 +153,7 @@ public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
         for (String indexName : expectedDiskResults.keySet()) {
             shardsInExpectedResults += expectedDiskResults.get(indexName).keySet().size();
         }
-        assertEquals(shardsInExpectedResults, aggregated.size());
+        assertEquals(shardsInExpectedResults, aggregated.getSize());
     }
 
     public void testRequestCacheIndicesAndTiersAggregation() throws Exception {
@@ -177,21 +172,21 @@ public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
         Map<String, Map<String, CacheStatsResponse>> expectedDiskResults = populateStats(service, diskStats, numIndexShards);
         Map<String, Map<String, Map<String, CacheStatsResponse>>> expectedResultsByTier = Map.of(CacheService.TIER_DIMENSION_VALUE_ON_HEAP, expectedHeapResults, CacheService.TIER_DIMENSION_VALUE_DISK, expectedDiskResults);
 
-        List<CacheService.ResponseAndDimensions> aggregated = service.getStats(
+        CacheService.AggregatedStats aggregated = service.getStats(
             CacheType.INDICES_REQUEST_CACHE,
             List.of(
                 new CacheStatsDimension(CacheService.TIER_DIMENSION_NAME, ""),
                 new CacheStatsDimension(CacheService.INDICES_DIMENSION_NAME, ""))
         );
 
-        for (CacheService.ResponseAndDimensions responseAndDimensions : aggregated) {
-            String indexName = responseAndDimensions.getDimensionWithName(CacheService.INDICES_DIMENSION_NAME).dimensionValue;
-            String tierName = responseAndDimensions.getDimensionWithName(CacheService.TIER_DIMENSION_NAME).dimensionValue;
-            CacheStatsResponse expectedIndexResult = sumByIndexName(expectedResultsByTier.get(tierName), indexName);
-            assertEquals(expectedIndexResult, responseAndDimensions.response);
-            assertEquals((long) numIndexShards.get(indexName), (long) expectedResultsByTier.get(tierName).get(indexName).keySet().size());
+        for (String indexName : aggregated.getInnerMapKeySet(List.of())) {
+            for (String tierName : aggregated.getInnerMapKeySet(List.of(indexName))) {
+                CacheStatsResponse expectedIndexResult = sumByIndexName(expectedResultsByTier.get(tierName), indexName);
+                assertEquals(expectedIndexResult, aggregated.getResponse(List.of(indexName, tierName)));
+                assertEquals((long) numIndexShards.get(indexName), (long) expectedResultsByTier.get(tierName).get(indexName).keySet().size());
+            }
         }
-        assertEquals(indexNames.size() * CacheService.API_SUPPORTED_TIERS.size(), aggregated.size());
+        assertEquals(indexNames.size() * CacheService.API_SUPPORTED_TIERS.size(), aggregated.getSize());
     }
 
     public void testInvalidDimensions() throws Exception {
@@ -207,6 +202,42 @@ public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
     }
 
     // TODO: Add various checks for invalid inputs etc
+
+    public void testAggregatedStats() throws Exception {
+        // Test stats with values in its maps
+        List<String> dimensionNames = List.of("outer", "middle", "inner");
+        CacheService.AggregatedStats stats = new CacheService.AggregatedStats(dimensionNames);
+
+        stats.put(List.of("outer_1", "middle_1", "inner_1"), new CacheStatsResponse(1,1, 1, 1, 1));
+        stats.put(List.of("outer_1", "middle_2", "inner_A"), new CacheStatsResponse(2, 2, 2, 2, 2));
+        stats.put(List.of("outer_1", "middle_1", "inner_2"), new CacheStatsResponse(3,3,3,3,3));
+        stats.put(List.of("outer_2", "middle_A", "inner_AA"), new CacheStatsResponse(4,4,4,4,4));
+        stats.put(List.of("outer_2", "middle_C", "inner_CC"), new CacheStatsResponse(5,5,5,5,5));
+        stats.put(List.of("outer_2", "middle_B", "inner_BB"), new CacheStatsResponse(6,6,6,6,6));
+
+        assertEquals(new CacheStatsResponse(1,1, 1, 1, 1), stats.getResponse(List.of("outer_1", "middle_1", "inner_1")));
+        assertEquals(new CacheStatsResponse(2,2,2,2,2), stats.getResponse(List.of("outer_1", "middle_2", "inner_A")));
+        assertEquals(new CacheStatsResponse(3,3,3,3,3), stats.getResponse(List.of("outer_1", "middle_1", "inner_2")));
+        assertEquals(new CacheStatsResponse(4,4,4,4,4), stats.getResponse(List.of("outer_2", "middle_A", "inner_AA")));
+        assertThrows(AssertionError.class, () -> stats.getResponse(List.of("outer_3", "", ""))); // Fails bc "outer_3" has no map associated with it
+        assertThrows(AssertionError.class, () -> stats.put(List.of("outer_3", ""), new CacheStatsResponse(0,0,0,0,0))); // Fails bc the list of dimension values is the wrong length
+        assertThrows(AssertionError.class, () -> stats.getResponse(List.of("outer_1", "middle_1", "inner_3"))); // Fails bc "inner_3" has no key associated with it
+
+        assertEquals(List.of("middle_1", "middle_2"), stats.getInnerMapKeySet(List.of("outer_1")));
+        assertEquals(List.of("inner_1", "inner_2"), stats.getInnerMapKeySet(List.of("outer_1", "middle_1")));
+        assertEquals(List.of("outer_1", "outer_2"), stats.getInnerMapKeySet(List.of()));
+        assertEquals(List.of("middle_A", "middle_C", "middle_B"), stats.getInnerMapKeySet(List.of("outer_2")));
+        assertEquals(List.of("outer_1", "outer_2"), stats.getInnerMapKeySet(List.of()));
+        assertThrows(AssertionError.class, () -> stats.getInnerMapKeySet(List.of("outer_3"))); // Fails bc there is no "outer_3"
+        assertThrows(AssertionError.class, () -> stats.getInnerMapKeySet(List.of("outer_1", "middle_1", "inner_1"))); // Fails bc list is too long
+        assertEquals(dimensionNames, stats.getDimensionNames());
+
+        // Test stats with no dimension names (only one value, no maps)
+        CacheService.AggregatedStats totalStats = new CacheService.AggregatedStats(List.of());
+        totalStats.put(List.of(), new CacheStatsResponse(0,0,0,0,0));
+        assertEquals(new CacheStatsResponse(0,0,0,0,0), totalStats.getResponse(List.of()));
+        assertThrows(AssertionError.class, () -> totalStats.getInnerMapKeySet(List.of()));
+    }
 
     private CacheService getCacheService(List<String> indexNames, Map<String, Integer> numIndexShards) {
         IndicesService indicesService = getInstanceFromNode(IndicesService.class);
