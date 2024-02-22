@@ -145,6 +145,8 @@ public class CacheService extends AbstractLifecycleComponent {
      * For example, if we aggregate by indices and tiers, the outer map's keys are index names, and the inner ones are tier names.
      * If dimensionNames is empty, it holds a single value representing a total stats object.
      */
+
+    // TODO: Move this to its own file, its gotten pretty big
     public static class AggregatedStats implements Writeable {
         private final LinkedHashMap<String, Object> outerMap; // Object will be either another map or a CacheStatsResponse object for the innermost map
 

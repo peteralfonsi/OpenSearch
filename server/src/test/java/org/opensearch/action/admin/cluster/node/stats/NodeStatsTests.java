@@ -42,6 +42,9 @@ import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.cluster.routing.WeightedRoutingStats;
 import org.opensearch.cluster.service.ClusterManagerThrottlingStats;
 import org.opensearch.cluster.service.ClusterStateStats;
+import org.opensearch.common.cache.CacheService;
+import org.opensearch.common.cache.NodeCacheStats;
+import org.opensearch.common.cache.stats.CacheStatsResponse;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.metrics.OperationStats;
 import org.opensearch.common.settings.ClusterSettings;
@@ -576,6 +579,13 @@ public class NodeStatsTests extends OpenSearchTestCase {
                         deserializedAdmissionControllerStats.getRejectionCount().get(AdmissionControlActionType.INDEXING.getType())
                     );
                 }
+                NodeCacheStats nodeCacheStats = nodeStats.getNodeCacheStats();
+                NodeCacheStats deserializedNodeCacheStats = deserializedNodeStats.getNodeCacheStats();
+                if (nodeCacheStats == null) {
+                    assertNull(deserializedNodeCacheStats);
+                } else {
+                    assertEquals(nodeCacheStats, deserializedNodeCacheStats);
+                }
             }
         }
     }
@@ -926,6 +936,32 @@ public class NodeStatsTests extends OpenSearchTestCase {
 
         NodeIndicesStats indicesStats = getNodeIndicesStats(remoteStoreStats);
 
+        NodeCacheStats nodeCacheStats = null;
+        if (frequently()) {
+            int numIndices = randomIntBetween(1, 10);
+            int numShardsPerIndex = randomIntBetween(1, 50);
+            CacheStatsResponse totalRequestStats = new CacheStatsResponse();
+            CacheService.AggregatedStats requestStats = new CacheService.AggregatedStats(List.of(CacheService.INDICES_DIMENSION_NAME, CacheService.SHARDS_DIMENSION_NAME, CacheService.TIER_DIMENSION_NAME));
+            for (int indexNum = 0; indexNum < numIndices; indexNum++) {
+                String indexName = "index" + indexNum;
+                for (int shardNum = 0; shardNum < numShardsPerIndex; shardNum++) {
+                    String shardName = "[" + indexName + "][" + shardNum + "]";
+                    for (String tierName : CacheService.API_SUPPORTED_TIERS) {
+                        CacheStatsResponse response = new CacheStatsResponse(
+                            randomInt(100),
+                            randomInt(100),
+                            randomInt(100),
+                            randomInt(100),
+                            randomInt(100)
+                        );
+                        requestStats.put(List.of(indexName, shardName, tierName), response);
+                        totalRequestStats = totalRequestStats.add(response);
+                    }
+                }
+            }
+            nodeCacheStats = new NodeCacheStats(requestStats, totalRequestStats);
+        }
+
         // TODO: Only remote_store based aspects of NodeIndicesStats are being tested here.
         // It is possible to test other metrics in NodeIndicesStats as well since it extends Writeable now
         return new NodeStats(
@@ -956,7 +992,8 @@ public class NodeStatsTests extends OpenSearchTestCase {
             null,
             segmentReplicationRejectionStats,
             null,
-            admissionControlStats
+            admissionControlStats,
+            nodeCacheStats
         );
     }
 
