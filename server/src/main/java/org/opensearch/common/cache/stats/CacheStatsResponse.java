@@ -15,6 +15,9 @@ import org.opensearch.core.common.io.stream.Writeable;
 
 import java.io.IOException;
 import java.util.Objects;
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.xcontent.ToXContentFragment;
 import org.opensearch.core.xcontent.XContentBuilder;
 
@@ -112,6 +115,22 @@ public class CacheStatsResponse implements Writeable, ToXContentFragment {
         out.writeVLong(entries.count());
     }
 
+    public CacheStatsResponse() {
+        this.hits = 0;
+        this.misses = 0;
+        this.evictions = 0;
+        this.memorySize = 0;
+        this.entries = 0;
+    }
+
+    public CacheStatsResponse(StreamInput in) throws IOException {
+        this.hits = in.readVLong();
+        this.misses = in.readVLong();
+        this.evictions = in.readVLong();
+        this.memorySize = in.readVLong();
+        this.entries = in.readVLong();
+    }
+
     public CacheStatsResponse add(CacheStatsResponse other) {
         if (other == null) {
             return this;
@@ -150,6 +169,15 @@ public class CacheStatsResponse implements Writeable, ToXContentFragment {
         builder.field(CacheStatsResponse.Fields.MISS_COUNT, misses);
         builder.field(Fields.ENTRIES, entries);
         return builder;
+    }
+
+    @Override
+    public void writeTo(StreamOutput out) throws IOException {
+        out.writeVLong(hits);
+        out.writeVLong(misses);
+        out.writeVLong(evictions);
+        out.writeVLong(memorySize);
+        out.writeVLong(entries);
     }
 
     /**
