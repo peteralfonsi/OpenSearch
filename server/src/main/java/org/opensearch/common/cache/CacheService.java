@@ -10,6 +10,7 @@ package org.opensearch.common.cache;
 
 import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.stats.CacheStatsResponse;
+import org.opensearch.common.collect.Tuple;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -24,6 +25,7 @@ import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * A service used for aggregating and returning stats for OpenSearch caches.
@@ -143,7 +145,7 @@ public class CacheService extends AbstractLifecycleComponent {
      * For example, if we aggregate by indices and tiers, the outer map's keys are index names, and the inner ones are tier names.
      * If dimensionNames is empty, it holds a single value representing a total stats object.
      */
-    static class AggregatedStats implements Writeable {
+    public static class AggregatedStats implements Writeable {
         private final LinkedHashMap<String, Object> outerMap; // Object will be either another map or a CacheStatsResponse object for the innermost map
 
         // Ordered list of dimension names, for example "tier", "indices", "shards"
@@ -294,26 +296,50 @@ public class CacheService extends AbstractLifecycleComponent {
                 return;
             }
             // Otherwise, write the keys in the maps along with the values
-            ArrayList<String> flattenedKeys = new ArrayList<>();
-            ArrayList<CacheStatsResponse> responses = new ArrayList<>();
-            writeToHelper(outerMap, 0, List.of(), flattenedKeys, responses);
-            assert flattenedKeys.size() == size;
-            assert responses.size() == size;
+            Tuple<List<List<String>>, List<CacheStatsResponse>> keyValuePairs = getAllPairs();
+            String[] flattenedKeys = getFlattenedKeys(keyValuePairs.v1());
 
-            out.writeStringArray(flattenedKeys.toArray(new String[0]));
-            out.writeArray((o, v) -> v.writeTo(o), responses.toArray(new CacheStatsResponse[0]));
+            out.writeStringArray(flattenedKeys);
+            out.writeArray((o, v) -> v.writeTo(o), keyValuePairs.v2().toArray(new CacheStatsResponse[0]));
+        }
+
+        private String[] getFlattenedKeys(List<List<String>> keyPathList) {
+            String[] flattenedKeys = new String[size];
+            for (int i = 0; i < size; i++) {
+                flattenedKeys[i] = String.join(SERIALIZED_KEY_DELIMITER, keyPathList.get(i));
+            }
+            return flattenedKeys;
+        }
+
+
+        // Return a list of all key lists and values in order, such that if we re-added them to a new object in this order, we would have an equal AggregatedStats object.
+        private Tuple<List<List<String>>, List<CacheStatsResponse>> getAllPairs() {
+            if (dimensionNames.isEmpty()) {
+                if (size == 1) {
+                    return new Tuple<>(List.of(List.of("")), List.of(getResponse(List.of())));
+                } else {
+                    return new Tuple<>(List.of(List.of()), List.of());
+                }
+            }
+            List<List<String>> keyPathList = new ArrayList<>();
+            List<CacheStatsResponse> valueList = new ArrayList<>();
+
+            getAllPairsHelper(outerMap, 0, List.of(), keyPathList, valueList);
+            assert keyPathList.size() == size;
+            assert valueList.size() == size;
+            return new Tuple<>(keyPathList, valueList);
         }
 
         // Add the keys and leaf nodes which descend from currentMap to flattenedKeys and responses, preserving insertion order
-        private void writeToHelper(LinkedHashMap<String, Object> currentMap, int currentDepth, List<String> pathToCurrentMap, ArrayList<String> flattenedKeys, ArrayList<CacheStatsResponse> responses) {
+        private void getAllPairsHelper(LinkedHashMap<String, Object> currentMap, int currentDepth, List<String> pathToCurrentMap, List<List<String>> keyPathList, List<CacheStatsResponse> responses) {
             if (currentDepth == dimensionNames.size() - 1) {
                 // This map contains leaf nodes; add them to the list
                 for (String key : getInnerMapKeySet(pathToCurrentMap)) {
                     List<String> valuePath = new ArrayList<>(pathToCurrentMap);
                     valuePath.add(key);
                     CacheStatsResponse value = getResponse(valuePath);
-                    String concatenatedKey = String.join(SERIALIZED_KEY_DELIMITER, valuePath);
-                    flattenedKeys.add(concatenatedKey);
+
+                    keyPathList.add(valuePath);
                     responses.add(value);
                 }
                 return;
@@ -323,8 +349,26 @@ public class CacheService extends AbstractLifecycleComponent {
                 List<String> nextMapPath = new ArrayList<>(pathToCurrentMap);
                 nextMapPath.add(key);
                 LinkedHashMap<String, Object> nextMap = (LinkedHashMap<String, Object>) currentMap.get(key);
-                writeToHelper(nextMap, currentDepth+1, nextMapPath, flattenedKeys, responses);
+                getAllPairsHelper(nextMap, currentDepth+1, nextMapPath, keyPathList, responses);
             }
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (o == null) {
+                return false;
+            } if (o.getClass() != AggregatedStats.class) {
+                return false;
+            }
+            AggregatedStats other = (AggregatedStats) o;
+            return dimensionNames.equals(other.dimensionNames) && getAllPairs().equals(other.getAllPairs());
+        }
+
+        @Override
+        public int hashCode() {
+            Tuple<List<List<String>>, List<CacheStatsResponse>> keyValuePairs = getAllPairs();
+            String[] flattenedKeys = getFlattenedKeys(keyValuePairs.v1());
+            return Objects.hash(Arrays.hashCode(flattenedKeys), Arrays.hashCode(keyValuePairs.v2().toArray(new CacheStatsResponse[0])));
         }
     }
 }

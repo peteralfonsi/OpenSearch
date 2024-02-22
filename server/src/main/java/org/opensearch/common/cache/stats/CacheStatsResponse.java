@@ -22,6 +22,7 @@ import org.opensearch.core.xcontent.ToXContentFragment;
 import org.opensearch.core.xcontent.XContentBuilder;
 
 import java.io.IOException;
+import java.util.Objects;
 
 /**
  * A class containing the 5 metrics tracked by a CacheStats object.
@@ -159,6 +160,12 @@ public class CacheStatsResponse implements Writeable, ToXContentFragment {
             && (memorySize == other.memorySize)
             && (entries == other.entries);
     }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(hits, misses, evictions, memorySize, entries);
+    }
+
 
     // toXContent modified from RequestCacheStats.java
     @Override

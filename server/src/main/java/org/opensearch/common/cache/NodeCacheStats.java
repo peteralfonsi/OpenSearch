@@ -8,7 +8,6 @@
 
 package org.opensearch.common.cache;
 
-import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.stats.CacheStatsResponse;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -17,9 +16,9 @@ import org.opensearch.core.xcontent.ToXContentFragment;
 import org.opensearch.core.xcontent.XContentBuilder;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 
 public class NodeCacheStats implements ToXContentFragment, Writeable {
@@ -41,7 +40,8 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         // TODO
-        return null;
+        requestCacheToXContent(builder, params);
+        return builder;
     }
 
     // For testing
@@ -137,7 +137,7 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
             : "request stats has unexpected dimension names " + requestStats.getDimensionNames();
     }
 
-    private XContentBuilder requestCacheToXContent(XContentBuilder builder, Params params, CacheService.AggregatedStats aggregatedStats, CacheService.AggregatedStats nodeLevelStats) throws IOException {
+    private XContentBuilder requestCacheToXContent(XContentBuilder builder, Params params) throws IOException {
         builder.startObject("request_cache");
         totalRequestStats.toXContent(builder, params); // Always write node level stats
 
@@ -213,5 +213,23 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         requestStats.writeTo(out);
+        totalRequestStats.writeTo(out);
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null) {
+            return false;
+        }
+        if (o.getClass() != NodeCacheStats.class) {
+            return false;
+        }
+        NodeCacheStats other = (NodeCacheStats) o;
+        return requestStats.equals(other.requestStats) && totalRequestStats.equals(other.totalRequestStats);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(requestStats, totalRequestStats);
     }
 }

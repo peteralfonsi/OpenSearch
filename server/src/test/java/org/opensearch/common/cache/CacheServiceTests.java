@@ -184,6 +184,8 @@ public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
         assertEquals(deserialized.getInnerMapKeySet(List.of("outer_2")), stats.getInnerMapKeySet(List.of("outer_2")));
         assertEquals(deserialized.getInnerMapKeySet(List.of()), stats.getInnerMapKeySet(List.of()));
 
+        assertEquals(stats, deserialized);
+
         // Test serialization when there are no entries
         CacheService.AggregatedStats emptyStats = new CacheService.AggregatedStats(dimensionNames);
         os = new BytesStreamOutput();
@@ -191,6 +193,7 @@ public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
         is = new BytesStreamInput(BytesReference.toBytes(os.bytes()));
         deserialized = new CacheService.AggregatedStats(is);
         assertEquals(deserialized.getDimensionNames(), emptyStats.getDimensionNames());
+        assertEquals(emptyStats, deserialized);
     }
     public void testAggregatedStatsWithOneValue() throws Exception {
         // Test stats with no dimension names (only one value, no inner maps)
@@ -210,6 +213,7 @@ public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
         assertEquals(totalStats.getDimensionNames(), deserializedTotalStats.getDimensionNames());
         assertEquals(new CacheStatsResponse(0,0,0,0,0), deserializedTotalStats.getResponse(List.of()));
         assertThrows(AssertionError.class, () -> deserializedTotalStats.getInnerMapKeySet(List.of()));
+        assertEquals(totalStats, deserializedTotalStats);
 
         // Test empty stats serialization
         CacheService.AggregatedStats emptyTotalStats = new CacheService.AggregatedStats(List.of());
@@ -218,6 +222,7 @@ public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
         is = new BytesStreamInput(BytesReference.toBytes(os.bytes()));
         CacheService.AggregatedStats deserialized = new CacheService.AggregatedStats(is);
         assertEquals(deserialized.getDimensionNames(), emptyTotalStats.getDimensionNames());
+        assertEquals(emptyTotalStats, deserialized);
     }
 
     public void testAggregatedStatsAdd() throws Exception {

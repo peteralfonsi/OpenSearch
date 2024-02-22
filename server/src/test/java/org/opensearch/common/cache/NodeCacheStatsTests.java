@@ -15,7 +15,10 @@ import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.stats.CacheStatsResponse;
 import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
 import org.opensearch.common.collect.Tuple;
+import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.core.common.bytes.BytesReference;
+import org.opensearch.core.common.io.stream.BytesStreamInput;
 import org.opensearch.index.IndexService;
 import org.opensearch.index.shard.ShardNotFoundException;
 import org.opensearch.indices.IndicesService;
@@ -162,6 +165,21 @@ public class NodeCacheStatsTests extends OpenSearchSingleNodeTestCase {
         for (String[] incorrectLevelsArr : incorrectLevels) {
             assertThrows(IllegalArgumentException.class, () -> stats.aggregateRequestStatsByLevel(incorrectLevelsArr));
         }
+    }
+
+    public void testSerialization() throws Exception {
+        List<String> indexNames = List.of("index1", "index2");
+        Map<String, Integer> numIndexShards = Map.of("index1", 4, "index2", 10);
+        CacheService service = getCacheService(indexNames, numIndexShards);
+        Tuple<NodeCacheStats, Map<String, Map<String, Map<String, CacheStatsResponse>>>> setup = getNodeCacheStatsAndExpectedResultsForTiers(service, numIndexShards);
+        NodeCacheStats stats = setup.v1();
+
+        BytesStreamOutput os = new BytesStreamOutput();
+        stats.writeTo(os);
+        BytesStreamInput is = new BytesStreamInput(BytesReference.toBytes(os.bytes()));
+        NodeCacheStats deserialized = new NodeCacheStats(is);
+
+        assertEquals(stats, deserialized);
     }
 
     private Tuple<NodeCacheStats, Map<String, Map<String, CacheStatsResponse>>> getNodeCacheStatsAndExpectedResultsForSingleTier(CacheService service, Map<String, Integer> numIndexShards, String tierName) {
