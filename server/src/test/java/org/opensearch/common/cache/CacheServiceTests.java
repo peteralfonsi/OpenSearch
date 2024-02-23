@@ -8,7 +8,6 @@
 
 package org.opensearch.common.cache;
 
-import org.opensearch.ResourceAlreadyExistsException;
 import org.opensearch.action.admin.indices.create.CreateIndexAction;
 import org.opensearch.action.admin.indices.create.CreateIndexRequestBuilder;
 import org.opensearch.cluster.metadata.IndexMetadata;
@@ -38,13 +37,7 @@ import java.util.function.Supplier;
 
 public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
 
-    public void testInit() throws Exception {
-        List<String> indexNames = List.of("index1", "index2");
-        Map<String, Integer> numIndexShards = Map.of("index1", 4, "index2", 10);
-        CacheService service = getCacheService(indexNames, numIndexShards);
-    }
-
-    // To test aggregation logic, create an IndicesService that has the appropriate indices and shards existent.
+    // To test aggregation logic, create an IndicesService that has the appropriate indices and shards existing.
     // Then, match those with the shard id values fed into the MockCacheTiers. (There's no integration between IRC and ICache right now).
     // CacheService only relies on IndicesService for its iterator.
 
@@ -65,7 +58,7 @@ public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
             Map<String, Map<String, CacheStatsResponse>> expectedResults = populateStats(service, tier.stats(), numIndexShards);
 
             CacheService.AggregatedStats requestStats = service.getRequestCacheStats();
-            assertEquals(List.of(CacheService.INDICES_DIMENSION_NAME, CacheService.SHARDS_DIMENSION_NAME, CacheService.TIER_DIMENSION_NAME), requestStats.getDimensionNames());
+            assertEquals(CacheService.REQUEST_CACHE_DIMENSION_NAMES, requestStats.getDimensionNames());
             CacheStatsResponse sumTotal = new CacheStatsResponse();
             for (String indexName : requestStats.getInnerMapKeySet(List.of())) {
                 for (String shardName : requestStats.getInnerMapKeySet(List.of(indexName))) {
@@ -105,7 +98,7 @@ public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
 
         CacheService.AggregatedStats requestStats = service.getRequestCacheStats();
         CacheStatsResponse sumTotal = new CacheStatsResponse();
-        assertEquals(List.of(CacheService.INDICES_DIMENSION_NAME, CacheService.SHARDS_DIMENSION_NAME, CacheService.TIER_DIMENSION_NAME), requestStats.getDimensionNames());
+        assertEquals(CacheService.REQUEST_CACHE_DIMENSION_NAMES, requestStats.getDimensionNames());
         for (String indexName : requestStats.getInnerMapKeySet(List.of())) {
             for (String shardName : requestStats.getInnerMapKeySet(List.of(indexName))) {
                 for (String tierName : requestStats.getInnerMapKeySet(List.of(indexName, shardName))) {
@@ -126,7 +119,7 @@ public class CacheServiceTests extends OpenSearchSingleNodeTestCase {
         Map<String, Map<String, CacheStatsResponse>> expectedResults = populateStats(service, onHeap.stats(), Map.of());
 
         CacheService.AggregatedStats requestStats = service.getRequestCacheStats();
-        assertEquals(List.of(CacheService.INDICES_DIMENSION_NAME, CacheService.SHARDS_DIMENSION_NAME, CacheService.TIER_DIMENSION_NAME), requestStats.getDimensionNames());
+        assertEquals(CacheService.REQUEST_CACHE_DIMENSION_NAMES, requestStats.getDimensionNames());
         assertEquals(List.of(), requestStats.getInnerMapKeySet(List.of()));
     }
 

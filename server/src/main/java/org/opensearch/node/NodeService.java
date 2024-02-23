@@ -274,7 +274,7 @@ public class NodeService implements Closeable {
             segmentReplicationTrackerStats ? this.segmentReplicationStatsTracker.getTotalRejectionStats() : null,
             repositoriesStats ? this.repositoriesService.getRepositoriesStats() : null,
             admissionControl ? this.admissionControlService.stats() : null,
-            cacheService ? this.cacheService.stats() : null
+            cacheService ? this.cacheService.stats(indices) : null
         );
     }
 

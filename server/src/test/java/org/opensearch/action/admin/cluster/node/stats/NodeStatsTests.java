@@ -43,6 +43,7 @@ import org.opensearch.cluster.routing.WeightedRoutingStats;
 import org.opensearch.cluster.service.ClusterManagerThrottlingStats;
 import org.opensearch.cluster.service.ClusterStateStats;
 import org.opensearch.common.cache.CacheService;
+import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.NodeCacheStats;
 import org.opensearch.common.cache.stats.CacheStatsResponse;
 import org.opensearch.common.io.stream.BytesStreamOutput;
@@ -941,7 +942,7 @@ public class NodeStatsTests extends OpenSearchTestCase {
             int numIndices = randomIntBetween(1, 10);
             int numShardsPerIndex = randomIntBetween(1, 50);
             CacheStatsResponse totalRequestStats = new CacheStatsResponse();
-            CacheService.AggregatedStats requestStats = new CacheService.AggregatedStats(List.of(CacheService.INDICES_DIMENSION_NAME, CacheService.SHARDS_DIMENSION_NAME, CacheService.TIER_DIMENSION_NAME));
+            CacheService.AggregatedStats requestStats = new CacheService.AggregatedStats(CacheService.REQUEST_CACHE_DIMENSION_NAMES);
             for (int indexNum = 0; indexNum < numIndices; indexNum++) {
                 String indexName = "index" + indexNum;
                 for (int shardNum = 0; shardNum < numShardsPerIndex; shardNum++) {
@@ -959,7 +960,13 @@ public class NodeStatsTests extends OpenSearchTestCase {
                     }
                 }
             }
-            nodeCacheStats = new NodeCacheStats(requestStats, totalRequestStats);
+            CommonStatsFlags flags = new CommonStatsFlags();
+            for (CacheType cacheType : CacheType.values()) {
+                if (frequently()) {
+                    flags.includeCacheType(cacheType);
+                }
+            }
+            nodeCacheStats = new NodeCacheStats(flags, requestStats, totalRequestStats);
         }
 
         // TODO: Only remote_store based aspects of NodeIndicesStats are being tested here.

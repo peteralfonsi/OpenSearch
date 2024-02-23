@@ -8,6 +8,8 @@
 
 package org.opensearch.common.cache;
 
+import org.opensearch.action.admin.indices.stats.CommonStatsFlags;
+import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.stats.CacheStatsResponse;
 import org.opensearch.common.collect.Tuple;
@@ -35,14 +37,14 @@ public class CacheService extends AbstractLifecycleComponent {
     public static final String TIER_DIMENSION_NAME = "tier";
     public static final String TIER_DIMENSION_VALUE_ON_HEAP = "on_heap";
     public static final String TIER_DIMENSION_VALUE_DISK = "disk";
-    public static final List<CacheStatsDimension> TIER_ON_HEAP_DIMS = List.of(new CacheStatsDimension(TIER_DIMENSION_NAME, TIER_DIMENSION_VALUE_ON_HEAP));
-    public static final List<CacheStatsDimension> TIER_DISK_DIMS = List.of(new CacheStatsDimension(TIER_DIMENSION_NAME, TIER_DIMENSION_VALUE_DISK));
 
     // TODO: This is a placeholder - probably this should be defined elsewhere
     public static final List<String> API_SUPPORTED_TIERS = List.of(TIER_DIMENSION_VALUE_ON_HEAP, TIER_DIMENSION_VALUE_DISK);
 
     public static final String INDICES_DIMENSION_NAME = "indices";
     public static final String SHARDS_DIMENSION_NAME = "shardId";
+
+    public static final List<String> REQUEST_CACHE_DIMENSION_NAMES = List.of(INDICES_DIMENSION_NAME, SHARDS_DIMENSION_NAME, TIER_DIMENSION_NAME);
 
 
     private final EnumMap<CacheType, ICache> cacheMap;
@@ -95,8 +97,8 @@ public class CacheService extends AbstractLifecycleComponent {
         // Return an AggregatedStats object which is split out by all three level options.
         // Then the NodeCacheStats object can sum later according to whatever level it receives.
         // (We don't know which levels at NodeCacheStats creation time)
-        ICache cache = getCache(CacheType.INDICES_REQUEST_CACHE);
-        AggregatedStats stats = new AggregatedStats(List.of(CacheService.INDICES_DIMENSION_NAME, CacheService.SHARDS_DIMENSION_NAME, CacheService.TIER_DIMENSION_NAME));
+        CacheStats cacheStats = getCache(CacheType.INDICES_REQUEST_CACHE).stats();
+        AggregatedStats stats = new AggregatedStats(CacheService.REQUEST_CACHE_DIMENSION_NAMES);
 
         for (final IndexService indexService : indicesService) {
             String indexName = getIndexName(indexService);
@@ -105,7 +107,7 @@ public class CacheService extends AbstractLifecycleComponent {
                 CacheStatsDimension shardDimension = new CacheStatsDimension(SHARDS_DIMENSION_NAME, indexShardName);
                 for (String tier : API_SUPPORTED_TIERS) {
                     CacheStatsDimension tierDimension = new CacheStatsDimension(TIER_DIMENSION_NAME, tier);
-                    stats.put(List.of(indexName, indexShardName, tier), cache.stats().getStatsByDimensions(List.of(shardDimension, tierDimension)));
+                    stats.put(List.of(indexName, indexShardName, tier), cacheStats.getStatsByDimensions(List.of(shardDimension, tierDimension)));
                 }
             }
         }
@@ -130,14 +132,20 @@ public class CacheService extends AbstractLifecycleComponent {
     }
 
     CacheStatsResponse getTotalRequestStats() {
-        ICache cache = getCache(CacheType.INDICES_REQUEST_CACHE);
-        return cache.stats().getTotalStats();
+        // TODO: DEBUG ONLY _ REMOOVE
+        try {
+            ICache cache = getCache(CacheType.INDICES_REQUEST_CACHE);
+            return cache.stats().getTotalStats();
+        } catch (AssertionError e) {
+            return new CacheStatsResponse();
+        }
     }
 
-    public NodeCacheStats stats() {
+    public NodeCacheStats stats(CommonStatsFlags flags) {
+        // TODO: Filter what we have to pass in based on values in flags. Do this after we change to the enummap for NCS constructor.
         AggregatedStats requestStats = getRequestCacheStats();
         CacheStatsResponse totalRequestStats = getTotalRequestStats(); // We always return the total stats as well, to spare the NodeCacheStats from having to sum it up
-        return new NodeCacheStats(requestStats, totalRequestStats);
+        return new NodeCacheStats(flags, requestStats, totalRequestStats);
     }
 
     /**

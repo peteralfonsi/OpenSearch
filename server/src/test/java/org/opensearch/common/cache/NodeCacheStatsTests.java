@@ -10,6 +10,7 @@ package org.opensearch.common.cache;
 
 import org.opensearch.action.admin.indices.create.CreateIndexAction;
 import org.opensearch.action.admin.indices.create.CreateIndexRequestBuilder;
+import org.opensearch.action.admin.indices.stats.CommonStatsFlags;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.stats.CacheStatsResponse;
@@ -187,7 +188,9 @@ public class NodeCacheStatsTests extends OpenSearchSingleNodeTestCase {
         service.registerCache(CacheType.INDICES_REQUEST_CACHE, onHeap);
         CacheStats stats = service.getCache(CacheType.INDICES_REQUEST_CACHE).stats();
         Map<String, Map<String, CacheStatsResponse>> expectedResults = CacheServiceTests.populateStats(service, stats, numIndexShards);
-        return new Tuple<>(service.stats(), expectedResults);
+        CommonStatsFlags flags = new CommonStatsFlags();
+        flags.includeCacheType(CacheType.INDICES_REQUEST_CACHE);
+        return new Tuple<>(service.stats(flags), expectedResults);
     }
 
     private Tuple<NodeCacheStats, Map<String, Map<String, Map<String, CacheStatsResponse>>>> getNodeCacheStatsAndExpectedResultsForTiers(CacheService service, Map<String, Integer> numIndexShards) {
@@ -202,7 +205,9 @@ public class NodeCacheStatsTests extends OpenSearchSingleNodeTestCase {
         Map<String, Map<String, CacheStatsResponse>> expectedHeapResults = CacheServiceTests.populateStats(service, heapStats, numIndexShards);
         Map<String, Map<String, CacheStatsResponse>> expectedDiskResults = CacheServiceTests.populateStats(service, diskStats, numIndexShards);
         Map<String, Map<String, Map<String, CacheStatsResponse>>> expectedResultsByTier = Map.of(CacheService.TIER_DIMENSION_VALUE_ON_HEAP, expectedHeapResults, CacheService.TIER_DIMENSION_VALUE_DISK, expectedDiskResults);
-        return new Tuple<>(service.stats(), expectedResultsByTier);
+        CommonStatsFlags flags = new CommonStatsFlags();
+        flags.includeCacheType(CacheType.INDICES_REQUEST_CACHE);
+        return new Tuple<>(service.stats(flags), expectedResultsByTier);
     }
 
     // Duplicated from CacheServiceTests, we can't import it statically since it depends on the test case's node to get the IndicesService

@@ -8,6 +8,7 @@
 
 package org.opensearch.common.cache;
 
+import org.opensearch.action.admin.indices.stats.CommonStatsFlags;
 import org.opensearch.common.cache.stats.CacheStatsResponse;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -23,24 +24,30 @@ import java.util.Set;
 
 public class NodeCacheStats implements ToXContentFragment, Writeable {
     // TODO: Rework this to take two enum maps from CacheType to stats/totalStats
+
+    private CommonStatsFlags flags;
     private CacheService.AggregatedStats requestStats;
     private CacheStatsResponse totalRequestStats; // Pass this in to avoid re-summing over all values
+
     // More stats will go here as more caches are integrated
 
-    public NodeCacheStats(CacheService.AggregatedStats requestStats, CacheStatsResponse totalRequestStats) {
+    public NodeCacheStats(CommonStatsFlags flags, CacheService.AggregatedStats requestStats, CacheStatsResponse totalRequestStats) {
+        this.flags = flags;
         this.requestStats = requestStats;
         this.totalRequestStats = totalRequestStats;
     }
 
     public NodeCacheStats(StreamInput in) throws IOException {
+        this.flags = new CommonStatsFlags(in);
         this.requestStats = new CacheService.AggregatedStats(in);
         this.totalRequestStats = new CacheStatsResponse(in);
     }
 
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
-        // TODO
-        requestCacheToXContent(builder, params);
+        if (flags.getIncludeCaches().contains(CacheType.INDICES_REQUEST_CACHE)) {
+            requestCacheToXContent(builder, params);
+        }
         return builder;
     }
 
@@ -133,12 +140,12 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
     }
 
     private void checkRequestStatsDimensionNames() {
-        assert List.of(CacheService.INDICES_DIMENSION_NAME, CacheService.SHARDS_DIMENSION_NAME, CacheService.TIER_DIMENSION_NAME).equals(requestStats.getDimensionNames())
+        assert CacheService.REQUEST_CACHE_DIMENSION_NAMES.equals(requestStats.getDimensionNames())
             : "request stats has unexpected dimension names " + requestStats.getDimensionNames();
     }
 
     private XContentBuilder requestCacheToXContent(XContentBuilder builder, Params params) throws IOException {
-        builder.startObject("request_cache");
+        builder.startObject(CacheType.INDICES_REQUEST_CACHE.getRepresentation());
         totalRequestStats.toXContent(builder, params); // Always write node level stats
 
         String[] levels = getLevels(params);
@@ -148,10 +155,10 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
                 singleDimensionXContentHelper(builder, params, aggregated, levels[0]);
             }
             // Handle the case for more than one level separately, because the input in levels might be in any order
-            else if (checkLevelsEquality(levels, Set.of("shards, tier"))) {
+            else if (checkLevelsEquality(levels, Set.of("shards", "tier"))) {
                 twoDimensionXContentHelper(builder, params, aggregated, "shards", "tier");
             }
-            else if (checkLevelsEquality(levels, Set.of("indices, tier"))) {
+            else if (checkLevelsEquality(levels, Set.of("indices", "tier"))) {
                 twoDimensionXContentHelper(builder, params, aggregated, "indices", "tier");
             }
             else {
@@ -193,12 +200,12 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
     /**
      * Check if the value passed into Params for levels matches a given set of levels (in lowercase)
      */
-    private boolean checkLevelsEquality(String[] paramsLevels, Set<String> levels) {
+    private boolean checkLevelsEquality(String[] paramsLevels, Set<String> desiredLevels) {
         Set<String> paramsLevelsSet = new HashSet<>();
         for (String paramsLevel : paramsLevels) {
             paramsLevelsSet.add(paramsLevel.toLowerCase());
         }
-        return levels.equals(paramsLevelsSet);
+        return desiredLevels.equals(paramsLevelsSet);
 
 
     }
@@ -212,6 +219,7 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
 
     @Override
     public void writeTo(StreamOutput out) throws IOException {
+        flags.writeTo(out);
         requestStats.writeTo(out);
         totalRequestStats.writeTo(out);
     }
@@ -225,7 +233,9 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
             return false;
         }
         NodeCacheStats other = (NodeCacheStats) o;
-        return requestStats.equals(other.requestStats) && totalRequestStats.equals(other.totalRequestStats);
+        return requestStats.equals(other.requestStats)
+            && totalRequestStats.equals(other.totalRequestStats)
+            && flags.getIncludeCaches().equals(other.flags.getIncludeCaches());
     }
 
     @Override

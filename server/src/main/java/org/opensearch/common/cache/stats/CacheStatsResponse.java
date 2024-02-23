@@ -18,6 +18,7 @@ import java.util.Objects;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.core.xcontent.ToXContentFragment;
 import org.opensearch.core.xcontent.XContentBuilder;
 
@@ -170,7 +171,8 @@ public class CacheStatsResponse implements Writeable, ToXContentFragment {
     // toXContent modified from RequestCacheStats.java
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
-        builder.humanReadableField(CacheStatsResponse.Fields.MEMORY_SIZE_IN_BYTES, CacheStatsResponse.Fields.MEMORY_SIZE, memorySize);
+        // We don't write the header in CacheStatsResponse's toXContent, because it doesn't know the name of aggregation it's part of
+        builder.humanReadableField(CacheStatsResponse.Fields.MEMORY_SIZE_IN_BYTES, CacheStatsResponse.Fields.MEMORY_SIZE, new ByteSizeValue(memorySize));
         builder.field(CacheStatsResponse.Fields.EVICTIONS, evictions);
         builder.field(CacheStatsResponse.Fields.HIT_COUNT, hits);
         builder.field(CacheStatsResponse.Fields.MISS_COUNT, misses);
