@@ -11,8 +11,10 @@ package org.opensearch.common.cache.store.config;
 import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.ICacheKey;
+import org.opensearch.common.cache.serializer.Serializer;
 import org.opensearch.common.settings.Settings;
 
+import java.util.List;
 import java.util.function.ToLongBiFunction;
 
 /**
@@ -42,12 +44,20 @@ public class CacheConfig<K, V> {
 
     private final RemovalListener<ICacheKey<K>, V> removalListener;
 
+    private final Serializer<K, ?> keySerializer;
+    private final Serializer<V, ?> valueSerializer;
+
+    private final List<String> dimensionNames;
+
     private CacheConfig(Builder<K, V> builder) {
         this.keyType = builder.keyType;
         this.valueType = builder.valueType;
         this.settings = builder.settings;
         this.removalListener = builder.removalListener;
         this.weigher = builder.weigher;
+        this.keySerializer = builder.keySerializer;
+        this.valueSerializer = builder.valueSerializer;
+        this.dimensionNames = builder.dimensionNames;
     }
 
     public RemovalListener<ICacheKey<K>, V> getRemovalListener() {
@@ -70,6 +80,18 @@ public class CacheConfig<K, V> {
         return weigher;
     }
 
+    public Serializer<K, ?> getKeySerializer() {
+        return keySerializer;
+    }
+
+    public Serializer<V, ?> getValueSerializer() {
+        return valueSerializer;
+    }
+
+    public List<String> getDimensionNames() {
+        return dimensionNames;
+    }
+
     /**
      * Builder class to build Cache config related parameters.
      * @param <K> Type of key.
@@ -85,6 +107,11 @@ public class CacheConfig<K, V> {
         private RemovalListener<ICacheKey<K>, V> removalListener;
 
         private ToLongBiFunction<ICacheKey<K>, V> weigher;
+
+        private Serializer<K, ?> keySerializer;
+        private Serializer<V, ?> valueSerializer;
+
+        private List<String> dimensionNames;
 
         public Builder() {}
 
@@ -110,6 +137,21 @@ public class CacheConfig<K, V> {
 
         public Builder<K, V> setWeigher(ToLongBiFunction<ICacheKey<K>, V> weigher) {
             this.weigher = weigher;
+            return this;
+        }
+
+        public Builder<K, V> setKeySerializer(Serializer<K, ?> keySerializer) {
+            this.keySerializer = keySerializer;
+            return this;
+        }
+
+        public Builder<K, V> setValueSerializer(Serializer<V, ?> valueSerializer) {
+            this.valueSerializer = valueSerializer;
+            return this;
+        }
+
+        public Builder<K, V> setDimensionNames(List<String> dimensionNames) {
+            this.dimensionNames = dimensionNames;
             return this;
         }
 

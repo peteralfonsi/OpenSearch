@@ -482,6 +482,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
                     this.removalListener.onRemoval(new RemovalNotification<>(event.getKey(), valueSerializer.deserialize(event.getOldValue()), RemovalReason.EVICTED));
                     stats.decrementEntriesByDimensions(event.getKey().dimensions);
                     stats.incrementMemorySizeByDimensions(event.getKey().dimensions, -getOldValuePairSize(event));
+                    stats.incrementEvictionsByDimensions(event.getKey().dimensions);
                     assert event.getNewValue() == null;
                     break;
                 case REMOVED:
@@ -556,11 +557,30 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         public <K, V> ICache<K, V> create(CacheConfig<K, V> config, CacheType cacheType, Map<String, Factory> cacheFactories) {
             Map<String, Setting<?>> settingList = EhcacheDiskCacheSettings.getSettingListForCacheType(cacheType);
             Settings settings = config.getSettings();
+
+            Serializer<K, byte[]> keySerializer = null;
+            try {
+                keySerializer = (Serializer<K, byte[]>) config.getKeySerializer();
+            } catch (ClassCastException e) {
+                throw new IllegalArgumentException("EhcacheDiskCache requires a key serializer of type Serializer<K, byte[]>");
+            }
+
+            Serializer<V, byte[]> valueSerializer = null;
+            try {
+                valueSerializer = (Serializer<V, byte[]>) config.getValueSerializer();
+            } catch (ClassCastException e) {
+                throw new IllegalArgumentException("EhcacheDiskCache requires a value serializer of type Serializer<V, byte[]>");
+            }
+
             return new Builder<K, V>().setStoragePath((String) settingList.get(DISK_STORAGE_PATH_KEY).get(settings))
                 .setDiskCacheAlias((String) settingList.get(DISK_CACHE_ALIAS_KEY).get(settings))
                 .setCacheType(cacheType)
                 .setKeyType((config.getKeyType()))
                 .setValueType(config.getValueType())
+                .setKeySerializer(keySerializer)
+                .setValueSerializer(valueSerializer)
+                .setShardIdDimensionName(config.getDimensionNames().get(0)) // TODO: Rework this to pass in whole list, once stats is changed
+                .setWeigher(config.getWeigher())
                 .setRemovalListener(config.getRemovalListener())
                 .setExpireAfterAccess((TimeValue) settingList.get(DISK_CACHE_EXPIRE_AFTER_ACCESS_KEY).get(settings))
                 .setMaximumWeightInBytes((Long) settingList.get(DISK_MAX_SIZE_IN_BYTES_KEY).get(settings))

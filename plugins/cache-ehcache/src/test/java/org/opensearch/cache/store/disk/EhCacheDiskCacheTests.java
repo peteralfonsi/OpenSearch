@@ -110,6 +110,10 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 new CacheConfig.Builder<String, String>().setValueType(String.class)
                     .setKeyType(String.class)
                     .setRemovalListener(removalListener)
+                    .setKeySerializer(new StringSerializer())
+                    .setValueSerializer(new StringSerializer())
+                    .setDimensionNames(List.of(dimensionName))
+                    .setWeigher(getWeigher())
                     .setSettings(
                         Settings.builder()
                             .put(
@@ -316,19 +320,11 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             String value = generateRandomString(100);
 
             // Trying to generate more than 100kb to cause evictions.
-            long sizeOfAttemptedAdds = 0;
-            long sizeOfAttemptedAddsValue = 0;
             for (int i = 0; i < 1000; i++) {
                 String key = "Key" + i;
                 ICacheKey<String> iCacheKey = getICacheKey((key));
-                sizeOfAttemptedAdds += weigher.applyAsLong(iCacheKey, value);
                 ehcacheTest.put(iCacheKey, value);
-
             }
-            /*System.out.println("Total size of attempted adds = " + sizeOfAttemptedAdds);
-            System.out.println("Total size of attempted adds (value only) = " + sizeOfAttemptedAddsValue);
-            System.out.println("Total memory size = " + ehcacheTest.stats().getTotalMemorySize());*/
-            // TODO: Figure out why ehcache is evicting at ~30-40% of its max size rather than 100% (see commented out prints above)
             assertTrue(mockRemovalListener.onRemovalCount.get() > 0);
             assertEquals(660, ehcacheTest.stats().getTotalEvictions());
             ehcacheTest.close();
@@ -539,8 +535,9 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
     }
 
     public void testMemoryTracking() throws Exception {
-        // This test leaks threads because of an issue in Ehcache:
+        // TODO: This test leaks threads because of an issue in Ehcache:
         // https://github.com/ehcache/ehcache3/issues/3204
+
         // Test all cases for EhCacheEventListener.onEvent and check stats memory usage is updated correctly
         Settings settings = Settings.builder().build();
         ToLongBiFunction<ICacheKey<String>, String> weigher = getWeigher();
@@ -685,7 +682,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
         }
     }
 
-    private static class StringSerializer implements Serializer<String, byte[]> {
+    static class StringSerializer implements Serializer<String, byte[]> {
         private final Charset charset = StandardCharsets.UTF_8;
         @Override
         public byte[] serialize(String object) {
