@@ -8,6 +8,7 @@
 
 package org.opensearch.common.cache.store.builders;
 
+import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.ICacheKey;
@@ -21,8 +22,9 @@ import java.util.function.ToLongBiFunction;
  * @param <K> Type of key.
  * @param <V> Type of value.
  *
- * @opensearch.internal
+ * @opensearch.experimental
  */
+@ExperimentalApi
 public abstract class ICacheBuilder<K, V> {
 
     private long maxWeightInBytes;

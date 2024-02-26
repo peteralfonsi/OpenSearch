@@ -8,6 +8,7 @@
 
 package org.opensearch.cache.store.disk;
 
+import org.opensearch.cache.EhcacheDiskCacheSettings;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
@@ -15,7 +16,8 @@ import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.ICacheKey;
-import org.opensearch.common.cache.tier.Serializer;
+import org.opensearch.common.cache.serializer.Serializer;
+import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.env.NodeEnvironment;
@@ -35,10 +37,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
 import java.util.function.ToLongBiFunction;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
+import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_MAX_SIZE_IN_BYTES_KEY;
+import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_STORAGE_PATH_KEY;
 
 public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
 
@@ -85,6 +88,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             assertEquals(randomKeys, ehcacheTest.stats().getHitsByDimensions(List.of(getMockDimensions().get(0))));
             assertEquals(expectedSize, ehcacheTest.stats().getTotalMemorySize());
             assertEquals(expectedSize, ehcacheTest.stats().getMemorySizeByDimensions(List.of(getMockDimensions().get(0))));
+            assertEquals(randomKeys, ehcacheTest.count());
 
             // Validate misses
             int expectedNumberOfMisses = randomIntBetween(10, 200);
@@ -98,24 +102,24 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
         }
     }
 
-    /*public void testBasicGetAndPutUsingFactory() throws IOException {
-        MockRemovalListener<String, String> mockRemovalListener = new MockRemovalListener<>();
+    public void testBasicGetAndPutUsingFactory() throws IOException {
+        MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
         try (NodeEnvironment env = newNodeEnvironment(Settings.EMPTY)) {
-            StoreAwareCache.Factory ehcacheFactory = new EhcacheDiskCache.EhcacheDiskCacheFactory();
-            StoreAwareCache<String, String> ehcacheTest = ehcacheFactory.create(
-                new ICacheConfig.Builder<String, String>().setValueType(String.class)
+            ICache.Factory ehcacheFactory = new EhcacheDiskCache.EhcacheDiskCacheFactory();
+            ICache<String, String> ehcacheTest = ehcacheFactory.create(
+                new CacheConfig.Builder<String, String>().setValueType(String.class)
                     .setKeyType(String.class)
-                    .setEventListener(mockEventListener)
+                    .setRemovalListener(removalListener)
                     .setSettings(
                         Settings.builder()
                             .put(
-                                EhcacheSettings.getSettingListForCacheTypeAndStore(CacheType.INDICES_REQUEST_CACHE, CacheStoreType.DISK)
+                                EhcacheDiskCacheSettings.getSettingListForCacheType(CacheType.INDICES_REQUEST_CACHE)
                                     .get(DISK_MAX_SIZE_IN_BYTES_KEY)
                                     .getKey(),
                                 CACHE_SIZE_IN_BYTES
                             )
                             .put(
-                                EhcacheSettings.getSettingListForCacheTypeAndStore(CacheType.INDICES_REQUEST_CACHE, CacheStoreType.DISK)
+                                EhcacheDiskCacheSettings.getSettingListForCacheType(CacheType.INDICES_REQUEST_CACHE)
                                     .get(DISK_STORAGE_PATH_KEY)
                                     .getKey(),
                                 env.nodePaths()[0].indicesPath.toString() + "/request_cache"
@@ -123,33 +127,32 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                             .build()
                     )
                     .build(),
-                CacheType.INDICES_REQUEST_CACHE
+                CacheType.INDICES_REQUEST_CACHE,
+                Map.of()
             );
             int randomKeys = randomIntBetween(10, 100);
-            Map<String, String> keyValueMap = new HashMap<>();
+            Map<ICacheKey<String>, String> keyValueMap = new HashMap<>();
             for (int i = 0; i < randomKeys; i++) {
-                keyValueMap.put(UUID.randomUUID().toString(), UUID.randomUUID().toString());
+                keyValueMap.put(getICacheKey(UUID.randomUUID().toString()), UUID.randomUUID().toString());
             }
-            for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
+            for (Map.Entry<ICacheKey<String>, String> entry : keyValueMap.entrySet()) {
                 ehcacheTest.put(entry.getKey(), entry.getValue());
             }
-            for (Map.Entry<String, String> entry : keyValueMap.entrySet()) {
+            for (Map.Entry<ICacheKey<String>, String> entry : keyValueMap.entrySet()) {
                 String value = ehcacheTest.get(entry.getKey());
                 assertEquals(entry.getValue(), value);
             }
-            assertEquals(randomKeys, mockEventListener.onCachedCount.get());
-            assertEquals(randomKeys, mockEventListener.onHitCount.get());
+            assertEquals(randomKeys, ehcacheTest.count());
 
             // Validate misses
             int expectedNumberOfMisses = randomIntBetween(10, 200);
             for (int i = 0; i < expectedNumberOfMisses; i++) {
-                ehcacheTest.get(UUID.randomUUID().toString());
+                ehcacheTest.get(getICacheKey(UUID.randomUUID().toString()));
             }
 
-            assertEquals(expectedNumberOfMisses, mockEventListener.onMissCount.get());
             ehcacheTest.close();
         }
-    }*/
+    }
 
     public void testConcurrentPut() throws Exception {
         Settings settings = Settings.builder().build();
@@ -327,6 +330,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             System.out.println("Total memory size = " + ehcacheTest.stats().getTotalMemorySize());*/
             // TODO: Figure out why ehcache is evicting at ~30-40% of its max size rather than 100% (see commented out prints above)
             assertTrue(mockRemovalListener.onRemovalCount.get() > 0);
+            assertEquals(660, ehcacheTest.stats().getTotalEvictions());
             ehcacheTest.close();
         }
     }
@@ -402,6 +406,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             assertEquals(1, ehcacheTest.stats().getTotalMisses());
             assertEquals(1, ehcacheTest.stats().getTotalEntries());
             assertEquals(numberOfRequest - 1, ehcacheTest.stats().getTotalHits());
+            assertEquals(1, ehcacheTest.count());
             ehcacheTest.close();
         }
     }

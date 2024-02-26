@@ -9,8 +9,7 @@
 package org.opensearch.plugins;
 
 import org.opensearch.common.annotation.ExperimentalApi;
-import org.opensearch.common.cache.store.StoreAwareCache;
-import org.opensearch.common.cache.store.enums.CacheStoreType;
+import org.opensearch.common.cache.ICache;
 
 import java.util.Map;
 
@@ -35,7 +34,7 @@ public interface CachePlugin {
      *
      * @return Map of cacheStoreType and an associated factory.
      */
-    Map<CacheStoreType, StoreAwareCache.Factory> getCacheStoreTypeMap();
+    Map<String, ICache.Factory> getCacheFactoryMap();
 
     String getName();
 }

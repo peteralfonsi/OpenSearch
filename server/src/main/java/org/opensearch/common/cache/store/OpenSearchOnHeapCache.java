@@ -10,6 +10,7 @@ package org.opensearch.common.cache.store;
 
 import org.opensearch.common.cache.Cache;
 import org.opensearch.common.cache.CacheBuilder;
+import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
@@ -20,11 +21,21 @@ import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
+import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 
 import java.util.Objects;
 import java.util.function.ToLongBiFunction;
+import org.opensearch.common.cache.store.builders.ICacheBuilder;
+import org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings;
+import org.opensearch.common.settings.Setting;
+import org.opensearch.common.settings.Settings;
+import org.opensearch.core.common.unit.ByteSizeValue;
+
+import java.util.Map;
+
+import static org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES_KEY;
 
 /**
  * This variant of on-heap cache uses OpenSearch custom cache implementation.
@@ -34,9 +45,7 @@ import java.util.function.ToLongBiFunction;
  * @opensearch.experimental
  */
 public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListener<ICacheKey<K>, V> {
-
     private final Cache<ICacheKey<K>, V> cache;
-
     private final CacheStats stats;
     private final RemovalListener<ICacheKey<K>, V> removalListener;
 
@@ -58,10 +67,8 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
     public V get(ICacheKey<K> key) {
         V value = cache.get(key);
         if (value != null) {
-            //eventListener.onHit(key, value, CacheStoreType.ON_HEAP);
             stats.incrementHitsByDimensions(key.dimensions);
         } else {
-            //eventListener.onMiss(key, CacheStoreType.ON_HEAP);
             stats.incrementMissesByDimensions(key.dimensions);
         }
         return value;
@@ -70,7 +77,6 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
     @Override
     public void put(ICacheKey<K> key, V value) {
         cache.put(key, value);
-        //eventListener.onCached(key, value, CacheStoreType.ON_HEAP);
         stats.incrementEntriesByDimensions(key.dimensions);
     }
 
@@ -78,12 +84,9 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
     public V computeIfAbsent(ICacheKey<K> key, LoadAwareCacheLoader<ICacheKey<K>, V> loader) throws Exception {
         V value = cache.computeIfAbsent(key, key1 -> loader.load(key));
         if (!loader.isLoaded()) {
-            //eventListener.onHit(key, value, CacheStoreType.ON_HEAP);
             stats.incrementHitsByDimensions(key.dimensions);
         } else {
-            //eventListener.onMiss(key, CacheStoreType.ON_HEAP);
             stats.incrementMissesByDimensions(key.dimensions);
-            //eventListener.onCached(key, value, CacheStoreType.ON_HEAP);
             stats.incrementEntriesByDimensions(key.dimensions);
         }
         return value;
@@ -129,6 +132,28 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
     }
 
     /**
+     * Factory to create OpenSearchOnheap cache.
+     */
+    public static class OpenSearchOnHeapCacheFactory implements Factory {
+
+        public static final String NAME = "opensearch_onheap";
+
+        @Override
+        public <K, V> ICache<K, V> create(CacheConfig<K, V> config, CacheType cacheType, Map<String, Factory> cacheFactories) {
+            Map<String, Setting<?>> settingList = OpenSearchOnHeapCacheSettings.getSettingListForCacheType(cacheType);
+            Settings settings = config.getSettings();
+            return new Builder<K, V>().setMaximumWeightInBytes(
+                ((ByteSizeValue) settingList.get(MAXIMUM_SIZE_IN_BYTES_KEY).get(settings)).getBytes()
+            ).setWeigher(config.getWeigher()).setRemovalListener(config.getRemovalListener()).build();
+        }
+
+        @Override
+        public String getCacheName() {
+            return NAME;
+        }
+    }
+
+    /**
      * Builder object
      * @param <K> Type of key
      * @param <V> Type of value
@@ -141,6 +166,7 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
             this.shardIdDimensionName = dimensionName;
             return this;
         }
+        @Override
         public ICache<K, V> build() {
             return new OpenSearchOnHeapCache<K, V>(this);
         }

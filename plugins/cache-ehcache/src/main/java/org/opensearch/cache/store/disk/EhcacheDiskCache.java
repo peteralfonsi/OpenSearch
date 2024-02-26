@@ -13,7 +13,7 @@ import org.apache.logging.log4j.Logger;
 import org.ehcache.core.spi.service.FileBasedPersistenceContext;
 import org.ehcache.spi.serialization.SerializerException;
 import org.opensearch.OpenSearchException;
-import org.opensearch.cache.EhcacheSettings;
+import org.opensearch.cache.EhcacheDiskCacheSettings;
 import org.opensearch.common.SuppressForbidden;
 import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.common.cache.CacheType;
@@ -27,10 +27,11 @@ import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
-import org.opensearch.common.cache.store.enums.CacheStoreType;
-import org.opensearch.common.cache.tier.ICacheKeySerializer;
-import org.opensearch.common.cache.tier.Serializer;
+import org.opensearch.common.cache.serializer.ICacheKeySerializer;
+import org.opensearch.common.cache.serializer.Serializer;
+import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.collect.Tuple;
+import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 
@@ -66,10 +67,14 @@ import org.ehcache.impl.config.store.disk.OffHeapDiskStoreConfiguration;
 import org.ehcache.spi.loaderwriter.CacheLoadingException;
 import org.ehcache.spi.loaderwriter.CacheWritingException;
 
-import static org.opensearch.cache.EhcacheSettings.DISK_SEGMENT_KEY;
-import static org.opensearch.cache.EhcacheSettings.DISK_WRITE_CONCURRENCY_KEY;
-import static org.opensearch.cache.EhcacheSettings.DISK_WRITE_MAXIMUM_THREADS_KEY;
-import static org.opensearch.cache.EhcacheSettings.DISK_WRITE_MIN_THREADS_KEY;
+import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_CACHE_ALIAS_KEY;
+import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_CACHE_EXPIRE_AFTER_ACCESS_KEY;
+import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_MAX_SIZE_IN_BYTES_KEY;
+import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_SEGMENT_KEY;
+import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_STORAGE_PATH_KEY;
+import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_WRITE_CONCURRENCY_KEY;
+import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_WRITE_MAXIMUM_THREADS_KEY;
+import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_WRITE_MIN_THREADS_KEY;
 
 /**
  * This variant of disk cache uses Ehcache underneath.
@@ -180,12 +185,10 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
                     .withService(
                         new OffHeapDiskStoreConfiguration(
                             this.threadPoolAlias,
-                            (Integer) EhcacheSettings.getSettingListForCacheTypeAndStore(cacheType, CacheStoreType.DISK)
+                            (Integer) EhcacheDiskCacheSettings.getSettingListForCacheType(cacheType)
                                 .get(DISK_WRITE_CONCURRENCY_KEY)
                                 .get(settings),
-                            (Integer) EhcacheSettings.getSettingListForCacheTypeAndStore(cacheType, CacheStoreType.DISK)
-                                .get(DISK_SEGMENT_KEY)
-                                .get(settings)
+                            (Integer) EhcacheDiskCacheSettings.getSettingListForCacheType(cacheType).get(DISK_SEGMENT_KEY).get(settings)
                         )
                     )
                     .withKeySerializer(new KeySerializerWrapper(keySerializer))
@@ -232,10 +235,10 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
                     // like event listeners
                     .pool(
                         this.threadPoolAlias,
-                        (Integer) EhcacheSettings.getSettingListForCacheTypeAndStore(cacheType, CacheStoreType.DISK)
+                        (Integer) EhcacheDiskCacheSettings.getSettingListForCacheType(cacheType)
                             .get(DISK_WRITE_MIN_THREADS_KEY)
                             .get(settings),
-                        (Integer) EhcacheSettings.getSettingListForCacheTypeAndStore(cacheType, CacheStoreType.DISK)
+                        (Integer) EhcacheDiskCacheSettings.getSettingListForCacheType(cacheType)
                             .get(DISK_WRITE_MAXIMUM_THREADS_KEY)
                             .get(settings)
                     )
@@ -294,10 +297,8 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
             value = compute(key, loader);
         }
         if (!loader.isLoaded()) {
-            //eventListener.onHit(key, value, CacheStoreType.DISK);
             stats.incrementHitsByDimensions(key.dimensions);
         } else {
-            //eventListener.onMiss(key, CacheStoreType.DISK);
             stats.incrementMissesByDimensions(key.dimensions);
         }
         return value;
@@ -449,8 +450,6 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
      * @param <V> Type of value
      */
     class EhCacheEventListener<K, V> implements CacheEventListener<ICacheKey<K>, byte[]> {
-
-        //private final StoreAwareCacheEventListener<K, V> eventListener;
         private final RemovalListener<ICacheKey<K>, V> removalListener;
         private ToLongBiFunction<ICacheKey<K>, V> weigher;
         private Serializer<V, byte[]> valueSerializer;
@@ -541,26 +540,23 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
     /**
      * Factory to create an ehcache disk cache.
      */
-    /*public class EhcacheDiskCacheFactory implements ICache.Factory {
+    public static class EhcacheDiskCacheFactory implements ICache.Factory {
 
         /**
          * Ehcache disk cache name.
          */
-        /*public static final String EHCACHE_DISK_CACHE_NAME = "ehcacheDiskCache";
+        public static final String EHCACHE_DISK_CACHE_NAME = "ehcache_disk";
 
         /**
          * Default constructor.
          */
-        /*public EhcacheDiskCacheFactory() {}
+        public EhcacheDiskCacheFactory() {}
 
         @Override
-        public <K, V> ICache<K, V> create(ICacheConfig<K, V> config, CacheType cacheType) {
-            Map<String, Setting<?>> settingList = EhcacheSettings.getSettingListForCacheTypeAndStore(cacheType, CacheStoreType.DISK);
+        public <K, V> ICache<K, V> create(CacheConfig<K, V> config, CacheType cacheType, Map<String, Factory> cacheFactories) {
+            Map<String, Setting<?>> settingList = EhcacheDiskCacheSettings.getSettingListForCacheType(cacheType);
             Settings settings = config.getSettings();
-            Setting<String> stringSetting = DISK_STORAGE_PATH_SETTING.getConcreteSettingForNamespace(
-                CacheType.INDICES_REQUEST_CACHE.getSettingPrefix()
-            );
-            return new EhcacheDiskCache.Builder<K, V>().setStoragePath((String) settingList.get(DISK_STORAGE_PATH_KEY).get(settings))
+            return new Builder<K, V>().setStoragePath((String) settingList.get(DISK_STORAGE_PATH_KEY).get(settings))
                 .setDiskCacheAlias((String) settingList.get(DISK_CACHE_ALIAS_KEY).get(settings))
                 .setCacheType(cacheType)
                 .setKeyType((config.getKeyType()))
@@ -576,7 +572,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         public String getCacheName() {
             return EHCACHE_DISK_CACHE_NAME;
         }
-    }*/
+    }
 
     /**
      * Builder object to build Ehcache disk tier.

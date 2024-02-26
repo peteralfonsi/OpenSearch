@@ -8,9 +8,12 @@
 
 package org.opensearch.common.cache;
 
+import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.common.cache.stats.CacheStats;
+import org.opensearch.common.cache.store.config.CacheConfig;
 
 import java.io.Closeable;
+import java.util.Map;
 
 /**
  * Represents a cache interface.
@@ -19,6 +22,7 @@ import java.io.Closeable;
  *
  * @opensearch.experimental
  */
+@ExperimentalApi
 public interface ICache<K, V> extends Closeable {
     V get(ICacheKey<K> key);
 
@@ -37,4 +41,14 @@ public interface ICache<K, V> extends Closeable {
     void refresh();
 
     CacheStats stats();
+
+    /**
+     * Factory to create objects.
+     */
+    @ExperimentalApi
+    interface Factory {
+        <K, V> ICache<K, V> create(CacheConfig<K, V> config, CacheType cacheType, Map<String, Factory> cacheFactories);
+
+        String getCacheName();
+    }
 }
