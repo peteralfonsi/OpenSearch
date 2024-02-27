@@ -6,17 +6,21 @@
  * compatible open source license.
  */
 
-package org.opensearch.common.cache;
+package org.opensearch.common.cache.service;
 
 import org.opensearch.action.admin.indices.create.CreateIndexAction;
 import org.opensearch.action.admin.indices.create.CreateIndexRequestBuilder;
 import org.opensearch.action.admin.indices.stats.CommonStatsFlags;
 import org.opensearch.cluster.metadata.IndexMetadata;
+import org.opensearch.common.cache.CacheType;
+import org.opensearch.common.cache.ICache;
+import org.opensearch.common.cache.settings.CacheSettings;
 import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.stats.CacheStatsResponse;
-import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
+import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.collect.Tuple;
 import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.BytesStreamInput;
@@ -28,6 +32,8 @@ import org.opensearch.test.OpenSearchSingleNodeTestCase;
 import java.util.List;
 import java.util.Map;
 
+import static org.mockito.Mockito.mock;
+
 public class NodeCacheStatsTests extends OpenSearchSingleNodeTestCase {
     public void testRequestCacheShardsAggregation() throws Exception {
         List<String> indexNames = List.of("index1", "index2");
@@ -38,7 +44,7 @@ public class NodeCacheStatsTests extends OpenSearchSingleNodeTestCase {
         NodeCacheStats stats = setup.v1();
         Map<String, Map<String, CacheStatsResponse>> expectedResults = setup.v2();
 
-        CacheService.AggregatedStats aggregated = stats.aggregateRequestStatsByLevel(new String[]{"shards"});
+        AggregatedStats aggregated = stats.aggregateRequestStatsByLevel(new String[]{"shards"});
 
         assertEquals(List.of(CacheService.SHARDS_DIMENSION_NAME), aggregated.getDimensionNames());
 
@@ -63,7 +69,7 @@ public class NodeCacheStatsTests extends OpenSearchSingleNodeTestCase {
         NodeCacheStats stats = setup.v1();
         Map<String, Map<String, CacheStatsResponse>> expectedResults = setup.v2();
 
-        CacheService.AggregatedStats aggregated = stats.aggregateRequestStatsByLevel(new String[]{"indices"});
+        AggregatedStats aggregated = stats.aggregateRequestStatsByLevel(new String[]{"indices"});
 
         assertEquals(List.of(CacheService.INDICES_DIMENSION_NAME), aggregated.getDimensionNames());
         for (String indexName : aggregated.getInnerMapKeySet(List.of())) {
@@ -81,7 +87,7 @@ public class NodeCacheStatsTests extends OpenSearchSingleNodeTestCase {
         NodeCacheStats stats = setup.v1();
         Map<String, Map<String, Map<String, CacheStatsResponse>>> expectedResultsByTier = setup.v2();
 
-        CacheService.AggregatedStats aggregated = stats.aggregateRequestStatsByLevel(new String[]{"tier"});
+        AggregatedStats aggregated = stats.aggregateRequestStatsByLevel(new String[]{"tier"});
 
         for (String tierName : aggregated.getInnerMapKeySet(List.of())) {
             CacheStatsResponse tierTotal = sumTotal(expectedResultsByTier.get(tierName));
@@ -98,7 +104,7 @@ public class NodeCacheStatsTests extends OpenSearchSingleNodeTestCase {
         NodeCacheStats stats = setup.v1();
         Map<String, Map<String, Map<String, CacheStatsResponse>>> expectedResultsByTier = setup.v2();
 
-        CacheService.AggregatedStats aggregated = stats.aggregateRequestStatsByLevel(new String[]{"tier", "shards"});
+        AggregatedStats aggregated = stats.aggregateRequestStatsByLevel(new String[]{"tier", "shards"});
 
         for (String shardName : aggregated.getInnerMapKeySet(List.of())) {
             for (String tierName : aggregated.getInnerMapKeySet(List.of(shardName))) {
@@ -125,7 +131,7 @@ public class NodeCacheStatsTests extends OpenSearchSingleNodeTestCase {
         NodeCacheStats stats = setup.v1();
         Map<String, Map<String, Map<String, CacheStatsResponse>>> expectedResultsByTier = setup.v2();
 
-        CacheService.AggregatedStats aggregated = stats.aggregateRequestStatsByLevel(new String[]{"tier", "indices"});
+        AggregatedStats aggregated = stats.aggregateRequestStatsByLevel(new String[]{"tier", "indices"});
 
         for (String indexName : aggregated.getInnerMapKeySet(List.of())) {
             for (String tierName : aggregated.getInnerMapKeySet(List.of(indexName))) {
@@ -144,7 +150,7 @@ public class NodeCacheStatsTests extends OpenSearchSingleNodeTestCase {
         Tuple<NodeCacheStats, Map<String, Map<String, Map<String, CacheStatsResponse>>>> setup = getNodeCacheStatsAndExpectedResultsForTiers(service, numIndexShards);
         NodeCacheStats stats = setup.v1();
 
-        CacheService.AggregatedStats aggregated = stats.aggregateRequestStatsByLevel(new String[]{});
+        AggregatedStats aggregated = stats.aggregateRequestStatsByLevel(new String[]{});
         assertEquals(List.of(), aggregated.getDimensionNames());
         assertEquals(stats.getTotalRequestStats(), aggregated.getResponse(List.of()));
         assertEquals(1, aggregated.getSize());
@@ -184,7 +190,7 @@ public class NodeCacheStatsTests extends OpenSearchSingleNodeTestCase {
     }
 
     private Tuple<NodeCacheStats, Map<String, Map<String, CacheStatsResponse>>> getNodeCacheStatsAndExpectedResultsForSingleTier(CacheService service, Map<String, Integer> numIndexShards, String tierName) {
-        CacheServiceTests.MockCacheTier onHeap = new CacheServiceTests.MockCacheTier(new SingleDimensionCacheStats(CacheService.SHARDS_DIMENSION_NAME, tierName));
+        CacheServiceTests.MockCacheTier onHeap = new CacheServiceTests.MockCacheTier(new MultiDimensionCacheStats(List.of(CacheService.SHARDS_DIMENSION_NAME), tierName));
         service.registerCache(CacheType.INDICES_REQUEST_CACHE, onHeap);
         CacheStats stats = service.getCache(CacheType.INDICES_REQUEST_CACHE).stats();
         Map<String, Map<String, CacheStatsResponse>> expectedResults = CacheServiceTests.populateStats(service, stats, numIndexShards);
@@ -195,8 +201,8 @@ public class NodeCacheStatsTests extends OpenSearchSingleNodeTestCase {
 
     private Tuple<NodeCacheStats, Map<String, Map<String, Map<String, CacheStatsResponse>>>> getNodeCacheStatsAndExpectedResultsForTiers(CacheService service, Map<String, Integer> numIndexShards) {
         CacheServiceTests.MockCacheTier tieredSpilloverCache = new CacheServiceTests.MockCacheTier(new CacheServiceTests.MockTieredSpilloverCacheStats(
-            new SingleDimensionCacheStats(CacheService.SHARDS_DIMENSION_NAME, CacheService.TIER_DIMENSION_VALUE_ON_HEAP),
-            new SingleDimensionCacheStats(CacheService.SHARDS_DIMENSION_NAME, CacheService.TIER_DIMENSION_VALUE_DISK)
+            new MultiDimensionCacheStats(List.of(CacheService.SHARDS_DIMENSION_NAME), CacheService.TIER_DIMENSION_VALUE_ON_HEAP),
+            new MultiDimensionCacheStats(List.of(CacheService.SHARDS_DIMENSION_NAME), CacheService.TIER_DIMENSION_VALUE_DISK)
         ));
         service.registerCache(CacheType.INDICES_REQUEST_CACHE, tieredSpilloverCache);
 
@@ -212,6 +218,9 @@ public class NodeCacheStatsTests extends OpenSearchSingleNodeTestCase {
 
     // Duplicated from CacheServiceTests, we can't import it statically since it depends on the test case's node to get the IndicesService
     CacheService getCacheService(List<String> indexNames, Map<String, Integer> numIndexShards) {
+        ICache.Factory factory1 = mock(ICache.Factory.class);
+        Setting<String> indicesRequestCacheSetting = CacheSettings.getConcreteSettingForCacheType(CacheType.INDICES_REQUEST_CACHE);
+        Map<String, ICache.Factory> factoryMap = Map.of("cache1", factory1);
         IndicesService indicesService = getInstanceFromNode(IndicesService.class);
         for (String indexName : indexNames) {
             CreateIndexRequestBuilder indexBuilder = new CreateIndexRequestBuilder(client(), CreateIndexAction.INSTANCE).setIndex(indexName);
@@ -230,21 +239,25 @@ public class NodeCacheStatsTests extends OpenSearchSingleNodeTestCase {
                 assertThrows(ShardNotFoundException.class, () -> index.getShard(0));
             }
         }
-        return new CacheService(indicesService);
+        return new CacheService(
+            factoryMap,
+            Settings.builder().put(indicesRequestCacheSetting.getKey(), "cache").build(),
+            indicesService
+        );
     }
 
     private CacheStatsResponse sumByIndexName(Map<String, Map<String, CacheStatsResponse>> expectedResults, String indexName) {
-        CacheStatsResponse expectedIndexResult = null;
+        CacheStatsResponse expectedIndexResult = new CacheStatsResponse();
         for (String shardName : expectedResults.get(indexName).keySet()) {
-            expectedIndexResult = expectedResults.get(indexName).get(shardName).add(expectedIndexResult);
+            expectedIndexResult.add(expectedResults.get(indexName).get(shardName));
         }
         return expectedIndexResult;
     }
 
     private CacheStatsResponse sumTotal(Map<String, Map<String, CacheStatsResponse>> expectedResults) {
-        CacheStatsResponse expectedIndexResult = null;
+        CacheStatsResponse expectedIndexResult = new CacheStatsResponse();
         for (String indexName : expectedResults.keySet()) {
-            expectedIndexResult = sumByIndexName(expectedResults, indexName).add(expectedIndexResult);
+            expectedIndexResult.add(sumByIndexName(expectedResults, indexName));
         }
         return expectedIndexResult;
     }

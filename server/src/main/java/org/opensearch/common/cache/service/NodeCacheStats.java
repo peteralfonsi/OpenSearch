@@ -6,9 +6,10 @@
  * compatible open source license.
  */
 
-package org.opensearch.common.cache;
+package org.opensearch.common.cache.service;
 
 import org.opensearch.action.admin.indices.stats.CommonStatsFlags;
+import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.stats.CacheStatsResponse;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -26,12 +27,12 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
     // TODO: Rework this to take two enum maps from CacheType to stats/totalStats
 
     private CommonStatsFlags flags;
-    private CacheService.AggregatedStats requestStats;
+    private AggregatedStats requestStats;
     private CacheStatsResponse totalRequestStats; // Pass this in to avoid re-summing over all values
 
     // More stats will go here as more caches are integrated
 
-    public NodeCacheStats(CommonStatsFlags flags, CacheService.AggregatedStats requestStats, CacheStatsResponse totalRequestStats) {
+    public NodeCacheStats(CommonStatsFlags flags, AggregatedStats requestStats, CacheStatsResponse totalRequestStats) {
         this.flags = flags;
         this.requestStats = requestStats;
         this.totalRequestStats = totalRequestStats;
@@ -39,7 +40,7 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
 
     public NodeCacheStats(StreamInput in) throws IOException {
         this.flags = new CommonStatsFlags(in);
-        this.requestStats = new CacheService.AggregatedStats(in);
+        this.requestStats = new AggregatedStats(in);
         this.totalRequestStats = new CacheStatsResponse(in);
     }
 
@@ -59,15 +60,15 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
     /**
      * Create a new AggregatedStats for the request cache, which is aggregated based on the levels specified.
      */
-    CacheService.AggregatedStats aggregateRequestStatsByLevel(String[] levels) {
+    AggregatedStats aggregateRequestStatsByLevel(String[] levels) {
         checkRequestStatsDimensionNames();
         if (levels == null || checkLevelsEquality(levels, Set.of())) {
-            CacheService.AggregatedStats totalStats = new CacheService.AggregatedStats(List.of());
+            AggregatedStats totalStats = new AggregatedStats(List.of());
             totalStats.put(List.of(), totalRequestStats);
             return totalStats;
         }
         if (checkLevelsEquality(levels, Set.of("tier"))) {
-            CacheService.AggregatedStats tierStats = new CacheService.AggregatedStats(List.of(CacheService.TIER_DIMENSION_NAME));
+            AggregatedStats tierStats = new AggregatedStats(List.of(CacheService.TIER_DIMENSION_NAME));
             for (String tierName : CacheService.API_SUPPORTED_TIERS) {
                 tierStats.put(List.of(tierName), new CacheStatsResponse());
             }
@@ -83,7 +84,7 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
             return tierStats;
         }
         if (checkLevelsEquality(levels, Set.of("shards"))) {
-            CacheService.AggregatedStats shardStats = new CacheService.AggregatedStats(List.of(CacheService.SHARDS_DIMENSION_NAME));
+            AggregatedStats shardStats = new AggregatedStats(List.of(CacheService.SHARDS_DIMENSION_NAME));
             for (String indexName : requestStats.getInnerMapKeySet(List.of())) {
                 for (String shardName : requestStats.getInnerMapKeySet(List.of(indexName))) {
                     shardStats.put(List.of(shardName), sumRequestCacheShard(indexName, shardName));
@@ -92,7 +93,7 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
             return shardStats;
         }
         if (checkLevelsEquality(levels, Set.of("indices"))) {
-            CacheService.AggregatedStats indicesStats = new CacheService.AggregatedStats(List.of(CacheService.INDICES_DIMENSION_NAME));
+            AggregatedStats indicesStats = new AggregatedStats(List.of(CacheService.INDICES_DIMENSION_NAME));
             for (String indexName : requestStats.getInnerMapKeySet(List.of())) {
                 indicesStats.put(List.of(indexName), new CacheStatsResponse());
                 for (String shardName : requestStats.getInnerMapKeySet(List.of(indexName))) {
@@ -102,7 +103,7 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
             return indicesStats;
         }
         if (checkLevelsEquality(levels, Set.of("shards", "tier"))) {
-            CacheService.AggregatedStats shardAndTierStats = new CacheService.AggregatedStats(List.of(CacheService.SHARDS_DIMENSION_NAME, CacheService.TIER_DIMENSION_NAME));
+            AggregatedStats shardAndTierStats = new AggregatedStats(List.of(CacheService.SHARDS_DIMENSION_NAME, CacheService.TIER_DIMENSION_NAME));
             for (String indexName : requestStats.getInnerMapKeySet(List.of())) {
                 for (String shardName : requestStats.getInnerMapKeySet(List.of(indexName))) {
                     for (String tierName : requestStats.getInnerMapKeySet(List.of(indexName, shardName))) {
@@ -113,7 +114,7 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
             return shardAndTierStats;
         }
         if (checkLevelsEquality(levels, Set.of("indices", "tier"))) {
-            CacheService.AggregatedStats indicesAndTierStats = new CacheService.AggregatedStats(List.of(CacheService.INDICES_DIMENSION_NAME, CacheService.TIER_DIMENSION_NAME));
+            AggregatedStats indicesAndTierStats = new AggregatedStats(List.of(CacheService.INDICES_DIMENSION_NAME, CacheService.TIER_DIMENSION_NAME));
             for (String indexName : requestStats.getInnerMapKeySet(List.of())) {
                 for (String tierName : CacheService.API_SUPPORTED_TIERS) {
                     indicesAndTierStats.put(List.of(indexName, tierName), new CacheStatsResponse());
@@ -134,7 +135,7 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
         CacheStatsResponse total = new CacheStatsResponse();
         for (String tierName : requestStats.getInnerMapKeySet(List.of(indexName, shardName))) {
             CacheStatsResponse response = requestStats.getResponse(List.of(indexName, shardName, tierName));
-            total = total.add(response);
+            total.add(response);
         }
         return total;
     }
@@ -150,7 +151,7 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
 
         String[] levels = getLevels(params);
         if (levels != null) {
-            CacheService.AggregatedStats aggregated = aggregateRequestStatsByLevel(levels);
+            AggregatedStats aggregated = aggregateRequestStatsByLevel(levels);
             if (levels.length == 1) {
                 singleDimensionXContentHelper(builder, params, aggregated, levels[0]);
             }
@@ -169,8 +170,7 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
         return builder;
     }
 
-    private void singleDimensionXContentHelper(XContentBuilder builder, Params params,
-                                                          CacheService.AggregatedStats response, String fieldName) throws IOException {
+    private void singleDimensionXContentHelper(XContentBuilder builder, Params params, AggregatedStats response, String fieldName) throws IOException {
         builder.startObject(fieldName);
         for (String name : response.getInnerMapKeySet(List.of())) {
             builder.startObject(name);
@@ -181,7 +181,7 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
     }
 
     private void twoDimensionXContentHelper(XContentBuilder builder, Params params,
-                                            CacheService.AggregatedStats response,
+                                            AggregatedStats response,
                                             String outerFieldName, String innerFieldName) throws IOException {
 
         builder.startObject(outerFieldName);

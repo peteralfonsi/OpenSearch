@@ -9,12 +9,12 @@
 package org.opensearch.cache.store.disk;
 
 import org.opensearch.cache.EhcacheDiskCacheSettings;
-import org.opensearch.common.cache.CacheService;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.service.CacheService;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.serializer.Serializer;

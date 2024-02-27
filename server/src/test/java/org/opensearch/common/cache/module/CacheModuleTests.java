@@ -10,7 +10,9 @@ package org.opensearch.common.cache.module;
 
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.indices.IndicesService;
 import org.opensearch.plugins.CachePlugin;
+import org.opensearch.test.OpenSearchSingleNodeTestCase;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.util.List;
@@ -19,7 +21,7 @@ import java.util.Map;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-public class CacheModuleTests extends OpenSearchTestCase {
+public class CacheModuleTests extends OpenSearchSingleNodeTestCase {
 
     public void testWithMultiplePlugins() {
         CachePlugin mockPlugin1 = mock(CachePlugin.class);
@@ -29,7 +31,7 @@ public class CacheModuleTests extends OpenSearchTestCase {
         when(mockPlugin1.getCacheFactoryMap()).thenReturn(Map.of("cache1", factory1));
         when(mockPlugin2.getCacheFactoryMap()).thenReturn(Map.of("cache2", factory2));
 
-        CacheModule cacheModule = new CacheModule(List.of(mockPlugin1, mockPlugin2), Settings.EMPTY);
+        CacheModule cacheModule = new CacheModule(List.of(mockPlugin1, mockPlugin2), Settings.EMPTY, getInstanceFromNode(IndicesService.class));
 
         Map<String, ICache.Factory> factoryMap = cacheModule.getCacheStoreTypeFactories();
         assertEquals(factoryMap.get("cache1"), factory1);
@@ -48,7 +50,7 @@ public class CacheModuleTests extends OpenSearchTestCase {
 
         IllegalArgumentException ex = assertThrows(
             IllegalArgumentException.class,
-            () -> new CacheModule(List.of(mockPlugin1, mockPlugin2), Settings.EMPTY)
+            () -> new CacheModule(List.of(mockPlugin1, mockPlugin2), Settings.EMPTY, getInstanceFromNode(IndicesService.class))
         );
         assertEquals("Cache name: cache is already registered", ex.getMessage());
     }

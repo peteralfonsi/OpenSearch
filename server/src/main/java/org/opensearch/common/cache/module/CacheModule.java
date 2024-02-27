@@ -13,6 +13,7 @@ import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.service.CacheService;
 import org.opensearch.common.cache.store.OpenSearchOnHeapCache;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.indices.IndicesService;
 import org.opensearch.plugins.CachePlugin;
 
 import java.util.Collections;
@@ -31,10 +32,10 @@ public class CacheModule {
     private final CacheService cacheService;
     private final Settings settings;
 
-    public CacheModule(List<CachePlugin> cachePlugins, Settings settings) {
+    public CacheModule(List<CachePlugin> cachePlugins, Settings settings, IndicesService indicesService) {
         this.cacheStoreTypeFactories = getCacheStoreTypeFactories(cachePlugins);
         this.settings = settings;
-        this.cacheService = new CacheService(cacheStoreTypeFactories, settings);
+        this.cacheService = new CacheService(cacheStoreTypeFactories, settings, indicesService);
     }
 
     private static Map<String, ICache.Factory> getCacheStoreTypeFactories(List<CachePlugin> cachePlugins) {

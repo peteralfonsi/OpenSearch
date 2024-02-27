@@ -117,76 +117,16 @@ public class CacheStatsResponse implements Writeable, ToXContentFragment {
         out.writeVLong(entries.count());
     }
 
-    public CacheStatsResponse() {
-        this.hits = 0;
-        this.misses = 0;
-        this.evictions = 0;
-        this.memorySize = 0;
-        this.entries = 0;
-    }
-
-    public CacheStatsResponse(StreamInput in) throws IOException {
-        this.hits = in.readVLong();
-        this.misses = in.readVLong();
-        this.evictions = in.readVLong();
-        this.memorySize = in.readVLong();
-        this.entries = in.readVLong();
-    }
-
-    public CacheStatsResponse add(CacheStatsResponse other) {
-        if (other == null) {
-            return this;
-        }
-        return new CacheStatsResponse(
-            hits + other.hits,
-            misses + other.misses,
-            evictions + other.evictions,
-            memorySize + other.memorySize,
-            entries + other.entries
-        );
-    }
-
-    @Override
-    public boolean equals(Object o) {
-        if (o == null) {
-            return false;
-        }
-        if (o.getClass() != CacheStatsResponse.class) {
-            return false;
-        }
-        CacheStatsResponse other = (CacheStatsResponse) o;
-        return (hits == other.hits)
-            && (misses == other.misses)
-            && (evictions == other.evictions)
-            && (memorySize == other.memorySize)
-            && (entries == other.entries);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(hits, misses, evictions, memorySize, entries);
-    }
-
-
     // toXContent modified from RequestCacheStats.java
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         // We don't write the header in CacheStatsResponse's toXContent, because it doesn't know the name of aggregation it's part of
-        builder.humanReadableField(CacheStatsResponse.Fields.MEMORY_SIZE_IN_BYTES, CacheStatsResponse.Fields.MEMORY_SIZE, new ByteSizeValue(memorySize));
+        builder.humanReadableField(CacheStatsResponse.Fields.MEMORY_SIZE_IN_BYTES, CacheStatsResponse.Fields.MEMORY_SIZE, new ByteSizeValue(memorySize.count()));
         builder.field(CacheStatsResponse.Fields.EVICTIONS, evictions);
         builder.field(CacheStatsResponse.Fields.HIT_COUNT, hits);
         builder.field(CacheStatsResponse.Fields.MISS_COUNT, misses);
         builder.field(Fields.ENTRIES, entries);
         return builder;
-    }
-
-    @Override
-    public void writeTo(StreamOutput out) throws IOException {
-        out.writeVLong(hits);
-        out.writeVLong(misses);
-        out.writeVLong(evictions);
-        out.writeVLong(memorySize);
-        out.writeVLong(entries);
     }
 
     /**

@@ -41,7 +41,7 @@ import org.opensearch.action.search.SearchTransportService;
 import org.opensearch.cluster.routing.WeightedRoutingStats;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.Nullable;
-import org.opensearch.common.cache.CacheService;
+import org.opensearch.common.cache.service.CacheService;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.settings.SettingsFilter;
 import org.opensearch.common.util.io.IOUtils;

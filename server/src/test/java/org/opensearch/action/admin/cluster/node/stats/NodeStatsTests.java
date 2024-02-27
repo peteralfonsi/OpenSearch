@@ -42,9 +42,10 @@ import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.cluster.routing.WeightedRoutingStats;
 import org.opensearch.cluster.service.ClusterManagerThrottlingStats;
 import org.opensearch.cluster.service.ClusterStateStats;
-import org.opensearch.common.cache.CacheService;
 import org.opensearch.common.cache.CacheType;
-import org.opensearch.common.cache.NodeCacheStats;
+import org.opensearch.common.cache.service.AggregatedStats;
+import org.opensearch.common.cache.service.CacheService;
+import org.opensearch.common.cache.service.NodeCacheStats;
 import org.opensearch.common.cache.stats.CacheStatsResponse;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.metrics.OperationStats;
@@ -942,7 +943,7 @@ public class NodeStatsTests extends OpenSearchTestCase {
             int numIndices = randomIntBetween(1, 10);
             int numShardsPerIndex = randomIntBetween(1, 50);
             CacheStatsResponse totalRequestStats = new CacheStatsResponse();
-            CacheService.AggregatedStats requestStats = new CacheService.AggregatedStats(CacheService.REQUEST_CACHE_DIMENSION_NAMES);
+            AggregatedStats requestStats = new AggregatedStats(CacheService.REQUEST_CACHE_DIMENSION_NAMES);
             for (int indexNum = 0; indexNum < numIndices; indexNum++) {
                 String indexName = "index" + indexNum;
                 for (int shardNum = 0; shardNum < numShardsPerIndex; shardNum++) {
@@ -956,7 +957,7 @@ public class NodeStatsTests extends OpenSearchTestCase {
                             randomInt(100)
                         );
                         requestStats.put(List.of(indexName, shardName, tierName), response);
-                        totalRequestStats = totalRequestStats.add(response);
+                        totalRequestStats.add(response);
                     }
                 }
             }

@@ -85,7 +85,6 @@ import org.opensearch.common.SetOnce;
 import org.opensearch.common.StopWatch;
 import org.opensearch.common.cache.module.CacheModule;
 import org.opensearch.common.cache.service.CacheService;
-import org.opensearch.common.cache.service.CacheService;
 import org.opensearch.common.inject.Injector;
 import org.opensearch.common.inject.Key;
 import org.opensearch.common.inject.Module;
@@ -796,8 +795,7 @@ public class Node implements Closeable {
             final SearchRequestSlowLog searchRequestSlowLog = new SearchRequestSlowLog(clusterService);
 
             remoteStoreStatsTrackerFactory = new RemoteStoreStatsTrackerFactory(clusterService, settings);
-            CacheModule cacheModule = new CacheModule(pluginsService.filterPlugins(CachePlugin.class), settings);
-            CacheService cacheService = cacheModule.getCacheService();
+
             final IndicesService indicesService = new IndicesService(
                 settings,
                 pluginsService,
@@ -825,6 +823,9 @@ public class Node implements Closeable {
                 remoteStoreStatsTrackerFactory,
                 recoverySettings
             );
+
+            CacheModule cacheModule = new CacheModule(pluginsService.filterPlugins(CachePlugin.class), settings, indicesService);
+            CacheService cacheService = cacheModule.getCacheService();
 
             final IngestService ingestService = new IngestService(
                 clusterService,
