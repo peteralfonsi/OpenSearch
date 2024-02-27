@@ -26,7 +26,6 @@ import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
-import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.serializer.ICacheKeySerializer;
 import org.opensearch.common.cache.serializer.Serializer;
