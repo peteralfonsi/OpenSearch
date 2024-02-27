@@ -115,6 +115,8 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
     private final Serializer<K, byte[]> keySerializer;
     private final Serializer<V, byte[]> valueSerializer;
 
+    public final static String TIER_DIMENSION_VALUE = "disk";
+
     /**
      * Used in computeIfAbsent to synchronize loading of a given key. This is needed as ehcache doesn't provide a
      * computeIfAbsent method.
@@ -154,7 +156,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
             this.valueSerializer);
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
         List<String> dimensionNames = Objects.requireNonNull(builder.dimensionNames, "Dimension names can't be null");
-        this.stats = new MultiDimensionCacheStats(dimensionNames, CacheStatsDimension.TIER_DIMENSION_VALUE_DISK);
+        this.stats = new MultiDimensionCacheStats(dimensionNames, TIER_DIMENSION_VALUE);
     }
 
     private Cache<ICacheKey, byte[]> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {

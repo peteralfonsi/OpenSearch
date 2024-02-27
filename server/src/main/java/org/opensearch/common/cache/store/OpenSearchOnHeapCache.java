@@ -45,6 +45,7 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
     private final Cache<ICacheKey<K>, V> cache;
     private final CacheStats stats;
     private final RemovalListener<ICacheKey<K>, V> removalListener;
+    public static final String TIER_DIMENSION_VALUE = "on_heap";
 
     public OpenSearchOnHeapCache(Builder<K, V> builder) {
         CacheBuilder<ICacheKey<K>, V> cacheBuilder = CacheBuilder.<ICacheKey<K>, V>builder()
@@ -56,7 +57,7 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
         }
         cache = cacheBuilder.build();
         List<String> dimensionNames = Objects.requireNonNull(builder.dimensionNames, "Dimension names can't be null");
-        this.stats = new MultiDimensionCacheStats(dimensionNames, CacheStatsDimension.TIER_DIMENSION_VALUE_ON_HEAP);
+        this.stats = new MultiDimensionCacheStats(dimensionNames, TIER_DIMENSION_VALUE);
         this.removalListener = builder.getRemovalListener();
     }
 

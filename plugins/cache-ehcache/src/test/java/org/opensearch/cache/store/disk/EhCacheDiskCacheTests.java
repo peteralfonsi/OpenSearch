@@ -632,8 +632,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             for (int i = 0; i < randomKeys; i++) {
                 ehcacheTest.put(getICacheKey(UUID.randomUUID().toString()), UUID.randomUUID().toString());
             }
-            assertEquals(randomKeys, ehcacheTest.stats().getEntriesByDimensions(List.of(new CacheStatsDimension(CacheStatsDimension.TIER_DIMENSION_NAME, CacheStatsDimension.TIER_DIMENSION_VALUE_DISK))));
-            assertEquals(0, ehcacheTest.stats().getEntriesByDimensions(List.of(new CacheStatsDimension(CacheStatsDimension.TIER_DIMENSION_NAME, CacheStatsDimension.TIER_DIMENSION_VALUE_ON_HEAP))));
+            assertEquals(randomKeys, ehcacheTest.stats().getEntriesByDimensions(List.of(new CacheStatsDimension(CacheStatsDimension.TIER_DIMENSION_NAME, EhcacheDiskCache.TIER_DIMENSION_VALUE))));
+            assertEquals(0, ehcacheTest.stats().getEntriesByDimensions(List.of(new CacheStatsDimension(CacheStatsDimension.TIER_DIMENSION_NAME, "other_tier_value"))));
 
             ehcacheTest.close();
         }
