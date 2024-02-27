@@ -25,6 +25,7 @@ import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
+import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.serializer.ICacheKeySerializer;
@@ -39,6 +40,7 @@ import java.io.File;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -110,7 +112,6 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
     private final Settings settings;
     private final CacheType cacheType;
     private final String diskCacheAlias;
-    private final String shardIdDimensionName;
 
     private final Serializer<K, byte[]> keySerializer;
     private final Serializer<V, byte[]> valueSerializer;
@@ -153,8 +154,8 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
             Objects.requireNonNull(builder.getWeigher(), "Weigher function can't be null"),
             this.valueSerializer);
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
-        this.shardIdDimensionName = Objects.requireNonNull(builder.shardIdDimensionName, "Dimension name can't be null");
-        this.stats = new SingleDimensionCacheStats(shardIdDimensionName, CacheStatsDimension.TIER_DIMENSION_VALUE_DISK);
+        List<String> dimensionNames = Objects.requireNonNull(builder.dimensionNames, "Dimension names can't be null");
+        this.stats = new MultiDimensionCacheStats(dimensionNames, CacheStatsDimension.TIER_DIMENSION_VALUE_DISK);
     }
 
     private Cache<ICacheKey, byte[]> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {
@@ -579,7 +580,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
                 .setValueType(config.getValueType())
                 .setKeySerializer(keySerializer)
                 .setValueSerializer(valueSerializer)
-                .setShardIdDimensionName(config.getDimensionNames().get(0)) // TODO: Rework this to pass in whole list, once stats is changed
+                .setDimensionNames(config.getDimensionNames())
                 .setWeigher(config.getWeigher())
                 .setRemovalListener(config.getRemovalListener())
                 .setExpireAfterAccess((TimeValue) settingList.get(DISK_CACHE_EXPIRE_AFTER_ACCESS_KEY).get(settings))
@@ -609,7 +610,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         private boolean isEventListenerModeSync;
         private Class<K> keyType;
         private Class<V> valueType;
-        private String shardIdDimensionName;
+        private List<String> dimensionNames;
         private Serializer<K, byte[]> keySerializer;
         private Serializer<V, byte[]> valueSerializer;
 
@@ -688,8 +689,8 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
             return this;
         }
 
-        public Builder<K, V> setShardIdDimensionName(String dimensionName) {
-            this.shardIdDimensionName = dimensionName;
+        public Builder<K, V> setDimensionNames(List<String> dimensionNames) {
+            this.dimensionNames = dimensionNames;
             return this;
         }
 

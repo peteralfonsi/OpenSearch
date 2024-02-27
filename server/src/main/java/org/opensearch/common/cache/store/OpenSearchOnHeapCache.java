@@ -19,12 +19,14 @@ import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
+import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.cache.stats.SingleDimensionCacheStats;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.function.ToLongBiFunction;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
@@ -58,8 +60,8 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
             cacheBuilder.setExpireAfterAccess(builder.getExpireAfterAcess());
         }
         cache = cacheBuilder.build();
-        String dimensionName = Objects.requireNonNull(builder.shardIdDimensionName, "Shard id dimension name can't be null");
-        this.stats = new SingleDimensionCacheStats(dimensionName, CacheStatsDimension.TIER_DIMENSION_VALUE_ON_HEAP);
+        List<String> dimensionNames = Objects.requireNonNull(builder.dimensionNames, "Dimension names can't be null");
+        this.stats = new MultiDimensionCacheStats(dimensionNames, CacheStatsDimension.TIER_DIMENSION_VALUE_ON_HEAP);
         this.removalListener = builder.getRemovalListener();
     }
 
@@ -143,7 +145,7 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
             Map<String, Setting<?>> settingList = OpenSearchOnHeapCacheSettings.getSettingListForCacheType(cacheType);
             Settings settings = config.getSettings();
             return new Builder<K, V>()
-                .setShardIdDimensionName(config.getDimensionNames().get(0)) //TODO: Make it accept >1 dimension names
+                .setDimensionNames(config.getDimensionNames())
                 .setMaximumWeightInBytes(((ByteSizeValue) settingList.get(MAXIMUM_SIZE_IN_BYTES_KEY).get(settings)).getBytes())
                 .setWeigher(config.getWeigher())
                 .setRemovalListener(config.getRemovalListener())
@@ -163,10 +165,10 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
      */
     public static class Builder<K, V> extends ICacheBuilder<K, V> {
 
-        private String shardIdDimensionName;
+        private List<String> dimensionNames;
 
-        public Builder<K, V> setShardIdDimensionName(String dimensionName) {
-            this.shardIdDimensionName = dimensionName;
+        public Builder<K, V> setDimensionNames(List<String> dimensionNames) {
+            this.dimensionNames = dimensionNames;
             return this;
         }
         @Override
