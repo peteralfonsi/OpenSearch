@@ -178,7 +178,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         if (cache == onHeapCache) {
             return HEAP_DIMS.get(0);
         } else if (cache == diskCache) {
-            return DISK_DIMS.get(0); // TODO: Where should this be stored? It can't come from the ehcache plugin.
+            return DISK_DIMS.get(0);
         }
         throw new IllegalArgumentException("Can't get tier dimension for unrecognized cache");
     }
@@ -190,7 +190,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                 cache.invalidateAll();
             }
         }
-        stats = new TieredSpilloverCacheStats(dimensionNames);
+        stats.reset();
     }
 
     /**

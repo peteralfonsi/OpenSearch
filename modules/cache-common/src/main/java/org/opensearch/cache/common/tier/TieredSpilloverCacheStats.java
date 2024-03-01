@@ -210,4 +210,10 @@ public class TieredSpilloverCacheStats implements CacheStats {
     public void decrementEntriesByDimensions(List<CacheStatsDimension> dimensions) {
         incrementTierValue(dimensions, CacheStats::decrementEntriesByDimensions);
     }
+
+    @Override
+    public void reset() {
+        heapStats.reset();
+        diskStats.reset();
+    }
 }
