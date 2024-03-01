@@ -9,6 +9,7 @@
 package org.opensearch.cache.common.tier;
 
 import org.opensearch.common.Randomness;
+import org.opensearch.common.cache.Cache;
 import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.stats.CacheStatsResponse;
@@ -143,6 +144,13 @@ public class TieredSpilloverCacheStatsTests extends OpenSearchTestCase {
                 assertEquals(originalResponse, deserializedResponse);
             }
         }
+    }
+
+    public void testCombineTierResponses() throws Exception {
+        CacheStatsResponse heapResponse = new CacheStatsResponse(1,2,3,4,5);
+        CacheStatsResponse diskResponse = new CacheStatsResponse(2,3,4,5,6);
+        CacheStatsResponse tscResponse = TieredSpilloverCacheStats.combineTierResponses(heapResponse, diskResponse);
+        assertEquals(new CacheStatsResponse(3, 3, 4, 9, 11), tscResponse);
     }
 
     private void checkStatsObject(CacheStatsResponse expected, CacheStats stats, List<CacheStatsDimension> aggregationDims) {
