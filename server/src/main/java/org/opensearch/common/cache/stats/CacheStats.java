@@ -48,4 +48,7 @@ public interface CacheStats extends Writeable {
     void incrementEntriesByDimensions(List<CacheStatsDimension> dimensions);
     void decrementEntriesByDimensions(List<CacheStatsDimension> dimensions);
 
+    // Resets memory and entries stats but leaves the others; called when the cache clears itself.
+    void reset();
+
 }

@@ -102,7 +102,7 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
     @Override
     public void invalidateAll() {
         cache.invalidateAll();
-        stats = new MultiDimensionCacheStats(dimensionNames, TIER_DIMENSION_VALUE);
+        stats.reset();
     }
 
     @Override

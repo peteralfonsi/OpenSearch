@@ -226,6 +226,15 @@ public class MultiDimensionCacheStats implements CacheStats {
         internalIncrement(dimensions, (response, amount) -> response.entries.inc(amount), -1);
     }
 
+    @Override
+    public void reset() {
+        for (Key key : map.keySet()) {
+            CacheStatsResponse response = map.get(key);
+            response.memorySize.dec(response.getMemorySize());
+            response.entries.dec(response.getEntries());
+        }
+    }
+
     private CacheStatsResponse internalGetStats(List<CacheStatsDimension> dimensions) {
         assert dimensions.size() == dimensionNames.size();
         CacheStatsResponse response = map.get(new Key(dimensions));

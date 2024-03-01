@@ -10,6 +10,7 @@ package org.opensearch.common.cache.stats;
 
 import org.opensearch.common.Randomness;
 import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.BytesStreamInput;
 import org.opensearch.test.OpenSearchTestCase;
@@ -164,6 +165,30 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
 
         assertEquals(key1, key2);
         assertEquals(key1.hashCode(), key2.hashCode());
+    }
+
+    public void testReset() throws Exception {
+        List<String> dimensionNames = List.of("dim1", "dim2");
+        MultiDimensionCacheStats stats = new MultiDimensionCacheStats(dimensionNames, tierDimensionValue);
+        Map<String, List<String>> usedDimensionValues = getUsedDimensionValues(stats, 10);
+        Map<Set<CacheStatsDimension>, CacheStatsResponse> expected = populateStats(stats, usedDimensionValues, 100, 10);
+
+        stats.reset();
+
+        for (Set<CacheStatsDimension> dimSet : expected.keySet()) {
+            List<CacheStatsDimension> dims = new ArrayList<>(dimSet);
+            CacheStatsResponse originalResponse = expected.get(dimSet);
+            originalResponse.memorySize = new CounterMetric();
+            originalResponse.entries = new CounterMetric();
+            CacheStatsResponse actual = stats.getStatsByDimensions(dims);
+            assertEquals(originalResponse, actual);
+
+            assertEquals(originalResponse.getHits(), stats.getHitsByDimensions(dims));
+            assertEquals(originalResponse.getMisses(), stats.getMissesByDimensions(dims));
+            assertEquals(originalResponse.getEvictions(), stats.getEvictionsByDimensions(dims));
+            assertEquals(originalResponse.getMemorySize(), stats.getMemorySizeByDimensions(dims));
+            assertEquals(originalResponse.getEntries(), stats.getEntriesByDimensions(dims));
+        }
     }
 
     private Map<String, List<String>> getUsedDimensionValues(MultiDimensionCacheStats stats, int numValuesPerDim) {
