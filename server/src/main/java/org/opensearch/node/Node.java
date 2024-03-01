@@ -80,6 +80,8 @@ import org.opensearch.cluster.routing.allocation.DiskThresholdMonitor;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.SetOnce;
 import org.opensearch.common.StopWatch;
+import org.opensearch.common.cache.module.CacheModule;
+import org.opensearch.common.cache.service.CacheService;
 import org.opensearch.common.inject.Injector;
 import org.opensearch.common.inject.Key;
 import org.opensearch.common.inject.Module;
@@ -173,6 +175,7 @@ import org.opensearch.persistent.PersistentTasksExecutorRegistry;
 import org.opensearch.persistent.PersistentTasksService;
 import org.opensearch.plugins.ActionPlugin;
 import org.opensearch.plugins.AnalysisPlugin;
+import org.opensearch.plugins.CachePlugin;
 import org.opensearch.plugins.CircuitBreakerPlugin;
 import org.opensearch.plugins.ClusterPlugin;
 import org.opensearch.plugins.CryptoKeyProviderPlugin;
@@ -779,6 +782,8 @@ public class Node implements Closeable {
             final SearchRequestStats searchRequestStats = new SearchRequestStats();
 
             remoteStoreStatsTrackerFactory = new RemoteStoreStatsTrackerFactory(clusterService, settings);
+            CacheModule cacheModule = new CacheModule(pluginsService.filterPlugins(CachePlugin.class), settings);
+            CacheService cacheService = cacheModule.getCacheService();
             final IndicesService indicesService = new IndicesService(
                 settings,
                 pluginsService,

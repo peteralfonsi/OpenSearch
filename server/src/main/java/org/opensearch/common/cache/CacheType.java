@@ -11,13 +11,19 @@ package org.opensearch.common.cache;
 import org.opensearch.common.annotation.ExperimentalApi;
 
 /**
- * Extends a cache loader with awareness of whether the data is loaded or not.
- * @param <K> Type of key.
- * @param <V> Type of value.
- *
- * @opensearch.experimental
+ * Cache types available within OpenSearch.
  */
 @ExperimentalApi
-public interface LoadAwareCacheLoader<K, V> extends CacheLoader<K, V> {
-    boolean isLoaded();
+public enum CacheType {
+    INDICES_REQUEST_CACHE("indices.requests.cache");
+
+    private final String settingPrefix;
+
+    CacheType(String settingPrefix) {
+        this.settingPrefix = settingPrefix;
+    }
+
+    public String getSettingPrefix() {
+        return settingPrefix;
+    }
 }
