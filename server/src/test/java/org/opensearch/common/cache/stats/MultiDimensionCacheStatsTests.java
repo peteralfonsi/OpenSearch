@@ -149,6 +149,23 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
         assertEquals(new CacheStatsResponse(), stats.getStatsByDimensions(List.of(wrongTierDim)));
     }
 
+    public void testKeyEquality() throws Exception {
+        Set<CacheStatsDimension> dims1 = new HashSet<>();
+        dims1.add(new CacheStatsDimension("a", "1"));
+        dims1.add(new CacheStatsDimension("b", "2"));
+        dims1.add(new CacheStatsDimension("c", "3"));
+        MultiDimensionCacheStats.Key key1 = new MultiDimensionCacheStats.Key(dims1);
+
+        List<CacheStatsDimension> dims2 = new ArrayList<>();
+        dims2.add(new CacheStatsDimension("c", "3"));
+        dims2.add(new CacheStatsDimension("a", "1"));
+        dims2.add(new CacheStatsDimension("b", "2"));
+        MultiDimensionCacheStats.Key key2 = new MultiDimensionCacheStats.Key(dims2);
+
+        assertEquals(key1, key2);
+        assertEquals(key1.hashCode(), key2.hashCode());
+    }
+
     private Map<String, List<String>> getUsedDimensionValues(MultiDimensionCacheStats stats, int numValuesPerDim) {
         Map<String, List<String>> usedDimensionValues = new HashMap<>();
         for (int i = 0; i < stats.dimensionNames.size(); i++) {
