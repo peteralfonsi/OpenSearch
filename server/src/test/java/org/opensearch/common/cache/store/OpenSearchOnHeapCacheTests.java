@@ -30,6 +30,7 @@ import static org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSe
 public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
     private final static long keyValueSize = 50;
     private final static List<String> dimensionNames = List.of("dim1", "dim2");
+
     public void testStats() throws Exception {
         MockRemovalListener<String, String> listener = new MockRemovalListener<>();
         int maxKeys = between(10, 50);
@@ -85,8 +86,7 @@ public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
             )
             .build();
 
-        CacheConfig<String, String> cacheConfig = new CacheConfig.Builder<String, String>()
-            .setKeyType(String.class)
+        CacheConfig<String, String> cacheConfig = new CacheConfig.Builder<String, String>().setKeyType(String.class)
             .setValueType(String.class)
             .setWeigher((k, v) -> keyValueSize)
             .setRemovalListener(listener)
@@ -98,6 +98,7 @@ public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
 
     private static class MockRemovalListener<K, V> implements RemovalListener<ICacheKey<K>, V> {
         CounterMetric numRemovals;
+
         MockRemovalListener() {
             numRemovals = new CounterMetric();
         }

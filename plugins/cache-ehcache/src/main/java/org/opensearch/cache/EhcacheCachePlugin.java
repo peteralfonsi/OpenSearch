@@ -16,7 +16,6 @@ import org.opensearch.plugins.CachePlugin;
 import org.opensearch.plugins.Plugin;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 

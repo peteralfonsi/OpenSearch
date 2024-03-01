@@ -39,11 +39,7 @@ public class IRCKeyWriteableSerializerTests extends OpenSearchSingleNodeTestCase
         }
     }
 
-    private IndicesRequestCache.Key getRandomIRCKey(
-        int valueLength,
-        Random random,
-        ShardId shard
-    ) {
+    private IndicesRequestCache.Key getRandomIRCKey(int valueLength, Random random, ShardId shard) {
         byte[] value = new byte[valueLength];
         for (int i = 0; i < valueLength; i++) {
             value[i] = (byte) (random.nextInt(126 - 32) + 32);

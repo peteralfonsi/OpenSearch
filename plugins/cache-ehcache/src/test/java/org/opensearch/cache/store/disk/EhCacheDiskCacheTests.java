@@ -11,12 +11,12 @@ package org.opensearch.cache.store.disk;
 import org.opensearch.cache.EhcacheDiskCacheSettings;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
+import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
-import org.opensearch.common.cache.stats.CacheStatsDimension;
-import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.serializer.Serializer;
+import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
@@ -39,9 +39,9 @@ import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.ToLongBiFunction;
 
-import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_MAX_SIZE_IN_BYTES_KEY;
 import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_STORAGE_PATH_KEY;
+import static org.hamcrest.CoreMatchers.instanceOf;
 
 public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
 
@@ -500,7 +500,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             // Try to hit different request with the same key concurrently. Loader throws exception.
             for (int i = 0; i < numberOfRequest; i++) {
                 threads[i] = new Thread(() -> {
-                    LoadAwareCacheLoader<ICacheKey<String >, String> loadAwareCacheLoader = new LoadAwareCacheLoader<>() {
+                    LoadAwareCacheLoader<ICacheKey<String>, String> loadAwareCacheLoader = new LoadAwareCacheLoader<>() {
                         boolean isLoaded;
 
                         @Override
@@ -543,7 +543,10 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
         ToLongBiFunction<ICacheKey<String>, String> weigher = getWeigher();
         int initialKeyLength = 40;
         int initialValueLength = 40;
-        long sizeForOneInitialEntry = weigher.applyAsLong(new ICacheKey<>(generateRandomString(initialKeyLength), getMockDimensions()), generateRandomString(initialValueLength));
+        long sizeForOneInitialEntry = weigher.applyAsLong(
+            new ICacheKey<>(generateRandomString(initialKeyLength), getMockDimensions()),
+            generateRandomString(initialValueLength)
+        );
         int maxEntries = 2000;
         try (NodeEnvironment env = newNodeEnvironment(settings)) {
             ICache<String, String> ehcacheTest = new EhcacheDiskCache.Builder<String, String>().setDiskCacheAlias("test1")
@@ -603,7 +606,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             }
             // TODO: Ehcache incorrectly evicts at 30-40% of max size. Fix this test once we figure out why.
             // Since the EVICTED and EXPIRED cases use the same code as REMOVED, we should be ok on testing them for now.
-            //assertEquals(maxEntries * sizeForOneInitialEntry, ehcacheTest.stats().getTotalMemorySize());
+            // assertEquals(maxEntries * sizeForOneInitialEntry, ehcacheTest.stats().getTotalMemorySize());
 
             ehcacheTest.close();
         }
@@ -632,8 +635,18 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             for (int i = 0; i < randomKeys; i++) {
                 ehcacheTest.put(getICacheKey(UUID.randomUUID().toString()), UUID.randomUUID().toString());
             }
-            assertEquals(randomKeys, ehcacheTest.stats().getEntriesByDimensions(List.of(new CacheStatsDimension(CacheStatsDimension.TIER_DIMENSION_NAME, EhcacheDiskCache.TIER_DIMENSION_VALUE))));
-            assertEquals(0, ehcacheTest.stats().getEntriesByDimensions(List.of(new CacheStatsDimension(CacheStatsDimension.TIER_DIMENSION_NAME, "other_tier_value"))));
+            assertEquals(
+                randomKeys,
+                ehcacheTest.stats()
+                    .getEntriesByDimensions(
+                        List.of(new CacheStatsDimension(CacheStatsDimension.TIER_DIMENSION_NAME, EhcacheDiskCache.TIER_DIMENSION_VALUE))
+                    )
+            );
+            assertEquals(
+                0,
+                ehcacheTest.stats()
+                    .getEntriesByDimensions(List.of(new CacheStatsDimension(CacheStatsDimension.TIER_DIMENSION_NAME, "other_tier_value")))
+            );
 
             ehcacheTest.close();
         }
@@ -676,6 +689,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
 
     class MockRemovalListener<K, V> implements RemovalListener<ICacheKey<K>, V> {
         AtomicInteger onRemovalCount = new AtomicInteger();
+
         @Override
         public void onRemoval(RemovalNotification<ICacheKey<K>, V> notification) {
             onRemovalCount.incrementAndGet();
@@ -684,6 +698,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
 
     static class StringSerializer implements Serializer<String, byte[]> {
         private final Charset charset = StandardCharsets.UTF_8;
+
         @Override
         public byte[] serialize(String object) {
             return object.getBytes(charset);

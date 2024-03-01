@@ -48,8 +48,8 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
     private final ICache<K, V> onHeapCache;
 
     // TODO: Listeners for removals from the two tiers
-    //private final RemovalListener<ICacheKey<K>, V> onDiskRemovalListener;
-    //private final RemovalListener<ICacheKey<K>, V> onHeapRemovalListener;
+    // private final RemovalListener<ICacheKey<K>, V> onDiskRemovalListener;
+    // private final RemovalListener<ICacheKey<K>, V> onHeapRemovalListener;
 
     // The listener for removals from the spillover cache as a whole
     private final RemovalListener<ICacheKey<K>, V> removalListener;
@@ -67,21 +67,20 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         Objects.requireNonNull(builder.diskCacheFactory, "disk cache builder can't be null");
         this.removalListener = Objects.requireNonNull(builder.removalListener, "Removal listener can't be null");
 
-        this.onHeapCache = builder.onHeapCacheFactory.create(
-            new CacheConfig.Builder<K, V>().setRemovalListener(new RemovalListener<>() {
-                        @Override
-                        public void onRemoval(RemovalNotification<ICacheKey<K>, V> notification) {
-                            try (ReleasableLock ignore = writeLock.acquire()) {
-                                diskCache.put(notification.getKey(), notification.getValue());
-                            }
-                            removalListener.onRemoval(notification);
-                        }
-                    })
-                .setKeyType(builder.cacheConfig.getKeyType())
-                .setValueType(builder.cacheConfig.getValueType())
-                .setSettings(builder.cacheConfig.getSettings())
-                .setWeigher(builder.cacheConfig.getWeigher())
-                .build(),
+        this.onHeapCache = builder.onHeapCacheFactory.create(new CacheConfig.Builder<K, V>().setRemovalListener(new RemovalListener<>() {
+            @Override
+            public void onRemoval(RemovalNotification<ICacheKey<K>, V> notification) {
+                try (ReleasableLock ignore = writeLock.acquire()) {
+                    diskCache.put(notification.getKey(), notification.getValue());
+                }
+                removalListener.onRemoval(notification);
+            }
+        })
+            .setKeyType(builder.cacheConfig.getKeyType())
+            .setValueType(builder.cacheConfig.getValueType())
+            .setSettings(builder.cacheConfig.getSettings())
+            .setWeigher(builder.cacheConfig.getWeigher())
+            .build(),
             builder.cacheType,
             builder.cacheFactories
 

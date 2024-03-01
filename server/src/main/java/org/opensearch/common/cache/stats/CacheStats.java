@@ -22,30 +22,43 @@ public interface CacheStats extends Writeable {
 
     // Methods to get all 5 values at once, either in total or for a specific set of dimensions.
     CacheStatsResponse getTotalStats();
+
     CacheStatsResponse getStatsByDimensions(List<CacheStatsDimension> dimensions);
 
     // Methods to get total values.
     long getTotalHits();
+
     long getTotalMisses();
+
     long getTotalEvictions();
+
     long getTotalMemorySize();
+
     long getTotalEntries();
 
     // Methods to get values for a specific set of dimensions.
     // Returns the sum of values for cache entries that match all dimensions in the list.
     long getHitsByDimensions(List<CacheStatsDimension> dimensions);
+
     long getMissesByDimensions(List<CacheStatsDimension> dimensions);
+
     long getEvictionsByDimensions(List<CacheStatsDimension> dimensions);
+
     long getMemorySizeByDimensions(List<CacheStatsDimension> dimensions);
+
     long getEntriesByDimensions(List<CacheStatsDimension> dimensions);
 
-
     void incrementHitsByDimensions(List<CacheStatsDimension> dimensions);
+
     void incrementMissesByDimensions(List<CacheStatsDimension> dimensions);
+
     void incrementEvictionsByDimensions(List<CacheStatsDimension> dimensions);
+
     // Can also use to decrement, with negative values
     void incrementMemorySizeByDimensions(List<CacheStatsDimension> dimensions, long amountBytes);
+
     void incrementEntriesByDimensions(List<CacheStatsDimension> dimensions);
+
     void decrementEntriesByDimensions(List<CacheStatsDimension> dimensions);
 
     // Resets memory and entries stats but leaves the others; called when the cache clears itself.

@@ -9,10 +9,8 @@
 package org.opensearch.common.cache.serializer;
 
 import org.opensearch.common.Randomness;
-import org.opensearch.common.cache.serializer.BytesReferenceSerializer;
-import org.opensearch.common.cache.serializer.ICacheKeySerializer;
-import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.ICacheKey;
+import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.test.OpenSearchTestCase;
@@ -44,7 +42,7 @@ public class ICacheKeySerializerTests extends OpenSearchTestCase {
         BytesReferenceSerializer keySer = new BytesReferenceSerializer();
         ICacheKeySerializer<BytesReference> serializer = new ICacheKeySerializer<>(keySer);
 
-        for (int numDims : new int[]{0, 5, 1000}) {
+        for (int numDims : new int[] { 0, 5, 1000 }) {
             List<CacheStatsDimension> dims = new ArrayList<>();
             for (int j = 0; j < numDims; j++) {
                 dims.add(getRandomDim());
@@ -64,6 +62,7 @@ public class ICacheKeySerializerTests extends OpenSearchTestCase {
         assertEquals(key1, key2);
         assertEquals(key1.hashCode(), key2.hashCode());
     }
+
     public void testNullInputs() throws Exception {
         BytesReferenceSerializer keySer = new BytesReferenceSerializer();
         ICacheKeySerializer<BytesReference> serializer = new ICacheKeySerializer<>(keySer);

@@ -10,25 +10,22 @@ package org.opensearch.cache.store.disk;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.ehcache.core.spi.service.FileBasedPersistenceContext;
-import org.ehcache.spi.serialization.SerializerException;
 import org.opensearch.OpenSearchException;
 import org.opensearch.cache.EhcacheDiskCacheSettings;
 import org.opensearch.common.SuppressForbidden;
 import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
+import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
-import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.ICacheKey;
-import org.opensearch.common.cache.stats.CacheStatsDimension;
-import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
-import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.serializer.ICacheKeySerializer;
 import org.opensearch.common.cache.serializer.Serializer;
+import org.opensearch.common.cache.stats.CacheStats;
+import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
+import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.collect.Tuple;
 import org.opensearch.common.settings.Setting;
@@ -60,6 +57,7 @@ import org.ehcache.config.builders.CacheManagerBuilder;
 import org.ehcache.config.builders.PooledExecutionServiceConfigurationBuilder;
 import org.ehcache.config.builders.ResourcePoolsBuilder;
 import org.ehcache.config.units.MemoryUnit;
+import org.ehcache.core.spi.service.FileBasedPersistenceContext;
 import org.ehcache.event.CacheEvent;
 import org.ehcache.event.CacheEventListener;
 import org.ehcache.event.EventType;
@@ -67,6 +65,7 @@ import org.ehcache.expiry.ExpiryPolicy;
 import org.ehcache.impl.config.store.disk.OffHeapDiskStoreConfiguration;
 import org.ehcache.spi.loaderwriter.CacheLoadingException;
 import org.ehcache.spi.loaderwriter.CacheWritingException;
+import org.ehcache.spi.serialization.SerializerException;
 
 import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_CACHE_ALIAS_KEY;
 import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_CACHE_EXPIRE_AFTER_ACCESS_KEY;
@@ -153,7 +152,8 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         this.ehCacheEventListener = new EhCacheEventListener<K, V>(
             Objects.requireNonNull(builder.getRemovalListener(), "Removal listener can't be null"),
             Objects.requireNonNull(builder.getWeigher(), "Weigher function can't be null"),
-            this.valueSerializer);
+            this.valueSerializer
+        );
         this.cache = buildCache(Duration.ofMillis(expireAfterAccess.getMillis()), builder);
         List<String> dimensionNames = Objects.requireNonNull(builder.dimensionNames, "Dimension names can't be null");
         this.stats = new MultiDimensionCacheStats(dimensionNames, TIER_DIMENSION_VALUE);
@@ -456,9 +456,11 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         private ToLongBiFunction<ICacheKey<K>, V> weigher;
         private Serializer<V, byte[]> valueSerializer;
 
-        EhCacheEventListener(RemovalListener<ICacheKey<K>, V> removalListener,
-                             ToLongBiFunction<ICacheKey<K>, V> weigher,
-                             Serializer<V, byte[]> valueSerializer) {
+        EhCacheEventListener(
+            RemovalListener<ICacheKey<K>, V> removalListener,
+            ToLongBiFunction<ICacheKey<K>, V> weigher,
+            Serializer<V, byte[]> valueSerializer
+        ) {
             this.removalListener = removalListener;
             this.weigher = weigher;
             this.valueSerializer = valueSerializer;
@@ -481,20 +483,30 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
                     assert event.getOldValue() == null;
                     break;
                 case EVICTED:
-                    this.removalListener.onRemoval(new RemovalNotification<>(event.getKey(), valueSerializer.deserialize(event.getOldValue()), RemovalReason.EVICTED));
+                    this.removalListener.onRemoval(
+                        new RemovalNotification<>(event.getKey(), valueSerializer.deserialize(event.getOldValue()), RemovalReason.EVICTED)
+                    );
                     stats.decrementEntriesByDimensions(event.getKey().dimensions);
                     stats.incrementMemorySizeByDimensions(event.getKey().dimensions, -getOldValuePairSize(event));
                     stats.incrementEvictionsByDimensions(event.getKey().dimensions);
                     assert event.getNewValue() == null;
                     break;
                 case REMOVED:
-                    this.removalListener.onRemoval(new RemovalNotification<>(event.getKey(), valueSerializer.deserialize(event.getOldValue()), RemovalReason.EXPLICIT));
+                    this.removalListener.onRemoval(
+                        new RemovalNotification<>(event.getKey(), valueSerializer.deserialize(event.getOldValue()), RemovalReason.EXPLICIT)
+                    );
                     stats.decrementEntriesByDimensions(event.getKey().dimensions);
                     stats.incrementMemorySizeByDimensions(event.getKey().dimensions, -getOldValuePairSize(event));
                     assert event.getNewValue() == null;
                     break;
                 case EXPIRED:
-                    this.removalListener.onRemoval(new RemovalNotification<>(event.getKey(), valueSerializer.deserialize(event.getOldValue()), RemovalReason.INVALIDATED));
+                    this.removalListener.onRemoval(
+                        new RemovalNotification<>(
+                            event.getKey(),
+                            valueSerializer.deserialize(event.getOldValue()),
+                            RemovalReason.INVALIDATED
+                        )
+                    );
                     stats.decrementEntriesByDimensions(event.getKey().dimensions);
                     stats.incrementMemorySizeByDimensions(event.getKey().dimensions, -getOldValuePairSize(event));
                     assert event.getNewValue() == null;
@@ -512,6 +524,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
 
     private class KeySerializerWrapper implements org.ehcache.spi.serialization.Serializer<ICacheKey> {
         private ICacheKeySerializer<K> serializer;
+
         public KeySerializerWrapper(Serializer<K, byte[]> internalKeySerializer) {
             this.serializer = new ICacheKeySerializer<>(internalKeySerializer);
         }
@@ -520,6 +533,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         // cache after a restart.
         // See https://www.ehcache.org/documentation/3.0/serializers-copiers.html#persistent-vs-transient-caches
         public KeySerializerWrapper(ClassLoader classLoader, FileBasedPersistenceContext persistenceContext) {}
+
         @Override
         public ByteBuffer serialize(ICacheKey object) throws SerializerException {
             return ByteBuffer.wrap(serializer.serialize(object));
@@ -705,7 +719,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
             return this;
         }
 
-        //@Override
+        // @Override
         public EhcacheDiskCache<K, V> build() {
             return new EhcacheDiskCache<>(this);
         }

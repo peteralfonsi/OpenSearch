@@ -34,7 +34,7 @@ public class CacheStatsDimensionTests extends OpenSearchTestCase {
         String value = "dimension_value";
         CacheStatsDimension dim = new CacheStatsDimension(name, value);
         assertEquals(dim, new CacheStatsDimension(name, value));
-        assertNotEquals(dim,  new CacheStatsDimension("a", "b"));
+        assertNotEquals(dim, new CacheStatsDimension("a", "b"));
         assertNotEquals(dim, null);
         assertNotEquals(dim, new CacheStatsDimension(null, null));
     }

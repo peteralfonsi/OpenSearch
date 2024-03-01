@@ -13,7 +13,6 @@ import org.opensearch.core.common.io.stream.StreamOutput;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -43,7 +42,8 @@ public class MultiDimensionCacheStats implements CacheStats {
     // Package-private for testing.
     final String tierDimensionValue;
 
-    // A map from a set of cache stats dimensions -> stats for that combination of dimensions. Does not include the tier dimension in its keys.
+    // A map from a set of cache stats dimensions -> stats for that combination of dimensions. Does not include the tier dimension in its
+    // keys.
     final ConcurrentMap<Key, CacheStatsResponse> map;
 
     final int maxDimensionValues;
@@ -81,7 +81,7 @@ public class MultiDimensionCacheStats implements CacheStats {
             map,
             (o, key) -> o.writeArray((o1, dim) -> ((CacheStatsDimension) dim).writeTo(o1), key.dimensions.toArray()),
             (o, response) -> response.writeTo(o)
-            );
+        );
         totalStats.writeTo(out);
         out.writeVInt(maxDimensionValues);
     }
@@ -103,7 +103,8 @@ public class MultiDimensionCacheStats implements CacheStats {
 
         CacheStatsDimension tierDim = getTierDimension(dimensions);
         if (tierDim == null || tierDim.dimensionValue.equals(tierDimensionValue)) {
-            // If there is no tier dimension, or if the tier dimension value matches the one for this stats object, return an aggregated response over the non-tier dimensions
+            // If there is no tier dimension, or if the tier dimension value matches the one for this stats object, return an aggregated
+            // response over the non-tier dimensions
             List<CacheStatsDimension> modifiedDimensions = new ArrayList<>(dimensions);
             if (tierDim != null) {
                 modifiedDimensions.remove(tierDim);
@@ -262,19 +263,24 @@ public class MultiDimensionCacheStats implements CacheStats {
      */
     static class Key {
         final Set<CacheStatsDimension> dimensions;
+
         Key(Set<CacheStatsDimension> dimensions) {
             this.dimensions = Collections.unmodifiableSet(dimensions);
         }
+
         Key(List<CacheStatsDimension> dimensions) {
             this(new HashSet<>(dimensions));
         }
+
         @Override
         public boolean equals(Object o) {
             if (o == this) {
                 return true;
-            } if (o == null) {
+            }
+            if (o == null) {
                 return false;
-            } if (o.getClass() != Key.class) {
+            }
+            if (o.getClass() != Key.class) {
                 return false;
             }
             Key other = (Key) o;

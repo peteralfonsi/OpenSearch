@@ -12,26 +12,23 @@ import org.opensearch.common.cache.Cache;
 import org.opensearch.common.cache.CacheBuilder;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
+import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.store.config.CacheConfig;
-import org.opensearch.common.settings.Settings;
-
-import java.util.List;
-import java.util.Objects;
-
 import org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings;
 import org.opensearch.common.settings.Setting;
+import org.opensearch.common.settings.Settings;
 import org.opensearch.core.common.unit.ByteSizeValue;
 
+import java.util.List;
 import java.util.Map;
-import java.util.function.ToLongBiFunction;
+import java.util.Objects;
 
 import static org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES_KEY;
 
@@ -132,7 +129,10 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
     public void onRemoval(RemovalNotification<ICacheKey<K>, V> notification) {
         removalListener.onRemoval(notification);
         stats.decrementEntriesByDimensions(notification.getKey().dimensions);
-        stats.incrementMemorySizeByDimensions(notification.getKey().dimensions, -cache.getWeigher().applyAsLong(notification.getKey(), notification.getValue()));
+        stats.incrementMemorySizeByDimensions(
+            notification.getKey().dimensions,
+            -cache.getWeigher().applyAsLong(notification.getKey(), notification.getValue())
+        );
 
         if (RemovalReason.EVICTED.equals(notification.getRemovalReason())
             || RemovalReason.CAPACITY.equals(notification.getRemovalReason())) {
@@ -151,8 +151,7 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
         public <K, V> ICache<K, V> create(CacheConfig<K, V> config, CacheType cacheType, Map<String, Factory> cacheFactories) {
             Map<String, Setting<?>> settingList = OpenSearchOnHeapCacheSettings.getSettingListForCacheType(cacheType);
             Settings settings = config.getSettings();
-            return new Builder<K, V>()
-                .setDimensionNames(config.getDimensionNames())
+            return new Builder<K, V>().setDimensionNames(config.getDimensionNames())
                 .setMaximumWeightInBytes(((ByteSizeValue) settingList.get(MAXIMUM_SIZE_IN_BYTES_KEY).get(settings)).getBytes())
                 .setWeigher(config.getWeigher())
                 .setRemovalListener(config.getRemovalListener())
@@ -178,6 +177,7 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
             this.dimensionNames = dimensionNames;
             return this;
         }
+
         @Override
         public ICache<K, V> build() {
             return new OpenSearchOnHeapCache<K, V>(this);

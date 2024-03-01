@@ -22,9 +22,7 @@ import java.util.Arrays;
  */
 public class IRCKeyWriteableSerializer implements Serializer<IndicesRequestCache.Key, byte[]> {
 
-
-    public IRCKeyWriteableSerializer() {
-    }
+    public IRCKeyWriteableSerializer() {}
 
     @Override
     public byte[] serialize(IndicesRequestCache.Key object) {

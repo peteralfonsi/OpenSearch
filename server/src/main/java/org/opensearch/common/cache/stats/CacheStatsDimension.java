@@ -20,6 +20,7 @@ public class CacheStatsDimension implements Writeable {
     public static final String TIER_DIMENSION_NAME = "tier";
     public final String dimensionName;
     public final String dimensionValue;
+
     public CacheStatsDimension(String dimensionName, String dimensionValue) {
         this.dimensionName = dimensionName;
         this.dimensionValue = dimensionValue;

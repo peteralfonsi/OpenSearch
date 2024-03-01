@@ -9,8 +9,8 @@
 package org.opensearch.common.cache.store.config;
 
 import org.opensearch.common.annotation.ExperimentalApi;
-import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.ICacheKey;
+import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.serializer.Serializer;
 import org.opensearch.common.settings.Settings;
 

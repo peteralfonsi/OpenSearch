@@ -11,7 +11,6 @@ package org.opensearch.common.cache.stats;
 import org.opensearch.common.Randomness;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.metrics.CounterMetric;
-import org.opensearch.common.recycler.Recycler;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.BytesStreamInput;
 import org.opensearch.test.OpenSearchTestCase;
@@ -66,7 +65,12 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
         // test gets for aggregations of values: for example, dim1="a", dim2="b", but dim3 and dim4 can be anything
         // test a random subset of these, there are combinatorially many possibilities
         for (int i = 0; i < 1000; i++) {
-            List<CacheStatsDimension> aggregationDims = getRandomDimList(stats.dimensionNames, usedDimensionValues, false, Randomness.get());
+            List<CacheStatsDimension> aggregationDims = getRandomDimList(
+                stats.dimensionNames,
+                usedDimensionValues,
+                false,
+                Randomness.get()
+            );
             CacheStatsResponse expectedResponse = new CacheStatsResponse();
             for (Set<CacheStatsDimension> dimSet : expected.keySet()) {
                 if (dimSet.containsAll(aggregationDims)) {
@@ -131,7 +135,12 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
         CacheStatsDimension wrongTierDim = new CacheStatsDimension(CacheStatsDimension.TIER_DIMENSION_NAME, "wrong_value");
 
         for (int i = 0; i < 1000; i++) {
-            List<CacheStatsDimension> aggregationDims = getRandomDimList(stats.dimensionNames, usedDimensionValues, false, Randomness.get());
+            List<CacheStatsDimension> aggregationDims = getRandomDimList(
+                stats.dimensionNames,
+                usedDimensionValues,
+                false,
+                Randomness.get()
+            );
             List<CacheStatsDimension> aggDimsWithTier = new ArrayList<>(aggregationDims);
             aggDimsWithTier.add(tierDim);
 
@@ -218,7 +227,12 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
         return usedDimensionValues;
     }
 
-    private Map<Set<CacheStatsDimension>, CacheStatsResponse> populateStats(MultiDimensionCacheStats stats, Map<String, List<String>> usedDimensionValues, int numDistinctValuePairs, int numRepetitionsPerValue) {
+    private Map<Set<CacheStatsDimension>, CacheStatsResponse> populateStats(
+        MultiDimensionCacheStats stats,
+        Map<String, List<String>> usedDimensionValues,
+        int numDistinctValuePairs,
+        int numRepetitionsPerValue
+    ) {
         Map<Set<CacheStatsDimension>, CacheStatsResponse> expected = new HashMap<>();
 
         Random rand = Randomness.get();
@@ -272,10 +286,16 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
         return expected;
     }
 
-    private List<CacheStatsDimension> getRandomDimList(List<String> dimensionNames, Map<String, List<String>> usedDimensionValues, boolean pickValueForAllDims, Random rand) {
+    private List<CacheStatsDimension> getRandomDimList(
+        List<String> dimensionNames,
+        Map<String, List<String>> usedDimensionValues,
+        boolean pickValueForAllDims,
+        Random rand
+    ) {
         List<CacheStatsDimension> result = new ArrayList<>();
         for (String dimName : dimensionNames) {
-            if (pickValueForAllDims || rand.nextBoolean()) { // if pickValueForAllDims, always pick a value for each dimension, otherwise do so 50% of the time
+            if (pickValueForAllDims || rand.nextBoolean()) { // if pickValueForAllDims, always pick a value for each dimension, otherwise do
+                                                             // so 50% of the time
                 int index = between(0, usedDimensionValues.get(dimName).size() - 1);
                 result.add(new CacheStatsDimension(dimName, usedDimensionValues.get(dimName).get(index)));
             }

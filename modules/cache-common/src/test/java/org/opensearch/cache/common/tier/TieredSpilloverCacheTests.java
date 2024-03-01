@@ -30,7 +30,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import static org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES_KEY;
 
 public class TieredSpilloverCacheTests extends OpenSearchTestCase {
-// TODO: TSC has no stats implementation yet - fix these tests once it does
+    // TODO: These tests are uncommented in the second stats rework PR, which adds a TSC stats implementation
     /*public void testComputeIfAbsentWithoutAnyOnHeapCacheEviction() throws Exception {
         int onHeapCacheSize = randomIntBetween(10, 30);
         int keyValueSize = 50;

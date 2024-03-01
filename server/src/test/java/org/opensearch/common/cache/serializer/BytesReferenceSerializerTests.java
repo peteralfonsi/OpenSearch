@@ -10,7 +10,6 @@ package org.opensearch.common.cache.serializer;
 
 import org.opensearch.common.Randomness;
 import org.opensearch.common.bytes.ReleasableBytesReference;
-import org.opensearch.common.cache.serializer.BytesReferenceSerializer;
 import org.opensearch.common.util.BigArrays;
 import org.opensearch.common.util.PageCacheRecycler;
 import org.opensearch.core.common.bytes.BytesArray;

@@ -44,7 +44,7 @@ public class CacheStatsResponse implements Writeable { // TODO: Make this extend
     }
 
     public CacheStatsResponse() {
-        this(0,0,0,0,0);
+        this(0, 0, 0, 0, 0);
     }
 
     public synchronized void add(CacheStatsResponse other) {
