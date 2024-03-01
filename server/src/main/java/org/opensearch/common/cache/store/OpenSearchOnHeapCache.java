@@ -52,7 +52,7 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
     public OpenSearchOnHeapCache(Builder<K, V> builder) {
         CacheBuilder<ICacheKey<K>, V> cacheBuilder = CacheBuilder.<ICacheKey<K>, V>builder()
             .setMaximumWeight(builder.getMaxWeightInBytes())
-            .weigher(builder.getWeigher())
+            .weigher(Objects.requireNonNull(builder.getWeigher(), "Weigher can't be null"))
             .removalListener(this);
         if (builder.getExpireAfterAcess() != null) {
             cacheBuilder.setExpireAfterAccess(builder.getExpireAfterAcess());
