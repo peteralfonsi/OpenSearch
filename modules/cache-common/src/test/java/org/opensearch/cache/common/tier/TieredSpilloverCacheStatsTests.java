@@ -37,33 +37,37 @@ public class TieredSpilloverCacheStatsTests extends OpenSearchTestCase {
 
         CacheStatsResponse heapTotalStats = totalSumExpected(expected.get(TieredSpilloverCacheStats.TIER_DIMENSION_VALUE_ON_HEAP));
         CacheStatsResponse diskTotalStats = totalSumExpected(expected.get(TieredSpilloverCacheStats.TIER_DIMENSION_VALUE_DISK));
-        CacheStatsResponse totalStats = new CacheStatsResponse();
-        totalStats.add(heapTotalStats);
-        totalStats.add(diskTotalStats);
+        CacheStatsResponse totalTSCStats = TieredSpilloverCacheStats.combineTierResponses(heapTotalStats, diskTotalStats);
 
         // test total gets
-        assertEquals(totalStats, stats.getTotalStats());
-        assertEquals(totalStats, stats.getStatsByDimensions(List.of()));
+        assertEquals(totalTSCStats, stats.getTotalStats());
+        assertEquals(totalTSCStats, stats.getStatsByDimensions(List.of()));
 
-        assertEquals(totalStats.getHits(), stats.getTotalHits());
-        assertEquals(totalStats.getMisses(), stats.getTotalMisses());
-        assertEquals(totalStats.getEvictions(), stats.getTotalEvictions());
-        assertEquals(totalStats.getMemorySize(), stats.getTotalMemorySize());
-        assertEquals(totalStats.getEntries(), stats.getTotalEntries());
+        assertEquals(totalTSCStats.getHits(), stats.getTotalHits());
+        assertEquals(totalTSCStats.getMisses(), stats.getTotalMisses());
+        assertEquals(totalTSCStats.getEvictions(), stats.getTotalEvictions());
+        assertEquals(totalTSCStats.getMemorySize(), stats.getTotalMemorySize());
+        assertEquals(totalTSCStats.getEntries(), stats.getTotalEntries());
 
 
         // test gets by non-tier dimensions, following same method as MultiDimensionCacheStatsTests
         for (int i = 0; i < 100; i++) {
             List<CacheStatsDimension> aggregationDims = getRandomDimList(stats.dimensionNames, usedDimensionValues, false, Randomness.get());
-            CacheStatsResponse expectedResponse = new CacheStatsResponse();
+
+            Map<String, CacheStatsResponse> expectedTierResponses = new HashMap<>();
             for (String tier : expected.keySet()) {
+                CacheStatsResponse expectedTierResponse = new CacheStatsResponse();
                 for (Set<CacheStatsDimension> dimSet : expected.get(tier).keySet()) {
                     if (dimSet.containsAll(aggregationDims)) {
-                        expectedResponse.add(expected.get(tier).get(dimSet));
+                        expectedTierResponse.add(expected.get(tier).get(dimSet));
                     }
                 }
+                expectedTierResponses.put(tier, expectedTierResponse);
             }
-            checkStatsObject(expectedResponse, stats, aggregationDims);
+            CacheStatsResponse expectedTotalResponse = TieredSpilloverCacheStats.combineTierResponses(
+                expectedTierResponses.get(TieredSpilloverCacheStats.TIER_DIMENSION_VALUE_ON_HEAP),
+                expectedTierResponses.get(TieredSpilloverCacheStats.TIER_DIMENSION_VALUE_DISK));
+            checkStatsObject(expectedTotalResponse, stats, aggregationDims);
         }
 
         // test gets by tier dimension only
@@ -102,7 +106,7 @@ public class TieredSpilloverCacheStatsTests extends OpenSearchTestCase {
         populateStats(stats, usedDimensionValues, 10, 10);
 
         List<CacheStatsDimension> invalidTierDims = List.of(new CacheStatsDimension(CacheStatsDimension.TIER_DIMENSION_NAME, "nonexistent_tier"));
-        assertThrows(AssertionError.class, () -> stats.getEntriesByDimensions(invalidTierDims));
+        assertThrows(IllegalArgumentException.class, () -> stats.getEntriesByDimensions(invalidTierDims));
     }
 
     public void testEmptyDimensionNames() throws Exception {
@@ -112,15 +116,13 @@ public class TieredSpilloverCacheStatsTests extends OpenSearchTestCase {
 
         CacheStatsResponse heapTotalStats = totalSumExpected(expected.get(TieredSpilloverCacheStats.TIER_DIMENSION_VALUE_ON_HEAP));
         CacheStatsResponse diskTotalStats = totalSumExpected(expected.get(TieredSpilloverCacheStats.TIER_DIMENSION_VALUE_DISK));
-        CacheStatsResponse totalStats = new CacheStatsResponse();
-        totalStats.add(heapTotalStats);
-        totalStats.add(diskTotalStats);
+        CacheStatsResponse totalTSCStats = TieredSpilloverCacheStats.combineTierResponses(heapTotalStats, diskTotalStats);
 
         checkStatsObject(heapTotalStats, stats, List.of(new CacheStatsDimension(CacheStatsDimension.TIER_DIMENSION_NAME, TieredSpilloverCacheStats.TIER_DIMENSION_VALUE_ON_HEAP)));
         checkStatsObject(diskTotalStats, stats, List.of(new CacheStatsDimension(CacheStatsDimension.TIER_DIMENSION_NAME, TieredSpilloverCacheStats.TIER_DIMENSION_VALUE_DISK)));
 
-        assertEquals(totalStats, stats.getStatsByDimensions(List.of()));
-        assertEquals(totalStats, stats.getTotalStats());
+        assertEquals(totalTSCStats, stats.getStatsByDimensions(List.of()));
+        assertEquals(totalTSCStats, stats.getTotalStats());
     }
 
     public void testSerialization() throws Exception {

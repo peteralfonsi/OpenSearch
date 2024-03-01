@@ -59,18 +59,15 @@ public class TieredSpilloverCacheStats implements CacheStats {
 
     @Override
     public CacheStatsResponse getTotalStats() {
-        CacheStatsResponse total = new CacheStatsResponse();
-        total.add(heapStats.getTotalStats());
-        total.add(diskStats.getTotalStats());
-        return total;
+        return combineTierResponses(heapStats.getTotalStats(), diskStats.getTotalStats());
     }
 
     @Override
     public CacheStatsResponse getStatsByDimensions(List<CacheStatsDimension> dimensions) {
         CacheStatsDimension tierDimension = getTierDimension(dimensions);
         if (tierDimension == null) {
-            // We aren't slicing by tier; add results from both tiers
-            return addAllResponses(List.of(heapStats.getStatsByDimensions(dimensions), diskStats.getStatsByDimensions(dimensions)));
+            // We aren't slicing by tier; combine results from both tiers to get stats representative of the tiered cache as a whole
+            return combineTierResponses(heapStats.getStatsByDimensions(dimensions), diskStats.getStatsByDimensions(dimensions));
         }
         else {
             // We are slicing by tier. Pass the dimensions list to the relevant tier's CacheStats.
@@ -86,6 +83,17 @@ public class TieredSpilloverCacheStats implements CacheStats {
         }
     }
 
+    // pkg-private for testing
+    static CacheStatsResponse combineTierResponses(CacheStatsResponse heap, CacheStatsResponse disk) {
+        CacheStatsResponse result = new CacheStatsResponse();
+        result.hits.inc(heap.getHits() + disk.getHits());
+        result.misses.inc(disk.getMisses());
+        result.evictions.inc(disk.getEvictions());
+        result.memorySize.inc(heap.getMemorySize() + disk.getMemorySize());
+        result.entries.inc(heap.getEntries() + disk.getEntries());
+        return result;
+    }
+
     private CacheStats getTierStats(CacheStatsDimension tierDimension) {
         if (tierDimension.dimensionValue.equals(TIER_DIMENSION_VALUE_ON_HEAP)) {
             return heapStats;
@@ -94,14 +102,6 @@ public class TieredSpilloverCacheStats implements CacheStats {
         } else {
             throw new IllegalArgumentException("Tier dimension had unrecognized value " + tierDimension.dimensionValue);
         }
-    }
-
-    private CacheStatsResponse addAllResponses(List<CacheStatsResponse> responses) {
-        CacheStatsResponse result = new CacheStatsResponse();
-        for (CacheStatsResponse response : responses) {
-            result.add(response);
-        }
-        return result;
     }
 
     private CacheStatsDimension getTierDimension(List<CacheStatsDimension> dimensions) {
@@ -115,27 +115,27 @@ public class TieredSpilloverCacheStats implements CacheStats {
 
     @Override
     public long getTotalHits() {
-        return heapStats.getTotalHits() + diskStats.getTotalHits();
+        return getTotalStats().getHits();
     }
 
     @Override
     public long getTotalMisses() {
-        return heapStats.getTotalMisses() + diskStats.getTotalMisses();
+        return getTotalStats().getMisses();
     }
 
     @Override
     public long getTotalEvictions() {
-        return heapStats.getTotalEvictions() + diskStats.getTotalEvictions();
+        return getTotalStats().getEvictions();
     }
 
     @Override
     public long getTotalMemorySize() {
-        return heapStats.getTotalMemorySize() + diskStats.getTotalMemorySize();
+        return getTotalStats().getMemorySize();
     }
 
     @Override
     public long getTotalEntries() {
-        return heapStats.getTotalEntries() + diskStats.getTotalEntries();
+        return getTotalStats().getEntries();
     }
 
     @Override
