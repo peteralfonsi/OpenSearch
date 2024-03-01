@@ -11,6 +11,7 @@ package org.opensearch.common.cache.stats;
 import org.opensearch.common.Randomness;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.metrics.CounterMetric;
+import org.opensearch.common.recycler.Recycler;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.BytesStreamInput;
 import org.opensearch.test.OpenSearchTestCase;
@@ -189,6 +190,20 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
             assertEquals(originalResponse.getMemorySize(), stats.getMemorySizeByDimensions(dims));
             assertEquals(originalResponse.getEntries(), stats.getEntriesByDimensions(dims));
         }
+
+        CacheStatsResponse expectedTotal = new CacheStatsResponse();
+        for (Set<CacheStatsDimension> dimSet : expected.keySet()) {
+            expectedTotal.add(expected.get(dimSet));
+        }
+        expectedTotal.memorySize = new CounterMetric();
+        expectedTotal.entries = new CounterMetric();
+        assertEquals(expectedTotal, stats.getTotalStats());
+
+        assertEquals(expectedTotal.getHits(), stats.getTotalHits());
+        assertEquals(expectedTotal.getMisses(), stats.getTotalMisses());
+        assertEquals(expectedTotal.getEvictions(), stats.getTotalEvictions());
+        assertEquals(expectedTotal.getMemorySize(), stats.getTotalMemorySize());
+        assertEquals(expectedTotal.getEntries(), stats.getTotalEntries());
     }
 
     private Map<String, List<String>> getUsedDimensionValues(MultiDimensionCacheStats stats, int numValuesPerDim) {

@@ -233,6 +233,8 @@ public class MultiDimensionCacheStats implements CacheStats {
             response.memorySize.dec(response.getMemorySize());
             response.entries.dec(response.getEntries());
         }
+        totalStats.memorySize.dec(totalStats.getMemorySize());
+        totalStats.entries.dec(totalStats.getEntries());
     }
 
     private CacheStatsResponse internalGetStats(List<CacheStatsDimension> dimensions) {
