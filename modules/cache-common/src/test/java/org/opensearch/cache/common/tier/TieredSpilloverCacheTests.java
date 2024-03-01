@@ -17,7 +17,6 @@ import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
-import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.cache.store.OpenSearchOnHeapCache;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.store.config.CacheConfig;
@@ -488,19 +487,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         );
 
         for (int i = 0; i < onHeapCacheSize; i++) {
-            tieredSpilloverCache.computeIfAbsent(getICacheKey(UUID.randomUUID().toString()), new LoadAwareCacheLoader<ICacheKey<String>, String>() {
-                // TODO: Why does this loader always return false for isLoaded()? In this case, the TSC has no way of knowing it needs to increment its entries/memory size stats,
-                //  as it thinks it loaded it from cache.
-                @Override
-                public boolean isLoaded() {
-                    return false;
-                }
-
-                @Override
-                public String load(ICacheKey<String> key) {
-                    return UUID.randomUUID().toString();
-                }
-            });
+            tieredSpilloverCache.computeIfAbsent(getICacheKey(UUID.randomUUID().toString()), getLoadAwareCacheLoader());
         }
 
         assertEquals(onHeapCacheSize, tieredSpilloverCache.stats().getEntriesByDimensions(HEAP_DIMS));
@@ -513,17 +500,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         }
 
         for (int i = 0; i < newKeyList.size(); i++) {
-            tieredSpilloverCache.computeIfAbsent(newKeyList.get(i), new LoadAwareCacheLoader<>() {
-                @Override
-                public boolean isLoaded() {
-                    return false;
-                }
-
-                @Override
-                public String load(ICacheKey<String> key) {
-                    return UUID.randomUUID().toString();
-                }
-            });
+            tieredSpilloverCache.computeIfAbsent(newKeyList.get(i), getLoadAwareCacheLoader());
         }
 
         // Verify that new items are part of onHeap cache.
@@ -815,17 +792,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         ICacheKey<String> secondKey = getICacheKey("key2");
 
         // Put first key on tiered cache. Will go into onHeap cache.
-        tieredSpilloverCache.computeIfAbsent(keyToBeEvicted, new LoadAwareCacheLoader<>() {
-            @Override
-            public boolean isLoaded() {
-                return false;
-            }
-
-            @Override
-            public String load(ICacheKey<String> key) {
-                return UUID.randomUUID().toString();
-            }
-        }); // TODO: Same question as above - how is this loader which always returns false compatible with correct stats?
+        tieredSpilloverCache.computeIfAbsent(keyToBeEvicted, getLoadAwareCacheLoader());
         assertEquals(1, tieredSpilloverCache.stats().getEntriesByDimensions(HEAP_DIMS));
         CountDownLatch countDownLatch = new CountDownLatch(1);
         CountDownLatch countDownLatch1 = new CountDownLatch(1);
