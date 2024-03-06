@@ -8,6 +8,7 @@
 
 package org.opensearch.common.cache.stats;
 
+import org.opensearch.common.collect.Tuple;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 
@@ -44,14 +45,16 @@ public class MultiDimensionCacheStats implements CacheStats {
 
     // A map from a set of cache stats dimensions -> stats for that combination of dimensions. Does not include the tier dimension in its
     // keys.
-    final ConcurrentMap<Key, CacheStatsResponse> map;
+    //final ConcurrentMap<Key, CacheStatsResponse> map;
+    final AggregatedStats stats;
 
     final int maxDimensionValues;
     CacheStatsResponse totalStats;
 
     public MultiDimensionCacheStats(List<String> dimensionNames, String tierDimensionValue, int maxDimensionValues) {
         this.dimensionNames = dimensionNames;
-        this.map = new ConcurrentHashMap<>();
+        //this.map = new ConcurrentHashMap<>();
+        this.stats = new AggregatedStats(dimensionNames);
         this.totalStats = new CacheStatsResponse();
         this.tierDimensionValue = tierDimensionValue;
         this.maxDimensionValues = maxDimensionValues;
@@ -64,11 +67,12 @@ public class MultiDimensionCacheStats implements CacheStats {
     public MultiDimensionCacheStats(StreamInput in) throws IOException {
         this.dimensionNames = List.of(in.readStringArray());
         this.tierDimensionValue = in.readString();
-        Map<Key, CacheStatsResponse> readMap = in.readMap(
+        /*Map<Key, CacheStatsResponse> readMap = in.readMap(
             i -> new Key(Set.of(i.readArray(CacheStatsDimension::new, CacheStatsDimension[]::new))),
             CacheStatsResponse::new
-        );
-        this.map = new ConcurrentHashMap<Key, CacheStatsResponse>(readMap);
+        );*/
+        //this.map = new ConcurrentHashMap<Key, CacheStatsResponse>(readMap);
+        this.stats = new AggregatedStats(in);
         this.totalStats = new CacheStatsResponse(in);
         this.maxDimensionValues = in.readVInt();
     }
@@ -77,11 +81,12 @@ public class MultiDimensionCacheStats implements CacheStats {
     public void writeTo(StreamOutput out) throws IOException {
         out.writeStringArray(dimensionNames.toArray(new String[0]));
         out.writeString(tierDimensionValue);
-        out.writeMap(
+        /*out.writeMap(
             map,
             (o, key) -> o.writeArray((o1, dim) -> ((CacheStatsDimension) dim).writeTo(o1), key.dimensions.toArray()),
             (o, response) -> response.writeTo(o)
-        );
+        );*/
+        stats.writeTo(out);
         totalStats.writeTo(out);
         out.writeVInt(maxDimensionValues);
     }
@@ -110,19 +115,29 @@ public class MultiDimensionCacheStats implements CacheStats {
                 modifiedDimensions.remove(tierDim);
             }
 
+            List<String> completeDimValuesList = getCompleteDimValuesList(modifiedDimensions);
+
             if (modifiedDimensions.size() == dimensionNames.size()) {
-                return map.getOrDefault(new Key(modifiedDimensions), new CacheStatsResponse());
+                //return map.getOrDefault(new Key(modifiedDimensions), new CacheStatsResponse());
+                try {
+                    return stats.getResponse(completeDimValuesList);
+                } catch (AssertionError e) {
+                    // Thrown if there is no matching path in the stats object
+                    return new CacheStatsResponse();
+                }
             }
+
+            return stats.getSummedResponse(completeDimValuesList);
 
             // I don't think there's a more efficient way to get arbitrary combinations of dimensions than to just keep a map
             // and iterate through it, checking if keys match. We can't pre-aggregate because it would consume a lot of memory.
-            CacheStatsResponse response = new CacheStatsResponse();
+            /*CacheStatsResponse response = new CacheStatsResponse();
             for (Key key : map.keySet()) {
                 if (key.dimensions.containsAll(modifiedDimensions)) {
                     response.add(map.get(key));
                 }
             }
-            return response;
+            return response;*/
         }
         // If the tier dimension doesn't match, return an all-zero response
         return new CacheStatsResponse();
@@ -135,6 +150,28 @@ public class MultiDimensionCacheStats implements CacheStats {
             }
         }
         return null;
+    }
+
+    // Return a list of dimension values in order, and if any dimensions are missing from the input list, add them to the output
+    // with a null dimension value.
+    private List<String> getCompleteDimValuesList(List<CacheStatsDimension> dimensions) {
+        List<String> output = new ArrayList<>();
+        List<CacheStatsDimension> input = new ArrayList<>(dimensions); // Modifiable copy
+        for (String dimName : dimensionNames) {
+            CacheStatsDimension foundDim = null;
+            for (CacheStatsDimension inputDim : input) {
+                if (inputDim.dimensionName.equals(dimName)) {
+                    foundDim = inputDim;
+                    output.add(inputDim.dimensionValue);
+                }
+            }
+            if (foundDim == null) {
+                output.add(null);
+                input.remove(foundDim);
+                // When the value is null, we will add up all values for this dimension
+            }
+        }
+        return output;
     }
 
     private boolean checkDimensionNames(List<CacheStatsDimension> dimensions) {
@@ -229,8 +266,13 @@ public class MultiDimensionCacheStats implements CacheStats {
 
     @Override
     public void reset() {
-        for (Key key : map.keySet()) {
+        Tuple<List<List<String>>, List<CacheStatsResponse>> pairs = stats.getAllPairs();
+        /*for (Key key : map.keySet()) {
             CacheStatsResponse response = map.get(key);
+            response.memorySize.dec(response.getMemorySize());
+            response.entries.dec(response.getEntries());
+        }*/
+        for (CacheStatsResponse response : pairs.v2()) {
             response.memorySize.dec(response.getMemorySize());
             response.entries.dec(response.getEntries());
         }
@@ -240,7 +282,24 @@ public class MultiDimensionCacheStats implements CacheStats {
 
     private CacheStatsResponse internalGetStats(List<CacheStatsDimension> dimensions) {
         assert dimensions.size() == dimensionNames.size();
-        CacheStatsResponse response = map.get(new Key(dimensions));
+        List<String> dimValues = new ArrayList<>();
+        for (CacheStatsDimension dim : dimensions) {
+            dimValues.add(dim.dimensionValue);
+        }
+        CacheStatsResponse response;
+        try {
+            response = stats.getResponse(dimValues);
+        } catch (AssertionError e) {
+            // Thrown if there is no such path; in this case we should add a new empty response to the stats
+            if (stats.getSize() < maxDimensionValues) {
+                response = new CacheStatsResponse();
+                stats.put(dimValues, response);
+            } else {
+                throw new RuntimeException("Cannot add new combination of dimension values to stats object; reached maximum");
+            }
+        }
+        return response;
+        /*CacheStatsResponse response = map.get(new Key(dimensions));
         if (response == null) {
             if (map.size() < maxDimensionValues) {
                 response = new CacheStatsResponse();
@@ -249,47 +308,12 @@ public class MultiDimensionCacheStats implements CacheStats {
                 throw new RuntimeException("Cannot add new combination of dimension values to stats object; reached maximum");
             }
         }
-        return response;
+        return response;*/
     }
 
     private void internalIncrement(List<CacheStatsDimension> dimensions, BiConsumer<CacheStatsResponse, Long> incrementer, long amount) {
         CacheStatsResponse stats = internalGetStats(dimensions);
         incrementer.accept(stats, amount);
         incrementer.accept(totalStats, amount);
-    }
-
-    /**
-     * Unmodifiable wrapper over a set of CacheStatsDimension. Pkg-private for testing.
-     */
-    static class Key {
-        final Set<CacheStatsDimension> dimensions;
-
-        Key(Set<CacheStatsDimension> dimensions) {
-            this.dimensions = Collections.unmodifiableSet(dimensions);
-        }
-
-        Key(List<CacheStatsDimension> dimensions) {
-            this(new HashSet<>(dimensions));
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (o == this) {
-                return true;
-            }
-            if (o == null) {
-                return false;
-            }
-            if (o.getClass() != Key.class) {
-                return false;
-            }
-            Key other = (Key) o;
-            return this.dimensions.equals(other.dimensions);
-        }
-
-        @Override
-        public int hashCode() {
-            return this.dimensions.hashCode();
-        }
     }
 }
