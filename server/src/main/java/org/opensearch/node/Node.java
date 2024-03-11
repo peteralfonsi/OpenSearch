@@ -810,7 +810,8 @@ public class Node implements Closeable {
                 fileCacheCleaner,
                 searchRequestStats,
                 remoteStoreStatsTrackerFactory,
-                recoverySettings
+                recoverySettings,
+                cacheService
             );
 
             final AliasValidator aliasValidator = new AliasValidator();

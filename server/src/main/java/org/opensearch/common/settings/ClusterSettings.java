@@ -80,6 +80,8 @@ import org.opensearch.cluster.service.ClusterManagerService;
 import org.opensearch.cluster.service.ClusterManagerTaskThrottler;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.annotation.PublicApi;
+import org.opensearch.common.cache.CacheType;
+import org.opensearch.common.cache.settings.CacheSettings;
 import org.opensearch.common.logging.Loggers;
 import org.opensearch.common.network.NetworkModule;
 import org.opensearch.common.network.NetworkService;
@@ -697,6 +699,8 @@ public final class ClusterSettings extends AbstractScopedSettings {
             SearchBootstrapSettings.CONCURRENT_SEGMENT_SEARCH_TARGET_MAX_SLICE_COUNT_SETTING
         ),
         List.of(FeatureFlags.TELEMETRY),
-        List.of(TelemetrySettings.TRACER_ENABLED_SETTING, TelemetrySettings.TRACER_SAMPLER_PROBABILITY)
+        List.of(TelemetrySettings.TRACER_ENABLED_SETTING, TelemetrySettings.TRACER_SAMPLER_PROBABILITY),
+        List.of(FeatureFlags.PLUGGABLE_CACHE),
+        List.of(CacheSettings.getConcreteStoreNameSettingForCacheType(CacheType.INDICES_REQUEST_CACHE))
     );
 }

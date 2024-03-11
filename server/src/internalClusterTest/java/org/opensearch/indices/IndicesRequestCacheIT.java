@@ -81,10 +81,17 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             new Object[] { Settings.builder().put(CLUSTER_CONCURRENT_SEGMENT_SEARCH_SETTING.getKey(), true).build() }
         );
     }
+    /*
+    new Object[] { Settings.builder().put(FeatureFlags.PLUGGABLE_CACHE, "true").build() },
+            new Object[] { Settings.builder().put(FeatureFlags.PLUGGABLE_CACHE, "false").build() }
+     */
 
     @Override
     protected Settings featureFlagSettings() {
-        return Settings.builder().put(super.featureFlagSettings()).put(FeatureFlags.CONCURRENT_SEGMENT_SEARCH, "true").build();
+        return Settings.builder()
+            .put(super.featureFlagSettings()).put(FeatureFlags.CONCURRENT_SEGMENT_SEARCH, "true")
+            .put(super.featureFlagSettings()).put(FeatureFlags.PLUGGABLE_CACHE, "true")
+            .build();
     }
 
     // One of the primary purposes of the query cache is to cache aggs results
