@@ -577,8 +577,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
     }
 
     public void testKeystoreGains() throws Exception {
-        int numWarmup = 10_000;
-        int numMisses = 100_000;
+        int numWarmup = 10_000_000;
+        int numMisses = 1_000_000;
 
         long nanosKeystore;
         long nanosNoKeystore;
@@ -613,6 +613,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             for (int i = 0; i < numWarmup; i++) {
                 ehcacheTest.put(UUID.randomUUID().toString(), UUID.randomUUID().toString());
             }
+            System.out.println("Done filling store");
 
             long totalNanos = 0L;
             for (int i = 0; i < numMisses; i++) {
@@ -666,6 +667,23 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             ehcacheTest.close();
         }
         System.out.println("Keystore took " + (double) nanosKeystore / (double) nanosNoKeystore * 100 + "% as long");
+    }
+
+    private LoadAwareCacheLoader<String, String> getLoadAwareCacheLoader() {
+        return new LoadAwareCacheLoader<>() {
+            boolean isLoaded;
+
+            @Override
+            public boolean isLoaded() {
+                return isLoaded;
+            }
+
+            @Override
+            public String load(String key) throws Exception {
+                isLoaded = true;
+                return UUID.randomUUID().toString();
+            }
+        };
     }
 
     private static String generateRandomString(int length) {
