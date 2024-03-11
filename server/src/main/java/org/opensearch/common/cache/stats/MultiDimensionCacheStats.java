@@ -192,4 +192,8 @@ public class MultiDimensionCacheStats implements CacheStats {
     public long getEntriesByDimensions(List<CacheStatsDimension> dimensions) {
         return getStatsByDimensions(dimensions).getEntries();
     }
+
+    public List<String> getDimensionNames() {
+        return statsHolder.getDimensionNames();
+    }
 }
