@@ -37,6 +37,7 @@ import java.util.concurrent.Phaser;
 import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_LISTENER_MODE_SYNC_KEY;
 import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_MAX_SIZE_IN_BYTES_KEY;
 import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_STORAGE_PATH_KEY;
+import static org.opensearch.cache.EhcacheDiskCacheSettings.KEYSTORE_SIZE_KEY;
 import static org.opensearch.cache.EhcacheDiskCacheSettings.USE_KEYSTORE_KEY;
 import static org.hamcrest.CoreMatchers.instanceOf;
 
@@ -573,6 +574,98 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             assertEquals(RBMIntKeyLookupStore.class, ehcacheTest.getKeystore().getClass());
             ehcacheTest.close();
         }
+    }
+
+    public void testKeystoreGains() throws Exception {
+        int numWarmup = 10_000;
+        int numMisses = 100_000;
+
+        long nanosKeystore;
+        long nanosNoKeystore;
+
+        Settings useRBMsettings = Settings.builder()
+            .put(
+                EhcacheDiskCacheSettings.getSettingListForCacheType(CacheType.INDICES_REQUEST_CACHE).get(USE_KEYSTORE_KEY).getKey(),
+                RBMIntKeyLookupStore.KEYSTORE_NAME)
+            .put(
+                EhcacheDiskCacheSettings.getSettingListForCacheType(CacheType.INDICES_REQUEST_CACHE).get(KEYSTORE_SIZE_KEY).getKey(),
+                "100%"
+            )
+            .build();
+
+        MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
+        try (NodeEnvironment env = newNodeEnvironment(Settings.EMPTY)) {
+            EhcacheDiskCache<String, String> ehcacheTest = (EhcacheDiskCache<String, String>) new EhcacheDiskCache.Builder<String, String>()
+                .setDiskCacheAlias("test1")
+                .setThreadPoolAlias("ehcacheTest")
+                .setIsEventListenerModeSync(true)
+                .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
+                .setKeyType(String.class)
+                .setValueType(String.class)
+                .setCacheType(CacheType.INDICES_REQUEST_CACHE)
+                .setSettings(useRBMsettings)
+                .setExpireAfterAccess(TimeValue.MAX_VALUE)
+                .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
+                .setRemovalListener(removalListener)
+                .build();
+            assertEquals(RBMIntKeyLookupStore.class, ehcacheTest.getKeystore().getClass());
+
+            for (int i = 0; i < numWarmup; i++) {
+                ehcacheTest.put(UUID.randomUUID().toString(), UUID.randomUUID().toString());
+            }
+
+            long totalNanos = 0L;
+            for (int i = 0; i < numMisses; i++) {
+                String key = UUID.randomUUID().toString();
+                long now = System.nanoTime();
+                ehcacheTest.get(key);
+                totalNanos += System.nanoTime() - now;
+            }
+            System.out.println("Total time for " + numMisses + "misses with keystore = " + totalNanos + "ns");
+            nanosKeystore = totalNanos;
+            ehcacheTest.close();
+        }
+
+        Settings useDummySettings = Settings.builder()
+            .put(
+                EhcacheDiskCacheSettings.getSettingListForCacheType(CacheType.INDICES_REQUEST_CACHE).get(USE_KEYSTORE_KEY).getKey(),
+                "unrecognized_name"
+            )
+            .build();
+
+        removalListener = new MockRemovalListener<>();
+        try (NodeEnvironment env = newNodeEnvironment(Settings.EMPTY)) {
+            EhcacheDiskCache<String, String> ehcacheTest = (EhcacheDiskCache<String, String>) new EhcacheDiskCache.Builder<String, String>()
+                .setDiskCacheAlias("test1")
+                .setThreadPoolAlias("ehcacheTest")
+                .setIsEventListenerModeSync(true)
+                .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
+                .setKeyType(String.class)
+                .setValueType(String.class)
+                .setCacheType(CacheType.INDICES_REQUEST_CACHE)
+                .setSettings(useDummySettings)
+                .setExpireAfterAccess(TimeValue.MAX_VALUE)
+                .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
+                .setRemovalListener(removalListener)
+                .build();
+            assertEquals(DummyKeystore.class, ehcacheTest.getKeystore().getClass());
+
+            for (int i = 0; i < numWarmup; i++) {
+                ehcacheTest.put(UUID.randomUUID().toString(), UUID.randomUUID().toString());
+            }
+
+            long totalNanos = 0L;
+            for (int i = 0; i < numMisses; i++) {
+                String key = UUID.randomUUID().toString();
+                long now = System.nanoTime();
+                ehcacheTest.get(key);
+                totalNanos += System.nanoTime() - now;
+            }
+            System.out.println("Total time for " + numMisses + " misses without keystore = " + totalNanos + " ns");
+            nanosNoKeystore = totalNanos;
+            ehcacheTest.close();
+        }
+        System.out.println("Keystore took " + (double) nanosKeystore / (double) nanosNoKeystore * 100 + "% as long");
     }
 
     private static String generateRandomString(int length) {
