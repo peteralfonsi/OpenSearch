@@ -8,23 +8,34 @@
 
 package org.opensearch.cache.store.disk;
 
+import org.apache.lucene.util.BytesRef;
 import org.opensearch.cache.EhcacheDiskCacheSettings;
 import org.opensearch.cache.keystore.DummyKeystore;
 import org.opensearch.cache.keystore.RBMIntKeyLookupStore;
+import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.serializer.BytesReferenceSerializer;
+import org.opensearch.common.cache.serializer.ICacheKeySerializer;
 import org.opensearch.common.cache.serializer.Serializer;
 import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.common.bytes.BytesArray;
+import org.opensearch.core.common.bytes.BytesReference;
+import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.env.NodeEnvironment;
+import org.opensearch.index.IndexService;
+import org.opensearch.index.shard.IndexShard;
+import org.opensearch.indices.IRCKeyWriteableSerializer;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
+import org.opensearch.indices.IndicesRequestCache;
 
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -33,6 +44,7 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -758,10 +770,17 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
 
     public void testKeystoreGains() throws Exception {
         int numWarmup = 10_000;
-        int numMisses = 100_000;
+        int numMisses = 10_000_000;
 
         long nanosKeystore;
         long nanosNoKeystore;
+
+        IndexService indexService = createIndex("test");
+        IndexShard indexShard = indexService.getShardOrNull(0);
+        ShardId shardId = indexShard.shardId();
+        int keyLength = 2048; // I think this is reasonable based on previous testing
+        int valueLength = 1024;
+        Random rand = Randomness.get();
 
         Settings useRBMsettings = Settings.builder()
             .put(
@@ -773,35 +792,41 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             )
             .build();
 
-        MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
+        IRCKeyWriteableSerializer innerKeySerializer = new IRCKeyWriteableSerializer();
+
+        MockRemovalListener<IndicesRequestCache.Key, BytesReference> removalListener = new MockRemovalListener<>();
         try (NodeEnvironment env = newNodeEnvironment(Settings.EMPTY)) {
-            EhcacheDiskCache<String, String> ehcacheTest = (EhcacheDiskCache<String, String>) new EhcacheDiskCache.Builder<String, String>()
+            EhcacheDiskCache<IndicesRequestCache.Key, BytesReference> ehcacheTest = (EhcacheDiskCache<IndicesRequestCache.Key, BytesReference>) new EhcacheDiskCache.Builder<IndicesRequestCache.Key, BytesReference>()
                 .setDiskCacheAlias("test1")
                 .setThreadPoolAlias("ehcacheTest")
                 .setIsEventListenerModeSync(true)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
-                .setKeyType(String.class)
-                .setValueType(String.class)
+                .setKeyType(IndicesRequestCache.Key.class)
+                .setValueType(BytesReference.class)
+                .setKeySerializer(innerKeySerializer)
+                .setValueSerializer(new BytesReferenceSerializer())
+                .setDimensionNames(List.of(dimensionName))
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(useRBMsettings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setRemovalListener(removalListener)
+                .setWeigher(getIRCKeyWeigher())
                 .build();
             assertEquals(RBMIntKeyLookupStore.class, ehcacheTest.getKeystore().getClass());
 
             for (int i = 0; i < numWarmup; i++) {
-                ehcacheTest.put(UUID.randomUUID().toString(), UUID.randomUUID().toString());
+                ehcacheTest.put(getRandomIRCICacheKey(keyLength, rand, shardId), getRandomBytesReference(valueLength));
             }
 
             long totalNanos = 0L;
             for (int i = 0; i < numMisses; i++) {
-                String key = UUID.randomUUID().toString();
+                ICacheKey<IndicesRequestCache.Key> key = getRandomIRCICacheKey(keyLength, rand, shardId);
                 long now = System.nanoTime();
                 ehcacheTest.get(key);
                 totalNanos += System.nanoTime() - now;
             }
-            System.out.println("Total time for " + numMisses + "misses with keystore = " + totalNanos + "ns");
+            System.out.println("Total time for " + numMisses + " misses with keystore = " + totalNanos + " ns");
             nanosKeystore = totalNanos;
             ehcacheTest.close();
         }
@@ -814,29 +839,34 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             .build();
 
         removalListener = new MockRemovalListener<>();
+
         try (NodeEnvironment env = newNodeEnvironment(Settings.EMPTY)) {
-            EhcacheDiskCache<String, String> ehcacheTest = (EhcacheDiskCache<String, String>) new EhcacheDiskCache.Builder<String, String>()
+            EhcacheDiskCache<IndicesRequestCache.Key, BytesReference> ehcacheTest = (EhcacheDiskCache<IndicesRequestCache.Key, BytesReference>) new EhcacheDiskCache.Builder<IndicesRequestCache.Key, BytesReference>()
                 .setDiskCacheAlias("test1")
                 .setThreadPoolAlias("ehcacheTest")
                 .setIsEventListenerModeSync(true)
                 .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
-                .setKeyType(String.class)
-                .setValueType(String.class)
+                .setKeyType(IndicesRequestCache.Key.class)
+                .setValueType(BytesReference.class)
+                .setKeySerializer(innerKeySerializer)
+                .setValueSerializer(new BytesReferenceSerializer())
+                .setDimensionNames(List.of(dimensionName))
                 .setCacheType(CacheType.INDICES_REQUEST_CACHE)
                 .setSettings(useDummySettings)
                 .setExpireAfterAccess(TimeValue.MAX_VALUE)
                 .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
                 .setRemovalListener(removalListener)
+                .setWeigher(getIRCKeyWeigher())
                 .build();
             assertEquals(DummyKeystore.class, ehcacheTest.getKeystore().getClass());
 
             for (int i = 0; i < numWarmup; i++) {
-                ehcacheTest.put(UUID.randomUUID().toString(), UUID.randomUUID().toString());
+                ehcacheTest.put(getRandomIRCICacheKey(keyLength, rand, shardId), getRandomBytesReference(valueLength));
             }
 
             long totalNanos = 0L;
             for (int i = 0; i < numMisses; i++) {
-                String key = UUID.randomUUID().toString();
+                ICacheKey<IndicesRequestCache.Key> key = getRandomIRCICacheKey(keyLength, rand, shardId);
                 long now = System.nanoTime();
                 ehcacheTest.get(key);
                 totalNanos += System.nanoTime() - now;
@@ -846,6 +876,27 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             ehcacheTest.close();
         }
         System.out.println("Keystore took " + (double) nanosKeystore / (double) nanosNoKeystore * 100 + "% as long");
+    }
+
+    private IndicesRequestCache.Key getRandomIRCKey(int valueLength, Random random, ShardId shard) {
+        byte[] value = new byte[valueLength];
+        for (int i = 0; i < valueLength; i++) {
+            value[i] = (byte) (random.nextInt(126 - 32) + 32);
+        }
+        BytesReference keyValue = new BytesArray(value);
+        return new IndicesRequestCache.Key(shard, keyValue, UUID.randomUUID().toString()); // same UUID source as used in real key
+    }
+
+    private ICacheKey<IndicesRequestCache.Key> getRandomIRCICacheKey(int valueLength, Random random, ShardId shard) {
+        return new ICacheKey<>(getRandomIRCKey(valueLength, random, shard), getMockDimensions());
+    }
+
+    private BytesReference getRandomBytesReference(int length) {
+        byte[] bytesValue = new byte[length];
+        Random rand = Randomness.get();
+        rand.nextBytes(bytesValue);
+
+        return new BytesArray(bytesValue);
     }
 
     private static String generateRandomString(int length) {
@@ -872,6 +923,22 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
         return (iCacheKey, value) -> {
             // Size consumed by key
             long totalSize = iCacheKey.key.length();
+            for (CacheStatsDimension dim : iCacheKey.dimensions) {
+                totalSize += dim.dimensionName.length();
+                totalSize += dim.dimensionValue.length();
+            }
+            totalSize += 10; // The ICacheKeySerializer writes 2 VInts to record array lengths, which can be 1-5 bytes each
+            // Size consumed by value
+            totalSize += value.length();
+            return totalSize;
+        };
+    }
+
+    private ToLongBiFunction<ICacheKey<IndicesRequestCache.Key>, BytesReference> getIRCKeyWeigher() {
+        // TODO
+        return (iCacheKey, value) -> {
+            // Size consumed by key
+            long totalSize = 64; //iCacheKey.key().reader; Not accurate; doesnt matter for this test
             for (CacheStatsDimension dim : iCacheKey.dimensions) {
                 totalSize += dim.dimensionName.length();
                 totalSize += dim.dimensionValue.length();

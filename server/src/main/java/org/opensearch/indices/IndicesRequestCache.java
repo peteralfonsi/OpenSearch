@@ -272,12 +272,12 @@ public final class IndicesRequestCache implements RemovalListener<IndicesRequest
      *
      * @opensearch.internal
      */
-    static class Key implements Accountable, Writeable {
+    public static class Key implements Accountable, Writeable {
         public final ShardId shardId; // use as identity equality
         public final String readerCacheKeyId;
         public final BytesReference value;
 
-        Key(ShardId shardId, BytesReference value, String readerCacheKeyId) {
+        public Key(ShardId shardId, BytesReference value, String readerCacheKeyId) {
             this.shardId = shardId;
             this.value = value;
             this.readerCacheKeyId = Objects.requireNonNull(readerCacheKeyId);
