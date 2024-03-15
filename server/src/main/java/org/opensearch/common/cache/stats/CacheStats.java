@@ -8,13 +8,20 @@
 
 package org.opensearch.common.cache.stats;
 
+import org.opensearch.core.common.io.stream.StreamInput;
+import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.core.xcontent.ToXContentFragment;
+
+import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.util.Map;
 
 /**
  * Interface for access to any cache stats. Allows accessing stats by dimension values.
  * Stores an immutable snapshot of stats for a cache. The cache maintains its own live counters.
  */
-public interface CacheStats extends Writeable {// TODO: also extends ToXContentFragment (in API PR)
+public interface CacheStats extends Writeable, ToXContentFragment {
 
     // Method to get all 5 values at once
     CacheStatsResponse.Snapshot getTotalStats();
@@ -29,4 +36,19 @@ public interface CacheStats extends Writeable {// TODO: also extends ToXContentF
     long getTotalSizeInBytes();
 
     long getTotalEntries();
+
+    // Used for the readFromStream method to allow deserialization of generic CacheStats objects.
+    String getClassName();
+
+    void writeToWithClassName(StreamOutput out) throws IOException;
+
+    static CacheStats readFromStreamWithClassName(StreamInput in) throws IOException {
+        String className = in.readString();
+        //in.reset();
+
+        if (className.equals(MultiDimensionCacheStats.CLASS_NAME)) {
+            return new MultiDimensionCacheStats(in);
+        }
+        return null;
+    }
 }

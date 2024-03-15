@@ -39,6 +39,12 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
 
         assertEquals(stats.snapshot, deserialized.snapshot);
         assertEquals(stats.dimensionNames, deserialized.dimensionNames);
+
+        os = new BytesStreamOutput();
+        stats.writeToWithClassName(os);
+        is = new BytesStreamInput(BytesReference.toBytes(os.bytes()));
+        CacheStats deserializedViaCacheStats = CacheStats.readFromStreamWithClassName(is);
+        assertEquals(MultiDimensionCacheStats.class, deserializedViaCacheStats.getClass());
     }
 
     public void testAddAndGet() throws Exception {

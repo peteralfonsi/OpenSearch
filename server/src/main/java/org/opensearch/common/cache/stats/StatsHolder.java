@@ -134,7 +134,7 @@ public class StatsHolder {
     public static class Key {
         final List<String> dimensionValues; // The dimensions must be ordered
 
-        Key(List<String> dimensionValues) {
+        public Key(List<String> dimensionValues) {
             this.dimensionValues = Collections.unmodifiableList(dimensionValues);
         }
 

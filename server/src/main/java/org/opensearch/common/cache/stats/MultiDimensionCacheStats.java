@@ -10,12 +10,14 @@ package org.opensearch.common.cache.stats;
 
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
+import org.opensearch.core.xcontent.XContentBuilder;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -29,11 +31,16 @@ public class MultiDimensionCacheStats implements CacheStats {
     final Map<StatsHolder.Key, CacheStatsResponse.Snapshot> snapshot;
     final List<String> dimensionNames;
 
+    public static String CLASS_NAME = "multidimension";
+
     public MultiDimensionCacheStats(Map<StatsHolder.Key, CacheStatsResponse.Snapshot> snapshot, List<String> dimensionNames) {
         this.snapshot = snapshot;
         this.dimensionNames = dimensionNames;
     }
 
+    /**
+     * Should not be used with StreamOutputs produced using writeToWithClassName.
+     */
     public MultiDimensionCacheStats(StreamInput in) throws IOException {
         this.dimensionNames = List.of(in.readStringArray());
         Map<StatsHolder.Key, CacheStatsResponse.Snapshot> readMap = in.readMap(
@@ -89,6 +96,17 @@ public class MultiDimensionCacheStats implements CacheStats {
         return getTotalStats().getEntries();
     }
 
+    @Override
+    public String getClassName() {
+        return CLASS_NAME;
+    }
+
+    @Override
+    public void writeToWithClassName(StreamOutput out) throws IOException {
+        out.writeString(getClassName());
+        writeTo(out);
+    }
+
     /**
      * Return a TreeMap containing stats values aggregated by the levels passed in. Results are ordered so that
      * values are grouped by their dimension values.
@@ -117,6 +135,14 @@ public class MultiDimensionCacheStats implements CacheStats {
             }
         }
         return result;
+    }
+
+    @Override
+    public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
+        // TODO
+        builder.startObject("test_output_from_multidim");
+        builder.endObject();
+        return null;
     }
 
     // First compare outermost dimension, then second outermost, etc.
@@ -156,5 +182,18 @@ public class MultiDimensionCacheStats implements CacheStats {
         return result;
     }
 
-    // TODO (in API PR): Produce XContent based on aggregateByLevels()
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || o.getClass() != MultiDimensionCacheStats.class) {
+            return false;
+        }
+        MultiDimensionCacheStats other = (MultiDimensionCacheStats) o;
+        return this.snapshot.equals(other.snapshot) && this.dimensionNames.equals(other.dimensionNames);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(this.snapshot, this.dimensionNames);
+    }
+
 }
