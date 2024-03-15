@@ -12,6 +12,9 @@ import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
+import org.opensearch.core.common.unit.ByteSizeValue;
+import org.opensearch.core.xcontent.ToXContentFragment;
+import org.opensearch.core.xcontent.XContentBuilder;
 
 import java.io.IOException;
 import java.util.Objects;
@@ -113,7 +116,7 @@ public class CacheStatsResponse {
     /**
      * An immutable snapshot of CacheStatsResponse.
      */
-    public static class Snapshot implements Writeable { // TODO: Make this extend ToXContent (in API PR)
+    public static class Snapshot implements Writeable, ToXContentFragment {
         private final long hits;
         private final long misses;
         private final long evictions;
@@ -191,5 +194,26 @@ public class CacheStatsResponse {
         public int hashCode() {
             return Objects.hash(hits, misses, evictions, sizeInBytes, entries);
         }
+
+        @Override
+        public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
+            // We don't write the header in CacheStatsResponse's toXContent, because it doesn't know the name of aggregation it's part of
+            builder.humanReadableField(CacheStatsResponse.Fields.MEMORY_SIZE_IN_BYTES, CacheStatsResponse.Fields.MEMORY_SIZE, new ByteSizeValue(sizeInBytes));
+            builder.field(CacheStatsResponse.Fields.EVICTIONS, evictions);
+            builder.field(CacheStatsResponse.Fields.HIT_COUNT, hits);
+            builder.field(CacheStatsResponse.Fields.MISS_COUNT, misses);
+            builder.field(Fields.ENTRIES, entries);
+            return builder;
+        }
+    }
+
+    static final class Fields {
+        static final String MEMORY_SIZE = "size"; // TODO: Bad name - think of something better
+        static final String MEMORY_SIZE_IN_BYTES = "size_in_bytes";
+        // TODO: This might not be memory as it could be partially on disk, so I've changed it, but should it be consistent with the earlier field?
+        static final String EVICTIONS = "evictions";
+        static final String HIT_COUNT = "hit_count";
+        static final String MISS_COUNT = "miss_count";
+        static final String ENTRIES = "entries";
     }
 }

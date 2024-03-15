@@ -139,11 +139,101 @@ public class MultiDimensionCacheStats implements CacheStats {
 
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
-        // TODO
-        builder.startObject("test_output_from_multidim");
-        builder.endObject();
-        return null;
+        // Always show total stats, regardless of levels
+        getTotalStats().toXContent(builder, params);
+
+        List<String> levels = getLevels(params);
+        if (levels == null) {
+            // display total stats only
+            return builder;
+        }
+
+        int[] indices = getLevelIndices(levels); // Checks whether levels are valid; throws IllegalArgumentException if not
+        toXContentForLevels(builder, params, levels);
+        return builder;
     }
+
+    XContentBuilder toXContentForLevels(XContentBuilder builder, Params params, List<String> levels) throws IOException {
+        TreeMap<StatsHolder.Key, CacheStatsResponse.Snapshot> agg = aggregateByLevels(levels);
+        StatsHolder.Key lastKey = null;
+
+        int depth = 0;
+
+        for (Map.Entry<StatsHolder.Key, CacheStatsResponse.Snapshot> entry : agg.entrySet()) {
+            StatsHolder.Key key = entry.getKey();
+            if (lastKey == null) {
+                // Open an object for all relevant dimension values
+                for (int i = 0; i < key.dimensionValues.size(); i++) {
+                    builder.startObject(levels.get(i));
+                    System.out.println("New object = " + levels.get(i));
+                    builder.startObject(key.dimensionValues.get(i));
+                    System.out.println("New object = " + key.dimensionValues.get(i));
+                    depth += 2;
+                }
+            }
+
+            else {
+                int innermostCommonDimIndex = getInnermostCommonDimensionIndex(key, lastKey);
+                // End objects for all dimension values this key doesn't have in common with the last key
+                int numObjectsToClose = (key.dimensionValues.size() - innermostCommonDimIndex - 2) * 2;
+                for (int i = 0; i < numObjectsToClose; i++) {
+                    builder.endObject();
+                    System.out.println("Ended object");
+                    depth--;
+                }
+                // Start new nested objects for all dimension values that this key doesn't have in common with the last key
+                for (int i = innermostCommonDimIndex + 1; i < key.dimensionValues.size(); i++) {
+                    if (i >= innermostCommonDimIndex + 2) {
+                        // If we're opening an object for a dimension value that's different in the new key,
+                        // also open a new object with the name of that dimension
+                        builder.startObject(levels.get(i));
+                        System.out.println("New object = " + levels.get(i));
+                        depth++;
+                    }
+                    builder.startObject(key.dimensionValues.get(i));
+                    System.out.println("New object = " + key.dimensionValues.get(i));
+                    depth++;
+                }
+            }
+
+            // Finally, write the value
+            entry.getValue().toXContent(builder, params);
+            builder.endObject(); // End the object that contains only the snapshot for this key
+            System.out.println("Ended object");
+            depth--;
+            System.out.println("depth = " + depth);
+            lastKey = key;
+        }
+        // There will always be 2 * levels.size() - 1 objects to close at the end
+        for (int i = 0; i < levels.size() * 2 - 1; i++) {
+            builder.endObject();
+            System.out.println("Ended object");
+            depth--;
+        }
+        System.out.println("Final depth = " + depth);
+
+        return builder;
+
+    }
+
+    private int getInnermostCommonDimensionIndex(StatsHolder.Key key, StatsHolder.Key lastKey) {
+        assert key.dimensionValues.size() == lastKey.dimensionValues.size();
+        for (int i = key.dimensionValues.size() - 1; i >= 0; i--){
+            if (key.dimensionValues.get(i).equals(lastKey.dimensionValues.get(i))) {
+                return i;
+            }
+        }
+        return -1; // No common dimension values
+    }
+
+    private List<String> getLevels(Params params) {
+        String levels = params.param("level");
+        if (levels == null) {
+            return null;
+        }
+        return List.of(levels.split(","));
+    }
+
 
     // First compare outermost dimension, then second outermost, etc.
     // Pkg-private for testing

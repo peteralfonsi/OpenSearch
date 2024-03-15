@@ -11,8 +11,13 @@ package org.opensearch.common.cache.stats;
 import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.common.xcontent.XContentFactory;
+import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.BytesStreamInput;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.util.ArrayList;
@@ -162,6 +167,24 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
                 }
             }
         }
+    }
+
+    public void testXContentForLevels() throws Exception {
+        List<String> dimensionNames = List.of("A", "B", "C");
+        Map<StatsHolder.Key, CacheStatsResponse.Snapshot> snapshot = Map.of(
+            new StatsHolder.Key(List.of("A1", "B1", "C1")), new CacheStatsResponse.Snapshot(1,1,1,1,1),
+            new StatsHolder.Key(List.of("A1", "B1", "C2")), new CacheStatsResponse.Snapshot(2,2,2,2,2),
+            new StatsHolder.Key(List.of("A1", "B2", "C1")), new CacheStatsResponse.Snapshot(3,3,3,3,3),
+            new StatsHolder.Key(List.of("A2", "B1", "C3")), new CacheStatsResponse.Snapshot(4,4,4,4,4)
+            );
+        MultiDimensionCacheStats stats = new MultiDimensionCacheStats(snapshot, dimensionNames);
+
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        ToXContent.Params params = ToXContent.EMPTY_PARAMS;
+
+        builder.startObject();
+        stats.toXContentForLevels(builder, params, List.of("A", "B", "C"));
+        builder.endObject();
     }
 
     static Map<String, List<String>> getUsedDimensionValues(StatsHolder statsHolder, int numValuesPerDim) {
