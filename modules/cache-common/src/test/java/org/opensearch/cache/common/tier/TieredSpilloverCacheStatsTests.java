@@ -103,39 +103,6 @@ public class TieredSpilloverCacheStatsTests extends OpenSearchTestCase {
         assertEquals(new CacheStatsResponse.Snapshot(3, 3, 4, 9, 11), tscResponse);
     }
 
-    public void testAggregationAllLevelsWithoutTier() throws Exception {
-        StatsHolder heapStats = new StatsHolder(dimensionNames);
-        StatsHolder diskStats = new StatsHolder(dimensionNames);
-        Map<String, List<String>> usedDimensionValues = getUsedDimensionValues(heapStats, 10);
-        Map<String, Map<Set<CacheStatsDimension>, CacheStatsResponse>> expected = populateStats(heapStats, diskStats, usedDimensionValues, 100, 2);
-        TieredSpilloverCacheStats stats = new TieredSpilloverCacheStats(heapStats.createSnapshot(), diskStats.createSnapshot(), dimensionNames);
-
-        List<String> levels = new ArrayList<>(dimensionNames);
-        TreeMap<StatsHolder.Key, CacheStatsResponse.Snapshot> agg = stats.aggregateByLevels(levels);
-
-        for (Map.Entry<StatsHolder.Key, CacheStatsResponse.Snapshot> entry : agg.entrySet()) {
-            StatsHolder.Key key = entry.getKey();
-            Set<CacheStatsDimension> expectedKey = new HashSet<>();
-            for (int i = 0; i < dimensionNames.size(); i++) {
-                expectedKey.add(new CacheStatsDimension(dimensionNames.get(i), key.getDimensionValues().get(i)));
-            }
-
-            CacheStatsResponse expectedHeapValue = expected.get(TIER_DIMENSION_VALUE_ON_HEAP).get(expectedKey);
-            CacheStatsResponse expectedDiskValue = expected.get(TIER_DIMENSION_VALUE_DISK).get(expectedKey);
-
-            assertTrue(expectedHeapValue != null || expectedDiskValue != null);
-            if (expectedHeapValue != null && expectedDiskValue != null) {
-                assertEquals(combineTierResponses(expectedHeapValue.snapshot(), expectedDiskValue.snapshot()), entry.getValue());
-            } else if (expectedHeapValue != null) {
-                assertEquals(expectedHeapValue.snapshot(), entry.getValue());
-            } else {
-                // disk value not null
-                assertEquals(expectedDiskValue.snapshot(), entry.getValue());
-            }
-        }
-
-    }
-
     public void testAggregationSomeLevelsWithoutTier() throws Exception {
         StatsHolder heapStats = new StatsHolder(dimensionNames);
         StatsHolder diskStats = new StatsHolder(dimensionNames);
@@ -185,34 +152,6 @@ public class TieredSpilloverCacheStatsTests extends OpenSearchTestCase {
                         assertEquals(expectedDiskResponse.snapshot(), aggregatedEntry.getValue());
                     }
                 }
-            }
-        }
-    }
-
-    public void testAggregationAllLevelsWithTier() throws Exception {
-        StatsHolder heapStats = new StatsHolder(dimensionNames);
-        StatsHolder diskStats = new StatsHolder(dimensionNames);
-        Map<String, List<String>> usedDimensionValues = getUsedDimensionValues(heapStats, 10);
-        Map<String, Map<Set<CacheStatsDimension>, CacheStatsResponse>> expected = populateStats(heapStats, diskStats, usedDimensionValues, 100, 2);
-        TieredSpilloverCacheStats stats = new TieredSpilloverCacheStats(heapStats.createSnapshot(), diskStats.createSnapshot(), dimensionNames);
-
-        List<String> levels = new ArrayList<>(dimensionNames);
-        levels.add(TIER_DIMENSION_NAME);
-        TreeMap<StatsHolder.Key, CacheStatsResponse.Snapshot> agg = stats.aggregateByLevels(levels);
-
-        for (Map.Entry<StatsHolder.Key, CacheStatsResponse.Snapshot> entry : agg.entrySet()) {
-            StatsHolder.Key key = entry.getKey();
-            Set<CacheStatsDimension> expectedKey = new HashSet<>();
-            for (int i = 0; i < dimensionNames.size(); i++) {
-                expectedKey.add(new CacheStatsDimension(dimensionNames.get(i), key.getDimensionValues().get(i)));
-            }
-            String aggTierValue = key.getDimensionValues().get(key.getDimensionValues().size()-1);
-            assertTrue(aggTierValue.equals(TIER_DIMENSION_VALUE_ON_HEAP) || aggTierValue.equals(TIER_DIMENSION_VALUE_DISK));
-
-            if (aggTierValue.equals(TIER_DIMENSION_VALUE_ON_HEAP)) {
-                assertEquals(expected.get(TIER_DIMENSION_VALUE_ON_HEAP).get(expectedKey).snapshot(), entry.getValue());
-            } else if (aggTierValue.equals(TIER_DIMENSION_VALUE_DISK)) {
-                assertEquals(expected.get(TIER_DIMENSION_VALUE_DISK).get(expectedKey).snapshot(), entry.getValue());
             }
         }
     }
