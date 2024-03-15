@@ -120,8 +120,8 @@ public class MultiDimensionCacheStats implements CacheStats {
     }
 
     // First compare outermost dimension, then second outermost, etc.
-    // Pkg-private for testing
-    static class KeyComparator implements Comparator<StatsHolder.Key> {
+    // Public as it's also used by TieredSpilloverCacheStats
+    public static class KeyComparator implements Comparator<StatsHolder.Key> {
         @Override
         public int compare(StatsHolder.Key k1, StatsHolder.Key k2) {
             assert k1.dimensionValues.size() == k2.dimensionValues.size();

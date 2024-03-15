@@ -107,7 +107,7 @@ public class StatsHolder {
 
     // Get a list of dimension values, ordered according to dimensionNames, from the possibly differently-ordered dimensions passed in.
     // Static for testing purposes.
-    static List<String> getOrderedDimensionValues(List<CacheStatsDimension> dimensions, List<String> dimensionNames) {
+    public static List<String> getOrderedDimensionValues(List<CacheStatsDimension> dimensions, List<String> dimensionNames) {
         List<String> result = new ArrayList<>();
         for (String dimensionName : dimensionNames) {
             for (CacheStatsDimension dim : dimensions) {
@@ -134,7 +134,7 @@ public class StatsHolder {
     public static class Key {
         final List<String> dimensionValues; // The dimensions must be ordered
 
-        Key(List<String> dimensionValues) {
+        public Key(List<String> dimensionValues) {
             this.dimensionValues = Collections.unmodifiableList(dimensionValues);
         }
 
@@ -156,6 +156,10 @@ public class StatsHolder {
         @Override
         public int hashCode() {
             return this.dimensionValues.hashCode();
+        }
+
+        public List<String> getDimensionValues() {
+            return dimensionValues;
         }
     }
 }

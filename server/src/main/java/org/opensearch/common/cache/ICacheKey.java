@@ -10,6 +10,7 @@ package org.opensearch.common.cache;
 
 import org.opensearch.common.cache.stats.CacheStatsDimension;
 
+import java.util.Collections;
 import java.util.List;
 
 public class ICacheKey<K> {
