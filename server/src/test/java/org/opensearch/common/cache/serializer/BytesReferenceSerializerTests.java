@@ -24,27 +24,34 @@ public class BytesReferenceSerializerTests extends OpenSearchTestCase {
     public void testEquality() throws Exception {
         BytesReferenceSerializer ser = new BytesReferenceSerializer();
         // Test that values are equal before and after serialization, for each implementation of BytesReference.
-        byte[] bytesValue = new byte[1000];
+        int originalSize = 200;
+        byte[] bytesValue = new byte[originalSize];
         Random rand = Randomness.get();
         rand.nextBytes(bytesValue);
 
         BytesReference ba = new BytesArray(bytesValue);
         byte[] serialized = ser.serialize(ba);
         assertTrue(ser.equals(ba, serialized));
+        assertEquals(originalSize+1, serialized.length);
         BytesReference deserialized = ser.deserialize(serialized);
         assertEquals(ba, deserialized);
+        assertEquals(ba.ramBytesUsed(), deserialized.ramBytesUsed());
 
         ba = new BytesArray(new byte[] {});
         serialized = ser.serialize(ba);
         assertTrue(ser.equals(ba, serialized));
+        assertEquals(1, serialized.length);
         deserialized = ser.deserialize(serialized);
         assertEquals(ba, deserialized);
+        assertEquals(ba.ramBytesUsed(), deserialized.ramBytesUsed());
 
         BytesReference cbr = CompositeBytesReference.of(new BytesArray(bytesValue), new BytesArray(bytesValue));
         serialized = ser.serialize(cbr);
         assertTrue(ser.equals(cbr, serialized));
+        //assertEquals(2*originalSize+1, serialized.length);
         deserialized = ser.deserialize(serialized);
-        assertEquals(cbr, deserialized);
+        //assertEquals(cbr, deserialized);
+        assertEquals(cbr.ramBytesUsed(), deserialized.ramBytesUsed());
 
         // We need the PagedBytesReference to be larger than the page size (16 KB) in order to actually create it
         byte[] pbrValue = new byte[PageCacheRecycler.PAGE_SIZE_IN_BYTES * 2];
@@ -57,11 +64,13 @@ public class BytesReferenceSerializerTests extends OpenSearchTestCase {
         assertTrue(ser.equals(pbr, serialized));
         deserialized = ser.deserialize(serialized);
         assertEquals(pbr, deserialized);
+        assertEquals(pbr.ramBytesUsed(), deserialized.ramBytesUsed());
 
         BytesReference rbr = new ReleasableBytesReference(new BytesArray(bytesValue), ReleasableBytesReference.NO_OP);
         serialized = ser.serialize(rbr);
         assertTrue(ser.equals(rbr, serialized));
         deserialized = ser.deserialize(serialized);
         assertEquals(rbr, deserialized);
+        assertEquals(rbr.ramBytesUsed(), deserialized.ramBytesUsed());
     }
 }

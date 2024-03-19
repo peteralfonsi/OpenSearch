@@ -20,11 +20,17 @@ import java.util.Arrays;
 public class BytesReferenceSerializer implements Serializer<BytesReference, byte[]> {
     // This class does not get passed to ehcache itself, so it's not required that classes match after deserialization.
 
+    private final static byte PADDING_BYTE = 0x7f;
+
     public BytesReferenceSerializer() {}
 
     @Override
     public byte[] serialize(BytesReference object) {
-        return BytesReference.toBytes(object);
+        //
+        int originalSize = (int) object.ramBytesUsed();
+        byte[] result = Arrays.copyOfRange(BytesReference.toBytes(object), 0, originalSize+1);
+        result[originalSize] = PADDING_BYTE; // Add an additional nonzero byte to ensure trailing zeros aren't dropped
+        return result;
     }
 
     @Override
@@ -32,7 +38,9 @@ public class BytesReferenceSerializer implements Serializer<BytesReference, byte
         if (bytes == null) {
             return null;
         }
-        return new BytesArray(bytes);
+        byte[] unpadded = Arrays.copyOfRange(bytes, 0, bytes.length-1); // Discard nonzero padding byte
+        assert unpadded.length == bytes.length - 1;
+        return new BytesArray(unpadded);
     }
 
     @Override
