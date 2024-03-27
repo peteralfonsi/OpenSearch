@@ -45,7 +45,7 @@ import org.opensearch.cluster.service.ClusterStateStats;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.service.NodeCacheStats;
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.CacheStatsResponse;
+import org.opensearch.common.cache.stats.CounterSnapshot;
 import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.cache.stats.StatsHolder;
 import org.opensearch.common.io.stream.BytesStreamOutput;
@@ -946,14 +946,14 @@ public class NodeStatsTests extends OpenSearchTestCase {
         if (frequently()) {
             int numIndices = randomIntBetween(1, 10);
             int numShardsPerIndex = randomIntBetween(1, 50);
-            Map<StatsHolder.Key, CacheStatsResponse.Snapshot> snapshotMap = new HashMap<>();
+            Map<StatsHolder.Key, CounterSnapshot> snapshotMap = new HashMap<>();
             List<String> dimensionNames = List.of("index", "shard", "tier");
             for (int indexNum = 0; indexNum < numIndices; indexNum++) {
                 String indexName = "index" + indexNum;
                 for (int shardNum = 0; shardNum < numShardsPerIndex; shardNum++) {
                     String shardName = "[" + indexName + "][" + shardNum + "]";
                     for (String tierName : new String[]{"dummy_tier_1", "dummy_tier_2"}) {
-                        CacheStatsResponse.Snapshot response = new CacheStatsResponse.Snapshot(
+                        CounterSnapshot response = new CounterSnapshot(
                             randomInt(100),
                             randomInt(100),
                             randomInt(100),

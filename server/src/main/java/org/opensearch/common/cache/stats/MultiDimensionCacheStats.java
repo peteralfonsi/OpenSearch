@@ -14,7 +14,6 @@ import org.opensearch.core.xcontent.XContentBuilder;
 
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -188,10 +187,31 @@ public class MultiDimensionCacheStats implements CacheStats {
 
     XContentBuilder toXContentForLevels(XContentBuilder builder, Params params, List<String> levels) throws IOException {
         DimensionNode aggregated = aggregateByLevels(levels);
-
-
+        // Depth -1 corresponds to the dummy root node, which has no dimension value and only has children
+        toXContentForLevelsHelper(-1, aggregated, levels, builder, params);
         return builder;
 
+    }
+
+    private void toXContentForLevelsHelper(int depth, DimensionNode current, List<String> levels, XContentBuilder builder, Params params) throws IOException {
+        if (depth >= 0) {
+            builder.startObject(current.dimensionValue);
+        }
+
+        if (depth == levels.size() - 1) {
+            // This is a leaf node
+            current.getSnapshot().toXContent(builder, params);
+        } else {
+            builder.startObject(levels.get(depth+1));
+            for (DimensionNode nextNode : current.children.values()) {
+                toXContentForLevelsHelper(depth+1, nextNode, levels, builder, params);
+            }
+            builder.endObject();
+        }
+
+        if (depth >= 0) {
+            builder.endObject();
+        }
     }
 
 
