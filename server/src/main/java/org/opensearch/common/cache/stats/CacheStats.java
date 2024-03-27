@@ -24,7 +24,7 @@ import java.util.Map;
 public interface CacheStats extends Writeable, ToXContentFragment {
 
     // Method to get all 5 values at once
-    CacheStatsResponse.Snapshot getTotalStats();
+    CounterSnapshot getTotalStats();
 
     // Methods to get total values.
     long getTotalHits();

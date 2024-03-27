@@ -29,7 +29,7 @@ import static org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSe
 
 public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
     private final static long keyValueSize = 50;
-    private final static List<String> dimensionNames = List.of("dim1", "dim2");
+    private final static List<String> dimensionNames = List.of("dim1", "dim2", "dim3");
 
     public void testStats() throws Exception {
         MockRemovalListener<String, String> listener = new MockRemovalListener<>();
