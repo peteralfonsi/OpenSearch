@@ -14,8 +14,6 @@ import org.opensearch.core.common.io.stream.Writeable;
 import org.opensearch.core.xcontent.ToXContentFragment;
 
 import java.io.IOException;
-import java.lang.reflect.Constructor;
-import java.util.Map;
 
 /**
  * Interface for access to any cache stats. Allows accessing stats by dimension values.
@@ -44,7 +42,6 @@ public interface CacheStats extends Writeable, ToXContentFragment {
 
     static CacheStats readFromStreamWithClassName(StreamInput in) throws IOException {
         String className = in.readString();
-        //in.reset();
 
         if (className.equals(MultiDimensionCacheStats.CLASS_NAME)) {
             return new MultiDimensionCacheStats(in);

@@ -952,7 +952,7 @@ public class NodeStatsTests extends OpenSearchTestCase {
                 String indexName = "index" + indexNum;
                 for (int shardNum = 0; shardNum < numShardsPerIndex; shardNum++) {
                     String shardName = "[" + indexName + "][" + shardNum + "]";
-                    for (String tierName : new String[]{"dummy_tier_1", "dummy_tier_2"}) {
+                    for (String tierName : new String[] { "dummy_tier_1", "dummy_tier_2" }) {
                         CounterSnapshot response = new CounterSnapshot(
                             randomInt(100),
                             randomInt(100),

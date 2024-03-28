@@ -168,7 +168,6 @@ public class MultiDimensionCacheStats implements CacheStats {
         return root;
     }
 
-
     @Override
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         // Always show total stats, regardless of levels
@@ -193,7 +192,8 @@ public class MultiDimensionCacheStats implements CacheStats {
 
     }
 
-    private void toXContentForLevelsHelper(int depth, DimensionNode current, List<String> levels, XContentBuilder builder, Params params) throws IOException {
+    private void toXContentForLevelsHelper(int depth, DimensionNode current, List<String> levels, XContentBuilder builder, Params params)
+        throws IOException {
         if (depth >= 0) {
             builder.startObject(current.dimensionValue);
         }
@@ -202,9 +202,9 @@ public class MultiDimensionCacheStats implements CacheStats {
             // This is a leaf node
             current.getSnapshot().toXContent(builder, params);
         } else {
-            builder.startObject(levels.get(depth+1));
+            builder.startObject(levels.get(depth + 1));
             for (DimensionNode nextNode : current.children.values()) {
-                toXContentForLevelsHelper(depth+1, nextNode, levels, builder, params);
+                toXContentForLevelsHelper(depth + 1, nextNode, levels, builder, params);
             }
             builder.endObject();
         }
@@ -213,7 +213,6 @@ public class MultiDimensionCacheStats implements CacheStats {
             builder.endObject();
         }
     }
-
 
     private List<String> getLevels(Params params) {
         String levels = params.param("level");

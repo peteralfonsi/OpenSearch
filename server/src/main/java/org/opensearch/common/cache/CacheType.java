@@ -31,6 +31,7 @@ public enum CacheType {
     public String getSettingPrefix() {
         return settingPrefix;
     }
+
     public String getApiRepresentation() {
         return apiRepresentation;
     }

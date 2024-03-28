@@ -188,7 +188,9 @@ public class RestNodesStatsAction extends BaseRestHandler {
                         try {
                             cacheFlags.includeCacheType(CacheType.getByRepresentation(cacheName));
                         } catch (IllegalArgumentException e) {
-                            throw new IllegalArgumentException(unrecognized(request, Set.of(cacheName), CacheType.allRepresentations(), "cache type"));
+                            throw new IllegalArgumentException(
+                                unrecognized(request, Set.of(cacheName), CacheType.allRepresentations(), "cache type")
+                            );
                         }
                     }
                 }

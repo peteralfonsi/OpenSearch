@@ -13,7 +13,6 @@ import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.xcontent.XContentFactory;
 import org.opensearch.common.xcontent.XContentHelper;
-import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.BytesStreamInput;
 import org.opensearch.core.xcontent.MediaTypeRegistry;
@@ -23,14 +22,11 @@ import org.opensearch.test.OpenSearchTestCase;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.Set;
 import java.util.UUID;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 
 public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
     public void testSerialization() throws Exception {
@@ -155,10 +151,14 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
     public void testXContentForLevels() throws Exception {
         List<String> dimensionNames = List.of("A", "B", "C");
         Map<StatsHolder.Key, CounterSnapshot> snapshot = Map.of(
-            new StatsHolder.Key(List.of("A1", "B1", "C1")), new CounterSnapshot(1, 1, 1, 1, 1),
-            new StatsHolder.Key(List.of("A1", "B1", "C2")), new CounterSnapshot(2, 2, 2, 2, 2),
-            new StatsHolder.Key(List.of("A1", "B2", "C1")), new CounterSnapshot(3, 3, 3, 3, 3),
-            new StatsHolder.Key(List.of("A2", "B1", "C3")), new CounterSnapshot(4, 4, 4, 4, 4)
+            new StatsHolder.Key(List.of("A1", "B1", "C1")),
+            new CounterSnapshot(1, 1, 1, 1, 1),
+            new StatsHolder.Key(List.of("A1", "B1", "C2")),
+            new CounterSnapshot(2, 2, 2, 2, 2),
+            new StatsHolder.Key(List.of("A1", "B2", "C1")),
+            new CounterSnapshot(3, 3, 3, 3, 3),
+            new StatsHolder.Key(List.of("A2", "B1", "C3")),
+            new CounterSnapshot(4, 4, 4, 4, 4)
         );
         MultiDimensionCacheStats stats = new MultiDimensionCacheStats(snapshot, dimensionNames);
 
@@ -172,11 +172,16 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
         Map<String, Object> result = XContentHelper.convertToMap(MediaTypeRegistry.JSON.xContent(), resultString, true);
 
         Map<String, BiConsumer<CacheStatsCounter, Integer>> fieldNamesMap = Map.of(
-            CounterSnapshot.Fields.MEMORY_SIZE_IN_BYTES, (counter, value) -> counter.sizeInBytes.inc(value),
-            CounterSnapshot.Fields.EVICTIONS, (counter, value) -> counter.evictions.inc(value),
-            CounterSnapshot.Fields.HIT_COUNT, (counter, value) -> counter.hits.inc(value),
-            CounterSnapshot.Fields.MISS_COUNT, (counter, value) -> counter. misses.inc(value),
-            CounterSnapshot.Fields.ENTRIES, (counter, value) -> counter.entries.inc(value)
+            CounterSnapshot.Fields.MEMORY_SIZE_IN_BYTES,
+            (counter, value) -> counter.sizeInBytes.inc(value),
+            CounterSnapshot.Fields.EVICTIONS,
+            (counter, value) -> counter.evictions.inc(value),
+            CounterSnapshot.Fields.HIT_COUNT,
+            (counter, value) -> counter.hits.inc(value),
+            CounterSnapshot.Fields.MISS_COUNT,
+            (counter, value) -> counter.misses.inc(value),
+            CounterSnapshot.Fields.ENTRIES,
+            (counter, value) -> counter.entries.inc(value)
         );
 
         for (Map.Entry<StatsHolder.Key, CounterSnapshot> entry : snapshot.entrySet()) {
@@ -190,7 +195,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
             for (Map.Entry<String, BiConsumer<CacheStatsCounter, Integer>> fieldNamesEntry : fieldNamesMap.entrySet()) {
                 List<String> fullXContentKeys = new ArrayList<>(xContentKeys);
                 fullXContentKeys.add(fieldNamesEntry.getKey());
-                int valueInXContent = getValueFromNestedXContentMap(result, fullXContentKeys);
+                int valueInXContent = (int) getValueFromNestedXContentMap(result, fullXContentKeys);
                 BiConsumer<CacheStatsCounter, Integer> incrementer = fieldNamesEntry.getValue();
                 incrementer.accept(counterFromXContent, valueInXContent);
             }
@@ -200,12 +205,16 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
         }
     }
 
-    private int getValueFromNestedXContentMap(Map<String, Object> xContentMap, List<String> keys) {
+    public static Object getValueFromNestedXContentMap(Map<String, Object> xContentMap, List<String> keys) {
         Map<String, Object> current = xContentMap;
         for (int i = 0; i < keys.size() - 1; i++) {
-            current = (Map<String, Object>) current.get(keys.get(i));
+            Object next = current.get(keys.get(i));
+            if (next == null) {
+                return null;
+            }
+            current = (Map<String, Object>) next;
         }
-        return (int) current.get(keys.get(keys.size()-1));
+        return current.get(keys.get(keys.size() - 1));
     }
 
     // Get a map from the list of dimension values to the corresponding leaf node.
@@ -215,7 +224,11 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
         return result;
     }
 
-    private void getAllLeafNodesHelper(Map<List<String>, MultiDimensionCacheStats.DimensionNode> result, MultiDimensionCacheStats.DimensionNode current, List<String> pathToCurrent) {
+    private void getAllLeafNodesHelper(
+        Map<List<String>, MultiDimensionCacheStats.DimensionNode> result,
+        MultiDimensionCacheStats.DimensionNode current,
+        List<String> pathToCurrent
+    ) {
         if (current.children.isEmpty()) {
             result.put(pathToCurrent, current);
         } else {

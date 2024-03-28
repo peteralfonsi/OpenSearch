@@ -33,21 +33,14 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
 
     public NodeCacheStats(StreamInput in) throws IOException {
         this.flags = new CommonStatsFlags(in);
-        Map<CacheType, CacheStats> readMap = in.readMap(
-            i -> i.readEnum(CacheType.class),
-            CacheStats::readFromStreamWithClassName
-        );
+        Map<CacheType, CacheStats> readMap = in.readMap(i -> i.readEnum(CacheType.class), CacheStats::readFromStreamWithClassName);
         this.statsByCache = new LinkedHashMap<>(readMap);
     }
 
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         flags.writeTo(out);
-        out.writeMap(
-            statsByCache,
-            StreamOutput::writeEnum,
-            (o, cacheStats) -> cacheStats.writeToWithClassName(o)
-        );
+        out.writeMap(statsByCache, StreamOutput::writeEnum, (o, cacheStats) -> cacheStats.writeToWithClassName(o));
     }
 
     @Override
@@ -71,8 +64,7 @@ public class NodeCacheStats implements ToXContentFragment, Writeable {
             return false;
         }
         NodeCacheStats other = (NodeCacheStats) o;
-        return statsByCache.equals(other.statsByCache)
-            && flags.getIncludeCaches().equals(other.flags.getIncludeCaches());
+        return statsByCache.equals(other.statsByCache) && flags.getIncludeCaches().equals(other.flags.getIncludeCaches());
     }
 
     @Override
