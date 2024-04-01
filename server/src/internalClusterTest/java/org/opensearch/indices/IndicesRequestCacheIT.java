@@ -34,17 +34,30 @@ package org.opensearch.indices;
 
 import com.carrotsearch.randomizedtesting.annotations.ParametersFactory;
 
+import org.opensearch.action.admin.cluster.node.stats.NodeStats;
+import org.opensearch.action.admin.cluster.node.stats.NodesStatsRequest;
+import org.opensearch.action.admin.cluster.node.stats.NodesStatsResponse;
 import org.opensearch.action.admin.indices.alias.Alias;
 import org.opensearch.action.admin.indices.forcemerge.ForceMergeResponse;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.action.search.SearchType;
 import org.opensearch.client.Client;
+import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.metadata.IndexMetadata;
+import org.opensearch.cluster.routing.ShardRouting;
+import org.opensearch.common.cache.service.NodeCacheStats;
+import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.time.DateFormatter;
 import org.opensearch.common.util.FeatureFlags;
+import org.opensearch.common.xcontent.XContentFactory;
+import org.opensearch.common.xcontent.XContentHelper;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.index.cache.request.RequestCacheStats;
 import org.opensearch.index.query.QueryBuilders;
+import org.opensearch.index.shard.IndexShard;
 import org.opensearch.search.aggregations.bucket.global.GlobalAggregationBuilder;
 import org.opensearch.search.aggregations.bucket.histogram.DateHistogramInterval;
 import org.opensearch.search.aggregations.bucket.histogram.Histogram;
@@ -52,6 +65,7 @@ import org.opensearch.search.aggregations.bucket.histogram.Histogram.Bucket;
 import org.opensearch.test.ParameterizedStaticSettingsOpenSearchIntegTestCase;
 import org.opensearch.test.hamcrest.OpenSearchAssertions;
 
+import java.io.IOException;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -59,6 +73,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 import static org.opensearch.search.SearchService.CLUSTER_CONCURRENT_SEGMENT_SEARCH_SETTING;
 import static org.opensearch.search.aggregations.AggregationBuilders.dateHistogram;
@@ -677,6 +692,34 @@ public class IndicesRequestCacheIT extends ParameterizedStaticSettingsOpenSearch
         assertCacheState(client, "index", 1, 2);
     }
 
+    public void testCacheStatsAPI() throws Exception {
+        final String nodeId = internalCluster().startNode();
+        Client client = client(nodeId);
+        assertAcked(
+            client.admin()
+                .indices()
+                .prepareCreate("index")
+                .setMapping("k", "type=keyword")
+                .setSettings(
+                    Settings.builder()
+                        .put(IndicesRequestCache.INDEX_CACHE_REQUEST_ENABLED_SETTING.getKey(), true)
+                        .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 1)
+                        .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
+                )
+                .get()
+        );
+        indexRandom(true, client.prepareIndex("index").setSource("k", "hello"));
+        ensureSearchable("index");
+        SearchResponse resp = client.prepareSearch("index").setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello")).get();
+        assertSearchResponse(resp);
+        OpenSearchAssertions.assertAllSuccessful(resp);
+        assertThat(resp.getHits().getTotalHits().value, equalTo(1L));
+
+        Map<String, Object> xContentMap = getNodeCacheStatsXContentMap(client, nodeId, List.of());
+        int j = 0;
+
+    }
+
     private static void assertCacheState(Client client, String index, long expectedHits, long expectedMisses) {
         RequestCacheStats requestCacheStats = client.admin()
             .indices()
@@ -692,6 +735,28 @@ public class IndicesRequestCacheIT extends ParameterizedStaticSettingsOpenSearch
             Arrays.asList(requestCacheStats.getHitCount(), requestCacheStats.getMissCount(), requestCacheStats.getEvictions())
         );
 
+    }
+
+    private static Map<String, Object> getNodeCacheStatsXContentMap(Client client, String nodeId, List<String> aggregationLevels) throws IOException {
+
+
+        NodesStatsResponse nodeStatsResponse = client.admin().cluster()
+            .prepareNodesStats("data:true")
+            .addMetric(NodesStatsRequest.Metric.CACHE_STATS.metricName())
+            .get();
+        Map<String, NodeStats> intermediate = nodeStatsResponse.getNodesMap();
+        NodeCacheStats ncs = nodeStatsResponse.getNodes().get(0).getNodeCacheStats();
+
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        Map<String, String> paramMap = Map.of("level", String.join(",", aggregationLevels));
+        ToXContent.Params params = new ToXContent.MapParams(paramMap);
+
+        builder.startObject();
+        ncs.toXContent(builder, params);
+        builder.endObject();
+
+        String resultString = builder.toString();
+        return XContentHelper.convertToMap(MediaTypeRegistry.JSON.xContent(), resultString, true);
     }
 
 }
