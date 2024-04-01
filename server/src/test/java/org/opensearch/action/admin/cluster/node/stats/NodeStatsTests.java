@@ -45,6 +45,7 @@ import org.opensearch.cluster.service.ClusterStateStats;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.service.NodeCacheStats;
 import org.opensearch.common.cache.stats.CacheStats;
+import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.stats.CounterSnapshot;
 import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.cache.stats.StatsHolder;
@@ -960,7 +961,13 @@ public class NodeStatsTests extends OpenSearchTestCase {
                             randomInt(100),
                             randomInt(100)
                         );
-                        snapshotMap.put(new StatsHolder.Key(List.of(indexName, shardName, tierName)), response);
+                        snapshotMap.put(
+                            new StatsHolder.Key(List.of(
+                                new CacheStatsDimension("testIndexDimensionName", indexName),
+                                new CacheStatsDimension("testShardDimensionName", shardName),
+                                new CacheStatsDimension("testTierDimensionName", tierName)
+                            )),
+                            response);
                     }
                 }
             }

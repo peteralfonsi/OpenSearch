@@ -155,13 +155,29 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
     public void testXContentForLevels() throws Exception {
         List<String> dimensionNames = List.of("A", "B", "C");
         Map<StatsHolder.Key, CounterSnapshot> snapshot = Map.of(
-            new StatsHolder.Key(List.of("A1", "B1", "C1")),
+            new StatsHolder.Key(List.of(
+                new CacheStatsDimension("A", "A1"),
+                new CacheStatsDimension("B", "B1"),
+                new CacheStatsDimension("C", "C1")
+            )),
             new CounterSnapshot(1, 1, 1, 1, 1),
-            new StatsHolder.Key(List.of("A1", "B1", "C2")),
+            new StatsHolder.Key(List.of(
+                new CacheStatsDimension("A", "A1"),
+                new CacheStatsDimension("B", "B1"),
+                new CacheStatsDimension("C", "C2")
+            )),
             new CounterSnapshot(2, 2, 2, 2, 2),
-            new StatsHolder.Key(List.of("A1", "B2", "C1")),
+            new StatsHolder.Key(List.of(
+                new CacheStatsDimension("A", "A1"),
+                new CacheStatsDimension("B", "B2"),
+                new CacheStatsDimension("C", "C1")
+            )),
             new CounterSnapshot(3, 3, 3, 3, 3),
-            new StatsHolder.Key(List.of("A2", "B1", "C3")),
+            new StatsHolder.Key(List.of(
+                new CacheStatsDimension("A", "A2"),
+                new CacheStatsDimension("B", "B1"),
+                new CacheStatsDimension("C", "C3")
+            )),
             new CounterSnapshot(4, 4, 4, 4, 4)
         );
         MultiDimensionCacheStats stats = new MultiDimensionCacheStats(snapshot, dimensionNames);
@@ -192,7 +208,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
             List<String> xContentKeys = new ArrayList<>();
             for (int i = 0; i < dimensionNames.size(); i++) {
                 xContentKeys.add(dimensionNames.get(i));
-                xContentKeys.add(entry.getKey().dimensionValues.get(i));
+                xContentKeys.add(entry.getKey().dimensions.get(i).dimensionValue);
             }
             CacheStatsCounter counterFromXContent = new CacheStatsCounter();
 
