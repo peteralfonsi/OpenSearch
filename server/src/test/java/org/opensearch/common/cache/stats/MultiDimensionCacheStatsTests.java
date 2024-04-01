@@ -61,7 +61,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
         // test the value in the map is as expected for each distinct combination of values
         for (List<CacheStatsDimension> dims : expected.keySet()) {
             CacheStatsCounter expectedCounter = expected.get(dims);
-            StatsHolder.Key key = new StatsHolder.Key(StatsHolder.getOrderedDimensions(dims, dimensionNames));
+            StatsHolder.Key key = new StatsHolder.Key(StatsHolder.getOrderedDimensionValues(dims, dimensionNames));
             CounterSnapshot actual = stats.snapshot.get(key);
 
             assertEquals(expectedCounter.snapshot(), actual);
@@ -134,14 +134,10 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
                 for (Map.Entry<List<String>, MultiDimensionCacheStats.DimensionNode> aggEntry : aggregatedLeafNodes.entrySet()) {
                     CacheStatsCounter expectedCounter = new CacheStatsCounter();
                     for (List<CacheStatsDimension> expectedDims : expected.keySet()) {
-                        List<CacheStatsDimension> orderedDims = StatsHolder.getOrderedDimensions(
+                        List<String> orderedDimValues = StatsHolder.getOrderedDimensionValues(
                             new ArrayList<>(expectedDims),
                             dimensionNames
                         );
-                        List<String> orderedDimValues = new ArrayList<>();
-                        for (CacheStatsDimension dim : orderedDims) {
-                            orderedDimValues.add(dim.dimensionValue);
-                        }
                         if (orderedDimValues.containsAll(aggEntry.getKey())) {
                             expectedCounter.add(expected.get(expectedDims));
                         }

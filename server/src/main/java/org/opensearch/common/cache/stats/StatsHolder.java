@@ -137,17 +137,17 @@ public class StatsHolder {
      * Get a valid key from an unordered list of dimensions.
      */
     private Key getKey(List<CacheStatsDimension> dims) {
-        return new Key(getOrderedDimensions(dims, dimensionNames));
+        return new Key(getOrderedDimensionValues(dims, dimensionNames));
     }
 
     // Get a list of dimension values, ordered according to dimensionNames, from the possibly differently-ordered dimensions passed in.
     // Public and static for testing purposes.
-    public static List<CacheStatsDimension> getOrderedDimensions(List<CacheStatsDimension> dimensions, List<String> dimensionNames) {
-        List<CacheStatsDimension> result = new ArrayList<>();
+    public static List<String> getOrderedDimensionValues(List<CacheStatsDimension> dimensions, List<String> dimensionNames) {
+        List<String> result = new ArrayList<>();
         for (String dimensionName : dimensionNames) {
             for (CacheStatsDimension dim : dimensions) {
                 if (dim.dimensionName.equals(dimensionName)) {
-                    result.add(dim);
+                    result.add(dim.dimensionValue);
                 }
             }
         }
@@ -183,17 +183,13 @@ public class StatsHolder {
         }
     }
 
-    /**
-     * Check if the Key contains all the dimensions in dims, matching both dimension name and value.
-     */
     boolean keyContainsAllDimensions(Key key, List<CacheStatsDimension> dims) {
         for (CacheStatsDimension dim : dims) {
             int dimensionPosition = dimensionNames.indexOf(dim.dimensionName);
             if (dimensionPosition == -1) {
                 throw new IllegalArgumentException("Unrecognized dimension: " + dim.dimensionName + " = " + dim.dimensionValue);
             }
-            String keyDimensionValue = key.dimensions.get(dimensionPosition).dimensionValue;
-            if (!keyDimensionValue.equals(dim.dimensionValue)) {
+            if (!key.dimensionValues.get(dimensionPosition).equals(dim.dimensionValue)) {
                 return false;
             }
         }
@@ -204,14 +200,14 @@ public class StatsHolder {
      * Unmodifiable wrapper over a list of dimension values, ordered according to dimensionNames. Pkg-private for testing.
      */
     public static class Key {
-        final List<CacheStatsDimension> dimensions; // The dimensions must be ordered
+        final List<String> dimensionValues; // The dimensions must be ordered
 
-        public Key(List<CacheStatsDimension> dimensions) {
-            this.dimensions = Collections.unmodifiableList(dimensions);
+        public Key(List<String> dimensionValues) {
+            this.dimensionValues = Collections.unmodifiableList(dimensionValues);
         }
 
-        public List<CacheStatsDimension> getDimensions() {
-            return dimensions;
+        public List<String> getDimensionValues() {
+            return dimensionValues;
         }
 
         @Override
@@ -226,12 +222,12 @@ public class StatsHolder {
                 return false;
             }
             Key other = (Key) o;
-            return this.dimensions.equals(other.dimensions);
+            return this.dimensionValues.equals(other.dimensionValues);
         }
 
         @Override
         public int hashCode() {
-            return this.dimensions.hashCode();
+            return this.dimensionValues.hashCode();
         }
     }
 }

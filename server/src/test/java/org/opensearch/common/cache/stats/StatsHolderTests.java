@@ -26,18 +26,10 @@ public class StatsHolderTests extends OpenSearchTestCase {
     // in MultiDimensionCacheStatsTests.java.
 
     public void testKeyEquality() throws Exception {
-        List<CacheStatsDimension> dims1 = List.of(
-            new CacheStatsDimension("A", "1"),
-            new CacheStatsDimension("B", "2"),
-            new CacheStatsDimension("C", "3")
-        );
+        List<String> dims1 = List.of("1", "2", "3");
         StatsHolder.Key key1 = new StatsHolder.Key(dims1);
 
-        List<CacheStatsDimension> dims2 = List.of(
-            new CacheStatsDimension("A", "1"),
-            new CacheStatsDimension("B", "2"),
-            new CacheStatsDimension("C", "3")
-        );
+        List<String> dims2 = List.of("1", "2", "3");
         StatsHolder.Key key2 = new StatsHolder.Key(dims2);
 
         assertEquals(key1, key2);
@@ -57,7 +49,7 @@ public class StatsHolderTests extends OpenSearchTestCase {
             originalCounter.sizeInBytes = new CounterMetric();
             originalCounter.entries = new CounterMetric();
 
-            StatsHolder.Key key = new StatsHolder.Key(StatsHolder.getOrderedDimensions(dims, dimensionNames));
+            StatsHolder.Key key = new StatsHolder.Key(StatsHolder.getOrderedDimensionValues(dims, dimensionNames));
             CacheStatsCounter actual = statsHolder.getStatsMap().get(key);
             assertEquals(originalCounter, actual);
         }
@@ -76,16 +68,8 @@ public class StatsHolderTests extends OpenSearchTestCase {
 
         List<CacheStatsDimension> dims = List.of(new CacheStatsDimension("dim1", "A"), new CacheStatsDimension("dim2", "B"));
 
-        StatsHolder.Key matchingKey = new StatsHolder.Key(List.of(
-            new CacheStatsDimension("dim1", "A"),
-            new CacheStatsDimension("dim2", "B"),
-            new CacheStatsDimension("dim3", "C")
-        ));
-        StatsHolder.Key nonMatchingKey = new StatsHolder.Key(List.of(
-            new CacheStatsDimension("dim1", "A"),
-            new CacheStatsDimension("dim2", "Z"),
-            new CacheStatsDimension("dim3", "C")
-        ));
+        StatsHolder.Key matchingKey = new StatsHolder.Key(List.of("A", "B", "C"));
+        StatsHolder.Key nonMatchingKey = new StatsHolder.Key(List.of("A", "Z", "C"));
 
         assertTrue(statsHolder.keyContainsAllDimensions(matchingKey, dims));
         assertFalse(statsHolder.keyContainsAllDimensions(nonMatchingKey, dims));
