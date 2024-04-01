@@ -977,7 +977,7 @@ public class NodeStatsTests extends OpenSearchTestCase {
                     flags.includeCacheType(cacheType);
                 }
             }
-            MultiDimensionCacheStats cacheStats = new MultiDimensionCacheStats(snapshotMap, dimensionNames);
+            MultiDimensionCacheStats cacheStats = new MultiDimensionCacheStats(snapshotMap, dimensionNames, "dummyStoreName");
             LinkedHashMap<CacheType, CacheStats> cacheStatsMap = new LinkedHashMap<>();
             cacheStatsMap.put(CacheType.INDICES_REQUEST_CACHE, cacheStats);
             nodeCacheStats = new NodeCacheStats(cacheStatsMap, flags);

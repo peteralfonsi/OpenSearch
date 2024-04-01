@@ -37,9 +37,13 @@ public class StatsHolder {
     // A map from a set of cache stats dimension values -> stats for that ordered list of dimensions.
     private final ConcurrentMap<Key, CacheStatsCounter> statsMap;
 
-    public StatsHolder(List<String> dimensionNames) {
+    // The name of the cache type using these stats
+    private final String storeName;
+
+    public StatsHolder(List<String> dimensionNames, String storeName) {
         this.dimensionNames = dimensionNames;
         this.statsMap = new ConcurrentHashMap<>();
+        this.storeName = storeName;
     }
 
     public List<String> getDimensionNames() {
@@ -164,7 +168,7 @@ public class StatsHolder {
         }
         // The resulting map is immutable as well as unmodifiable since the backing map is new, not related to statsMap
         Map<Key, CounterSnapshot> immutableSnapshot = Collections.unmodifiableMap(snapshot);
-        return new MultiDimensionCacheStats(immutableSnapshot, dimensionNames);
+        return new MultiDimensionCacheStats(immutableSnapshot, dimensionNames, storeName);
     }
 
     /**

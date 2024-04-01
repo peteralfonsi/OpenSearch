@@ -24,6 +24,7 @@ public class StatsHolderTests extends OpenSearchTestCase {
     // Since StatsHolder does not expose getter methods for aggregating stats,
     // we test the incrementing functionality in combination with MultiDimensionCacheStats,
     // in MultiDimensionCacheStatsTests.java.
+    private final String storeName = "dummy_store";
 
     public void testKeyEquality() throws Exception {
         List<CacheStatsDimension> dims1 = List.of(
@@ -46,7 +47,7 @@ public class StatsHolderTests extends OpenSearchTestCase {
 
     public void testReset() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
         Map<String, List<String>> usedDimensionValues = getUsedDimensionValues(statsHolder, 10);
         Map<List<CacheStatsDimension>, CacheStatsCounter> expected = populateStats(statsHolder, usedDimensionValues, 100, 10);
 
@@ -72,7 +73,7 @@ public class StatsHolderTests extends OpenSearchTestCase {
 
     public void testKeyContainsAllDimensions() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2", "dim3");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
 
         List<CacheStatsDimension> dims = List.of(new CacheStatsDimension("dim1", "A"), new CacheStatsDimension("dim2", "B"));
 
@@ -96,7 +97,7 @@ public class StatsHolderTests extends OpenSearchTestCase {
 
     public void testDropStatsForDimensions() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2", "dim3");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
         Map<String, List<String>> usedDimensionValues = getUsedDimensionValues(statsHolder, 10);
         populateStats(statsHolder, usedDimensionValues, 100, 10);
 

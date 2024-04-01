@@ -29,9 +29,10 @@ import java.util.UUID;
 import java.util.function.BiConsumer;
 
 public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
+    private final String storeName = "dummy_store";
     public void testSerialization() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
         Map<String, List<String>> usedDimensionValues = getUsedDimensionValues(statsHolder, 10);
         populateStats(statsHolder, usedDimensionValues, 100, 10);
         MultiDimensionCacheStats stats = (MultiDimensionCacheStats) statsHolder.getCacheStats();
@@ -43,6 +44,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
 
         assertEquals(stats.snapshot, deserialized.snapshot);
         assertEquals(stats.dimensionNames, deserialized.dimensionNames);
+        assertEquals(stats.storeName, deserialized.storeName);
 
         os = new BytesStreamOutput();
         stats.writeToWithClassName(os);
@@ -53,7 +55,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
 
     public void testAddAndGet() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2", "dim3", "dim4");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
         Map<String, List<String>> usedDimensionValues = getUsedDimensionValues(statsHolder, 10);
         Map<List<CacheStatsDimension>, CacheStatsCounter> expected = populateStats(statsHolder, usedDimensionValues, 1000, 10);
         MultiDimensionCacheStats stats = (MultiDimensionCacheStats) statsHolder.getCacheStats();
@@ -83,7 +85,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
 
     public void testEmptyDimsList() throws Exception {
         // If the dimension list is empty, the map should have only one entry, from the empty set -> the total stats.
-        StatsHolder statsHolder = new StatsHolder(List.of());
+        StatsHolder statsHolder = new StatsHolder(List.of(), storeName);
         Map<String, List<String>> usedDimensionValues = getUsedDimensionValues(statsHolder, 100);
         populateStats(statsHolder, usedDimensionValues, 10, 100);
         MultiDimensionCacheStats stats = (MultiDimensionCacheStats) statsHolder.getCacheStats();
@@ -95,7 +97,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
     public void testAggregateByAllDimensions() throws Exception {
         // Aggregating with all dimensions as levels should just give us the same values that were in the original map
         List<String> dimensionNames = List.of("dim1", "dim2", "dim3", "dim4");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
         Map<String, List<String>> usedDimensionValues = getUsedDimensionValues(statsHolder, 10);
         Map<List<CacheStatsDimension>, CacheStatsCounter> expected = populateStats(statsHolder, usedDimensionValues, 1000, 10);
         MultiDimensionCacheStats stats = (MultiDimensionCacheStats) statsHolder.getCacheStats();
@@ -112,7 +114,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
 
     public void testAggregateBySomeDimensions() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2", "dim3", "dim4");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
         Map<String, List<String>> usedDimensionValues = getUsedDimensionValues(statsHolder, 10);
         Map<List<CacheStatsDimension>, CacheStatsCounter> expected = populateStats(statsHolder, usedDimensionValues, 1000, 10);
         MultiDimensionCacheStats stats = (MultiDimensionCacheStats) statsHolder.getCacheStats();
@@ -180,7 +182,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
             )),
             new CounterSnapshot(4, 4, 4, 4, 4)
         );
-        MultiDimensionCacheStats stats = new MultiDimensionCacheStats(snapshot, dimensionNames);
+        MultiDimensionCacheStats stats = new MultiDimensionCacheStats(snapshot, dimensionNames, storeName);
 
         XContentBuilder builder = XContentFactory.jsonBuilder();
         ToXContent.Params params = ToXContent.EMPTY_PARAMS;

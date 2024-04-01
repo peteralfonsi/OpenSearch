@@ -31,11 +31,16 @@ public class MultiDimensionCacheStats implements CacheStats {
     final Map<StatsHolder.Key, CounterSnapshot> snapshot;
     final List<String> dimensionNames;
 
+    // The name of the cache type producing these stats. Returned in API response.
+    final String storeName;
+    public static String STORE_NAME_FIELD = "store_name";
+
     public static String CLASS_NAME = "multidimension";
 
-    public MultiDimensionCacheStats(Map<StatsHolder.Key, CounterSnapshot> snapshot, List<String> dimensionNames) {
+    public MultiDimensionCacheStats(Map<StatsHolder.Key, CounterSnapshot> snapshot, List<String> dimensionNames, String storeName) {
         this.snapshot = snapshot;
         this.dimensionNames = dimensionNames;
+        this.storeName = storeName;
     }
 
     /**
@@ -47,6 +52,7 @@ public class MultiDimensionCacheStats implements CacheStats {
             i -> new StatsHolder.Key(List.of(i.readArray(CacheStatsDimension::new, CacheStatsDimension[]::new))),
             CounterSnapshot::new
         );
+        this.storeName = in.readString();
     }
 
     @Override
@@ -57,6 +63,7 @@ public class MultiDimensionCacheStats implements CacheStats {
             (o, key) -> o.writeArray((o1, dim) -> ((CacheStatsDimension) dim).writeTo(o1), key.dimensions.toArray()),
             (o, snapshot) -> snapshot.writeTo(o)
         );
+        out.writeString(storeName);
     }
 
     @Override
@@ -181,6 +188,8 @@ public class MultiDimensionCacheStats implements CacheStats {
 
         int[] positions = getLevelsInSortedOrder(levels); // Checks whether levels are valid; throws IllegalArgumentException if not
         toXContentForLevels(builder, params, levels);
+        // Also add the store name for the cache that produced the stats
+        builder.field(STORE_NAME_FIELD, storeName);
         return builder;
     }
 
