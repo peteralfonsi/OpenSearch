@@ -152,4 +152,24 @@ public class StatsHolderTests extends OpenSearchTestCase {
         }
         return current;
     }
+
+    static void populateStatsHolderFromStatsValueMap(StatsHolder statsHolder, Map<List<String>, CacheStatsCounter> statsMap) {
+        for (Map.Entry<List<String>, CacheStatsCounter> entry : statsMap.entrySet()) {
+            CacheStatsCounter stats = entry.getValue();
+            List<String> dims = entry.getKey();
+            for (int i = 0; i < stats.getHits(); i++) {
+                statsHolder.incrementHits(dims);
+            }
+            for (int i = 0; i < stats.getMisses(); i++) {
+                statsHolder.incrementMisses(dims);
+            }
+            for (int i = 0; i < stats.getEvictions(); i++) {
+                statsHolder.incrementEvictions(dims);
+            }
+            statsHolder.incrementSizeInBytes(dims, stats.getSizeInBytes());
+            for (int i = 0; i < stats.getEntries(); i++) {
+                statsHolder.incrementEntries(dims);
+            }
+        }
+    }
 }

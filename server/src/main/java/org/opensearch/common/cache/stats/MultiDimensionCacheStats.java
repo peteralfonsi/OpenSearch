@@ -351,8 +351,6 @@ public class MultiDimensionCacheStats implements CacheStats {
             return false;
         }
         return equalsHelper(statsRoot, other.getStatsRoot());
-
-        //return this.snapshot.equals(other.snapshot) && this.dimensionNames.equals(other.dimensionNames);
     }
 
     private boolean equalsHelper(MDCSDimensionNode thisNode, MDCSDimensionNode otherNode) {
@@ -376,9 +374,10 @@ public class MultiDimensionCacheStats implements CacheStats {
         return allChildrenMatch;
     }
 
-    /*@Override
+    @Override
     public int hashCode() {
-        return Objects.hash(this.snapshot, this.dimensionNames);
-    }*/
+        // Should be sufficient to hash based on the total stats value (found in the root node)
+        return Objects.hash(statsRoot.stats, dimensionNames);
+    }
 
 }
