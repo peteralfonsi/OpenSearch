@@ -21,9 +21,11 @@ import java.util.Objects;
 
 /**
  * An immutable snapshot of CacheStatsCounter.
+ *
+ * @opensearch.experimental
  */
 @ExperimentalApi
-public class CacheStatsCounterSnapshot implements Writeable, ToXContent { // TODO: Make this extend ToXContent (in API PR)
+public class CacheStatsCounterSnapshot implements Writeable, ToXContent {
     private final long hits;
     private final long misses;
     private final long evictions;
