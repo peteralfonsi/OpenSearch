@@ -45,8 +45,7 @@ import org.opensearch.cluster.service.ClusterStateStats;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.service.NodeCacheStats;
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.CacheStatsDimension;
-import org.opensearch.common.cache.stats.CounterSnapshot;
+import org.opensearch.common.cache.stats.CacheStatsCounterSnapshot;
 import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.cache.stats.StatsHolder;
 import org.opensearch.common.io.stream.BytesStreamOutput;
@@ -947,27 +946,43 @@ public class NodeStatsTests extends OpenSearchTestCase {
         if (frequently()) {
             int numIndices = randomIntBetween(1, 10);
             int numShardsPerIndex = randomIntBetween(1, 50);
-            Map<StatsHolder.Key, CounterSnapshot> snapshotMap = new HashMap<>();
+            //Map<StatsHolder.Key, CounterSnapshot> snapshotMap = new HashMap<>();
+
             List<String> dimensionNames = List.of("index", "shard", "tier");
+            StatsHolder statsHolder = new StatsHolder(dimensionNames, "dummyStoreName");
             for (int indexNum = 0; indexNum < numIndices; indexNum++) {
                 String indexName = "index" + indexNum;
                 for (int shardNum = 0; shardNum < numShardsPerIndex; shardNum++) {
                     String shardName = "[" + indexName + "][" + shardNum + "]";
                     for (String tierName : new String[] { "dummy_tier_1", "dummy_tier_2" }) {
-                        CounterSnapshot response = new CounterSnapshot(
+                        /*CacheStatsCounterSnapshot response = new CacheStatsCounterSnapshot(
                             randomInt(100),
                             randomInt(100),
                             randomInt(100),
                             randomInt(100),
                             randomInt(100)
-                        );
-                        snapshotMap.put(
+                        );*/
+                        List<String> dimensionValues = List.of(indexName, shardName, tierName);
+                        for (int i = 0; i < randomInt(20); i++){
+                            statsHolder.incrementHits(dimensionValues);
+                        }
+                        for (int i = 0; i < randomInt(20); i++){
+                            statsHolder.incrementMisses(dimensionValues);
+                        }
+                        for (int i = 0; i < randomInt(20); i++){
+                            statsHolder.incrementEvictions(dimensionValues);
+                        }
+                        statsHolder.incrementSizeInBytes(dimensionValues, randomInt(20));
+                        for (int i = 0; i < randomInt(20); i++){
+                            statsHolder.incrementEntries(dimensionValues);
+                        }
+                        /*snapshotMap.put(
                             new StatsHolder.Key(List.of(
                                 new CacheStatsDimension("testIndexDimensionName", indexName),
                                 new CacheStatsDimension("testShardDimensionName", shardName),
                                 new CacheStatsDimension("testTierDimensionName", tierName)
                             )),
-                            response);
+                            response);*/
                     }
                 }
             }
@@ -977,7 +992,7 @@ public class NodeStatsTests extends OpenSearchTestCase {
                     flags.includeCacheType(cacheType);
                 }
             }
-            MultiDimensionCacheStats cacheStats = new MultiDimensionCacheStats(snapshotMap, dimensionNames, "dummyStoreName");
+            CacheStats cacheStats = statsHolder.getCacheStats();
             LinkedHashMap<CacheType, CacheStats> cacheStatsMap = new LinkedHashMap<>();
             cacheStatsMap.put(CacheType.INDICES_REQUEST_CACHE, cacheStats);
             nodeCacheStats = new NodeCacheStats(cacheStatsMap, flags);

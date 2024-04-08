@@ -9,6 +9,7 @@
 package org.opensearch.common.cache.service;
 
 import org.opensearch.action.admin.indices.stats.CommonStatsFlags;
+import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -22,6 +23,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
+/**
+ * A class creating XContent responses to cache stats API requests.
+ *
+ * @opensearch.experimental
+ */
+@ExperimentalApi
 public class NodeCacheStats implements ToXContentFragment, Writeable {
     private final LinkedHashMap<CacheType, CacheStats> statsByCache;
     private final CommonStatsFlags flags;

@@ -21,7 +21,6 @@ import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.serializer.BytesReferenceSerializer;
 import org.opensearch.common.cache.serializer.Serializer;
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.common.settings.Settings;
@@ -835,7 +834,7 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             ICacheKey<String> keyToDrop = keysAdded.get(0);
 
             Map<String, Object> xContentMap = getStatsXContentMap(ehCacheDiskCachingTier.stats(), dimensionNames);
-            List<String> xContentMapKeys = getXContentMapKeys(keyToDrop);
+            List<String> xContentMapKeys = getXContentMapKeys(keyToDrop, dimensionNames);
             Map<String, Object> individualSnapshotMap = (Map<String, Object>) getValueFromNestedXContentMap(xContentMap, xContentMapKeys);
             assertNotNull(individualSnapshotMap);
             assertEquals(5, individualSnapshotMap.size()); // Assert all 5 stats are present and not null
@@ -844,15 +843,13 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 assertNotNull(value);
             }
 
-            for (CacheStatsDimension dim : keyToDrop.dimensions) {
-                dim.setDropStatsOnInvalidation(true);
-            }
+            keyToDrop.setDropStatsForDimensions(true);
             ehCacheDiskCachingTier.invalidate(keyToDrop);
 
             // Now assert the stats are gone for any key that has this combination of dimensions, but still there otherwise
             xContentMap = getStatsXContentMap(ehCacheDiskCachingTier.stats(), dimensionNames);
             for (ICacheKey<String> keyAdded : keysAdded) {
-                xContentMapKeys = getXContentMapKeys(keyAdded);
+                xContentMapKeys = getXContentMapKeys(keyAdded, dimensionNames);
                 individualSnapshotMap = (Map<String, Object>) getValueFromNestedXContentMap(xContentMap, xContentMapKeys);
                 if (keyAdded.dimensions.equals(keyToDrop.dimensions)) {
                     assertNull(individualSnapshotMap);
@@ -865,12 +862,12 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
         }
     }
 
-    private List<CacheStatsDimension> getRandomDimensions(List<String> dimensionNames) {
+    private List<String> getRandomDimensions(List<String> dimensionNames) {
         Random rand = Randomness.get();
         int bound = 3;
-        List<CacheStatsDimension> result = new ArrayList<>();
+        List<String> result = new ArrayList<>();
         for (String dimName : dimensionNames) {
-            result.add(new CacheStatsDimension(dimName, String.valueOf(rand.nextInt(bound))));
+            result.add(String.valueOf(rand.nextInt(bound)));
         }
         return result;
     }
@@ -887,8 +884,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
         return randomString.toString();
     }
 
-    private List<CacheStatsDimension> getMockDimensions() {
-        return List.of(new CacheStatsDimension(dimensionName, "0"));
+    private List<String> getMockDimensions() {
+        return List.of("0");
     }
 
     private ICacheKey<String> getICacheKey(String key) {
@@ -899,9 +896,8 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
         return (iCacheKey, value) -> {
             // Size consumed by key
             long totalSize = iCacheKey.key.length();
-            for (CacheStatsDimension dim : iCacheKey.dimensions) {
-                totalSize += dim.dimensionName.length();
-                totalSize += dim.dimensionValue.length();
+            for (String dim : iCacheKey.dimensions) {
+                totalSize += dim.length();
             }
             totalSize += 10; // The ICacheKeySerializer writes 2 VInts to record array lengths, which can be 1-5 bytes each
             // Size consumed by value
@@ -924,11 +920,12 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
         return XContentHelper.convertToMap(MediaTypeRegistry.JSON.xContent(), resultString, true);
     }
 
-    private List<String> getXContentMapKeys(ICacheKey<?> iCacheKey) {
+    private List<String> getXContentMapKeys(ICacheKey<?> iCacheKey, List<String> dimensionNames) {
         List<String> result = new ArrayList<>();
-        for (CacheStatsDimension dim : iCacheKey.dimensions) {
-            result.add(dim.dimensionName);
-            result.add(dim.dimensionValue);
+        assert iCacheKey.dimensions.size() == dimensionNames.size();
+        for (int i = 0; i < dimensionNames.size(); i++) {
+            result.add(dimensionNames.get(i));
+            result.add(iCacheKey.dimensions.get(i));
         }
         return result;
     }

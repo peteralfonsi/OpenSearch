@@ -8,6 +8,7 @@
 
 package org.opensearch.common.cache.stats;
 
+import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
@@ -18,11 +19,14 @@ import java.io.IOException;
 /**
  * Interface for access to any cache stats. Allows accessing stats by dimension values.
  * Stores an immutable snapshot of stats for a cache. The cache maintains its own live counters.
+ *
+ * @opensearch.experimental
  */
+@ExperimentalApi
 public interface CacheStats extends Writeable, ToXContentFragment {
 
     // Method to get all 5 values at once
-    CounterSnapshot getTotalStats();
+    CacheStatsCounterSnapshot getTotalStats();
 
     // Methods to get total values.
     long getTotalHits();

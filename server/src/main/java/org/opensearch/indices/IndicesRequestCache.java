@@ -50,7 +50,6 @@ import org.opensearch.common.cache.policy.CachedQueryResult;
 import org.opensearch.common.cache.serializer.BytesReferenceSerializer;
 import org.opensearch.common.cache.service.CacheService;
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.lease.Releasable;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
@@ -230,9 +229,9 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
     }
 
     private ICacheKey<Key> getICacheKey(Key key) {
-        CacheStatsDimension indexDimension = new CacheStatsDimension(INDEX_DIMENSION_NAME, getIndexDimensionName(key));
-        CacheStatsDimension shardIdDimension = new CacheStatsDimension(SHARD_ID_DIMENSION_NAME, getShardIdDimensionName(key));
-        List<CacheStatsDimension> dimensions = List.of(indexDimension, shardIdDimension);
+        String indexDimensionValue = getIndexDimensionName(key);
+        String shardIdDimensionValue = getShardIdDimensionName(key);
+        List<String> dimensions = List.of(indexDimensionValue, shardIdDimensionValue);
         return new ICacheKey<>(key, dimensions);
     }
 
@@ -242,15 +241,6 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
 
     private String getIndexDimensionName(Key key) {
         return key.shardId.getIndexName();
-    }
-
-    private CacheStatsDimension getShardIdDimension(ICacheKey<Key> key) {
-        for (CacheStatsDimension dim : key.dimensions) {
-            if (dim.dimensionName.equals(SHARD_ID_DIMENSION_NAME)) {
-                return dim;
-            }
-        }
-        return null;
     }
 
     BytesReference getOrCompute(
@@ -652,16 +642,13 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                 return;
             }
 
-            Set<CacheStatsDimension> closedShardDimensions = new HashSet<>();
+            Set<List<String>> dimensionListsToDrop = new HashSet<>();
 
-            // List<ICacheKey<Key>> keysToInvalidate = new ArrayList<>();
             for (Iterator<ICacheKey<Key>> iterator = cache.keys().iterator(); iterator.hasNext();) {
                 ICacheKey<Key> key = iterator.next();
                 if (cleanupKeysFromClosedShards.contains(key.key.shardId)) {
-                    // key.setDropStatsForDimensions(true);
-                    // keysToInvalidate.add(key); // Instead of directly removing from iterator, use invalidate() to allow dropping stats
                     // Since the shard is closed, the cache should drop stats for this shard.
-                    closedShardDimensions.add(getShardIdDimension(key));
+                    dimensionListsToDrop.add(key.dimensions);
                     iterator.remove();
                 } else {
                     CleanupKey cleanupKey = new CleanupKey(cacheEntityLookup.apply(key.key.shardId).orElse(null), key.key.readerCacheKeyId);
@@ -670,10 +657,10 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                     }
                 }
             }
-            for (CacheStatsDimension closedDimension : closedShardDimensions) {
-                // Invalidate a dummy key containing the dimension we need to drop stats for
-                closedDimension.setDropStatsOnInvalidation(true);
-                ICacheKey<Key> dummyKey = new ICacheKey<>(null, List.of(closedDimension));
+            for (List<String> closedDimensions : dimensionListsToDrop) {
+                // Invalidate a dummy key containing the dimensions we need to drop stats for
+                ICacheKey<Key> dummyKey = new ICacheKey<>(null, closedDimensions);
+                dummyKey.setDropStatsForDimensions(true);
                 cache.invalidate(dummyKey);
             }
             cache.refresh();

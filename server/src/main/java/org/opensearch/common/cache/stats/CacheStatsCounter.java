@@ -16,11 +16,11 @@ import java.util.Objects;
  * A class containing the 5 live metrics tracked by a StatsHolder object. Mutable.
  */
 public class CacheStatsCounter {
-    public CounterMetric hits;
-    public CounterMetric misses;
-    public CounterMetric evictions;
-    public CounterMetric sizeInBytes;
-    public CounterMetric entries;
+    CounterMetric hits;
+    CounterMetric misses;
+    CounterMetric evictions;
+    CounterMetric sizeInBytes;
+    CounterMetric entries;
 
     public CacheStatsCounter(long hits, long misses, long evictions, long sizeInBytes, long entries) {
         this.hits = new CounterMetric();
@@ -39,7 +39,7 @@ public class CacheStatsCounter {
         this(0, 0, 0, 0, 0);
     }
 
-    private synchronized void internalAdd(long otherHits, long otherMisses, long otherEvictions, long otherSizeInBytes, long otherEntries) {
+    private void internalAdd(long otherHits, long otherMisses, long otherEvictions, long otherSizeInBytes, long otherEntries) {
         this.hits.inc(otherHits);
         this.misses.inc(otherMisses);
         this.evictions.inc(otherEvictions);
@@ -54,32 +54,51 @@ public class CacheStatsCounter {
         internalAdd(other.getHits(), other.getMisses(), other.getEvictions(), other.getSizeInBytes(), other.getEntries());
     }
 
-    public void add(CounterSnapshot snapshot) {
+    public void add(CacheStatsCounterSnapshot snapshot) {
         if (snapshot == null) {
             return;
         }
         internalAdd(snapshot.getHits(), snapshot.getMisses(), snapshot.getEvictions(), snapshot.getSizeInBytes(), snapshot.getEntries());
     }
 
-    @Override
-    public boolean equals(Object o) {
-        if (o == null) {
-            return false;
+    public void subtract(CacheStatsCounterSnapshot other) {
+        if (other == null) {
+            return;
         }
-        if (o.getClass() != CacheStatsCounter.class) {
-            return false;
-        }
-        CacheStatsCounter other = (CacheStatsCounter) o;
-        return (hits.count() == other.hits.count())
-            && (misses.count() == other.misses.count())
-            && (evictions.count() == other.evictions.count())
-            && (sizeInBytes.count() == other.sizeInBytes.count())
-            && (entries.count() == other.entries.count());
+        internalAdd(-other.getHits(), -other.getMisses(), -other.getEvictions(), -other.getSizeInBytes(), -other.getEntries());
     }
 
     @Override
     public int hashCode() {
         return Objects.hash(hits.count(), misses.count(), evictions.count(), sizeInBytes.count(), entries.count());
+    }
+
+    public void incrementHits() {
+        hits.inc();
+    }
+
+    public void incrementMisses() {
+        misses.inc();
+    }
+
+    public void incrementEvictions() {
+        evictions.inc();
+    }
+
+    public void incrementSizeInBytes(long amount) {
+        sizeInBytes.inc(amount);
+    }
+
+    public void decrementSizeInBytes(long amount) {
+        sizeInBytes.dec(amount);
+    }
+
+    public void incrementEntries() {
+        entries.inc();
+    }
+
+    public void decrementEntries() {
+        entries.dec();
     }
 
     public long getHits() {
@@ -102,8 +121,12 @@ public class CacheStatsCounter {
         return entries.count();
     }
 
-    public CounterSnapshot snapshot() {
-        return new CounterSnapshot(hits.count(), misses.count(), evictions.count(), sizeInBytes.count(), entries.count());
+    public void resetSizeAndEntries() {
+        sizeInBytes = new CounterMetric();
+        entries = new CounterMetric();
     }
 
+    public CacheStatsCounterSnapshot snapshot() {
+        return new CacheStatsCounterSnapshot(hits.count(), misses.count(), evictions.count(), sizeInBytes.count(), entries.count());
+    }
 }

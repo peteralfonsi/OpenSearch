@@ -16,7 +16,6 @@ import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.stats.MultiDimensionCacheStatsTests;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings;
@@ -124,7 +123,7 @@ public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
         ICacheKey<String> keyToDrop = keysAdded.get(0);
 
         Map<String, Object> xContentMap = getStatsXContentMap(cache.stats(), dimensionNames);
-        List<String> xContentMapKeys = getXContentMapKeys(keyToDrop);
+        List<String> xContentMapKeys = getXContentMapKeys(keyToDrop, dimensionNames);
         Map<String, Object> individualSnapshotMap = (Map<String, Object>) MultiDimensionCacheStatsTests.getValueFromNestedXContentMap(
             xContentMap,
             xContentMapKeys
@@ -136,15 +135,13 @@ public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
             assertNotNull(value);
         }
 
-        for (CacheStatsDimension dim : keyToDrop.dimensions) {
-            dim.setDropStatsOnInvalidation(true);
-        }
+        keyToDrop.setDropStatsForDimensions(true);
         cache.invalidate(keyToDrop);
 
         // Now assert the stats are gone for any key that has this combination of dimensions, but still there otherwise
         xContentMap = getStatsXContentMap(cache.stats(), dimensionNames);
         for (ICacheKey<String> keyAdded : keysAdded) {
-            xContentMapKeys = getXContentMapKeys(keyAdded);
+            xContentMapKeys = getXContentMapKeys(keyAdded, dimensionNames);
             individualSnapshotMap = (Map<String, Object>) MultiDimensionCacheStatsTests.getValueFromNestedXContentMap(
                 xContentMap,
                 xContentMapKeys
@@ -157,21 +154,22 @@ public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
         }
     }
 
-    private List<String> getXContentMapKeys(ICacheKey<?> iCacheKey) {
+    private List<String> getXContentMapKeys(ICacheKey<?> iCacheKey, List<String> dimensionNames) {
         List<String> result = new ArrayList<>();
-        for (CacheStatsDimension dim : iCacheKey.dimensions) {
-            result.add(dim.dimensionName);
-            result.add(dim.dimensionValue);
+        assert iCacheKey.dimensions.size() == dimensionNames.size();
+        for (int i = 0; i < dimensionNames.size(); i++) {
+            result.add(dimensionNames.get(i));
+            result.add(iCacheKey.dimensions.get(i));
         }
         return result;
     }
 
-    private List<CacheStatsDimension> getRandomDimensions() {
+    private List<String> getRandomDimensions() {
         Random rand = Randomness.get();
         int bound = 3;
-        List<CacheStatsDimension> result = new ArrayList<>();
+        List<String> result = new ArrayList<>();
         for (String dimName : dimensionNames) {
-            result.add(new CacheStatsDimension(dimName, String.valueOf(rand.nextInt(bound))));
+            result.add(String.valueOf(rand.nextInt(bound)));
         }
         return result;
     }
@@ -204,9 +202,9 @@ public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
     }
 
     private ICacheKey<String> getICacheKey(String key) {
-        List<CacheStatsDimension> dims = new ArrayList<>();
+        List<String> dims = new ArrayList<>();
         for (String dimName : dimensionNames) {
-            dims.add(new CacheStatsDimension(dimName, "0"));
+            dims.add("0");
         }
         return new ICacheKey<>(key, dims);
     }

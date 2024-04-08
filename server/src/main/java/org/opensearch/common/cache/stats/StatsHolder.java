@@ -8,18 +8,14 @@
 
 package org.opensearch.common.cache.stats;
 
-import org.opensearch.common.cache.ICacheKey;
-
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.function.BiConsumer;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
+
+import org.opensearch.common.annotation.ExperimentalApi;
+
+import static org.opensearch.common.cache.stats.MultiDimensionCacheStats.MDCSDimensionNode;
 
 /**
  * A class caches use to internally keep track of their stats across multiple dimensions.
@@ -28,60 +24,60 @@ import java.util.function.BiConsumer;
  *
  * @opensearch.experimental
  */
+@ExperimentalApi
 public class StatsHolder {
 
     // The list of permitted dimensions. Should be ordered from "outermost" to "innermost", as you would like to
     // aggregate them in an API response.
     private final List<String> dimensionNames;
-
-    // A map from a set of cache stats dimension values -> stats for that ordered list of dimensions.
-    private final ConcurrentMap<Key, CacheStatsCounter> statsMap;
+    // A tree structure based on dimension values, which stores stats values in its leaf nodes.
+    // Non-leaf nodes have stats matching the sum of their children.
+    private final DimensionNode statsRoot;
+    private final Lock lock = new ReentrantLock();
 
     // The name of the cache type using these stats
     private final String storeName;
 
     public StatsHolder(List<String> dimensionNames, String storeName) {
         this.dimensionNames = dimensionNames;
-        this.statsMap = new ConcurrentHashMap<>();
         this.storeName = storeName;
+        this.statsRoot = new DimensionNode(null, true); // The root node has no dimension value associated with it, only children
     }
 
     public List<String> getDimensionNames() {
         return dimensionNames;
     }
 
-    ConcurrentMap<Key, CacheStatsCounter> getStatsMap() {
-        return statsMap;
-    }
-
     // For all these increment functions, the dimensions list comes from the key, and contains all dimensions present in dimensionNames.
-    // The order doesn't have to match the order given in dimensionNames.
-    public void incrementHits(ICacheKey<?> key) {
-        internalIncrement(key.dimensions, (counter, amount) -> counter.hits.inc(amount), 1);
+    // The order has to match the order given in dimensionNames.
+    public void incrementHits(List<String> dimensionValues) {
+        internalIncrement(dimensionValues, DimensionNode::incrementHits, true);
     }
 
-    public void incrementMisses(ICacheKey<?> key) {
-        internalIncrement(key.dimensions, (counter, amount) -> counter.misses.inc(amount), 1);
+    public void incrementMisses(List<String> dimensionValues) {
+        internalIncrement(dimensionValues, DimensionNode::incrementMisses, true);
     }
 
-    public void incrementEvictions(ICacheKey<?> key) {
-        internalIncrement(key.dimensions, (counter, amount) -> counter.evictions.inc(amount), 1);
+    public void incrementEvictions(List<String> dimensionValues) {
+        internalIncrement(dimensionValues, DimensionNode::incrementEvictions, true);
     }
 
-    public void incrementSizeInBytes(ICacheKey<?> key, long amountBytes) {
-        internalIncrement(key.dimensions, (counter, amount) -> counter.sizeInBytes.inc(amount), amountBytes);
+    public void incrementSizeInBytes(List<String> dimensionValues, long amountBytes) {
+        internalIncrement(dimensionValues, (node) -> node.incrementSizeInBytes(amountBytes), true);
     }
 
-    public void decrementSizeInBytes(ICacheKey<?> key, long amountBytes) {
-        internalDecrement(key.dimensions, (counter, amount) -> counter.sizeInBytes.dec(amount), amountBytes);
+    // For decrements, we should not create nodes if they are absent. This protects us from erroneously decrementing values for keys
+    // which have been entirely deleted, for example in an async removal listener.
+    public void decrementSizeInBytes(List<String> dimensionValues, long amountBytes) {
+        internalIncrement(dimensionValues, (node) -> node.decrementSizeInBytes(amountBytes), false);
     }
 
-    public void incrementEntries(ICacheKey<?> key) {
-        internalIncrement(key.dimensions, (counter, amount) -> counter.entries.inc(amount), 1);
+    public void incrementEntries(List<String> dimensionValues) {
+        internalIncrement(dimensionValues, DimensionNode::incrementEntries, true);
     }
 
-    public void decrementEntries(ICacheKey<?> key) {
-        internalDecrement(key.dimensions, (counter, amount) -> counter.entries.dec(amount), 1);
+    public void decrementEntries(List<String> dimensionValues) {
+        internalIncrement(dimensionValues, DimensionNode::decrementEntries, false);
     }
 
     /**
@@ -89,153 +85,134 @@ public class StatsHolder {
      * This is in line with the behavior of the existing API when caches are cleared.
      */
     public void reset() {
-        for (Key key : statsMap.keySet()) {
-            CacheStatsCounter counter = statsMap.get(key);
-            counter.sizeInBytes.dec(counter.getSizeInBytes());
-            counter.entries.dec(counter.getEntries());
+        resetHelper(statsRoot);
+    }
+
+    private void resetHelper(DimensionNode current) {
+        current.resetSizeAndEntries();
+        for (DimensionNode child : current.children.values()) {
+            resetHelper(child);
         }
     }
 
     public long count() {
         // Include this here so caches don't have to create an entire CacheStats object to run count().
-        long count = 0L;
-        for (Map.Entry<Key, CacheStatsCounter> entry : statsMap.entrySet()) {
-            count += entry.getValue().getEntries();
-        }
-        return count;
+        return statsRoot.getEntries();
+    }
+
+    private void internalIncrement(List<String> dimensionValues, Consumer<DimensionNode> adder, boolean createNodesIfAbsent) {
+        assert dimensionValues.size() == dimensionNames.size();
+        internalIncrementHelper(dimensionValues, statsRoot, 0, adder, createNodesIfAbsent);
     }
 
     /**
-     * Use the incrementer function to increment a value in the stats for a set of dimensions. If there is no stats
-     * for this set of dimensions, create one.
+     * Use the incrementer function to increment/decrement a value in the stats for a set of dimensions.
+     * If createNodesIfAbsent is true, and there is no stats for this set of dimensions, create one.
+     * Returns true if the increment was applied, false if not.
      */
-    private void internalIncrement(List<CacheStatsDimension> dimensions, BiConsumer<CacheStatsCounter, Long> incrementer, long amount) {
-        assert dimensions.size() == dimensionNames.size();
-        CacheStatsCounter stats = internalGetOrCreateStats(dimensions);
-        incrementer.accept(stats, amount);
-    }
-
-    /** Similar to internalIncrement, but only applies to existing keys, and does not create a new key if one is absent.
-     * This protects us from erroneously decrementing values for keys which have been entirely deleted,
-     * for example in an async removal listener.
-     */
-    private void internalDecrement(List<CacheStatsDimension> dimensions, BiConsumer<CacheStatsCounter, Long> decrementer, long amount) {
-        assert dimensions.size() == dimensionNames.size();
-        CacheStatsCounter stats = internalGetStats(dimensions);
-        if (stats != null) {
-            decrementer.accept(stats, amount);
+    private boolean internalIncrementHelper(
+        List<String> dimensionValues,
+        DimensionNode node,
+        int depth, // Pass in the depth to avoid having to slice the list for each node.
+        Consumer<DimensionNode> adder,
+        boolean createNodesIfAbsent
+    ) {
+        if (depth == dimensionValues.size()) {
+            // This is the leaf node we are trying to reach
+            adder.accept(node);
+            return true;
         }
-    }
 
-    private CacheStatsCounter internalGetOrCreateStats(List<CacheStatsDimension> dimensions) {
-        Key key = getKey(dimensions);
-        return statsMap.computeIfAbsent(key, (k) -> new CacheStatsCounter());
-    }
-
-    private CacheStatsCounter internalGetStats(List<CacheStatsDimension> dimensions) {
-        Key key = getKey(dimensions);
-        return statsMap.get(key);
-    }
-
-    /**
-     * Get a valid key from an unordered list of dimensions.
-     */
-    private Key getKey(List<CacheStatsDimension> dims) {
-        return new Key(getOrderedDimensions(dims, dimensionNames));
-    }
-
-    // Get a list of dimension values, ordered according to dimensionNames, from the possibly differently-ordered dimensions passed in.
-    // Public and static for testing purposes.
-    public static List<CacheStatsDimension> getOrderedDimensions(List<CacheStatsDimension> dimensions, List<String> dimensionNames) {
-        List<CacheStatsDimension> result = new ArrayList<>();
-        for (String dimensionName : dimensionNames) {
-            for (CacheStatsDimension dim : dimensions) {
-                if (dim.dimensionName.equals(dimensionName)) {
-                    result.add(dim);
+        DimensionNode child = node.getChild(dimensionValues.get(depth));
+        if (child == null) {
+            if (createNodesIfAbsent) {
+                // If we have to create a new node, obtain the lock first
+                boolean createMapInChild = depth < dimensionValues.size() - 1;
+                lock.lock();
+                try {
+                    child = node.createChild(dimensionValues.get(depth), createMapInChild);
+                } finally {
+                    lock.unlock();
                 }
+            } else {
+                return false;
             }
         }
-        return result;
+        if (internalIncrementHelper(dimensionValues, child, depth + 1, adder, createNodesIfAbsent)) {
+            // Function returns true if the next node down was incremented
+            adder.accept(node);
+            return true;
+        }
+        return false;
     }
 
     /**
      * Produce an immutable CacheStats representation of these stats.
      */
     public CacheStats getCacheStats() {
-        Map<Key, CounterSnapshot> snapshot = new HashMap<>();
-        for (Map.Entry<Key, CacheStatsCounter> entry : statsMap.entrySet()) {
-            snapshot.put(entry.getKey(), entry.getValue().snapshot());
-        }
-        // The resulting map is immutable as well as unmodifiable since the backing map is new, not related to statsMap
-        Map<Key, CounterSnapshot> immutableSnapshot = Collections.unmodifiableMap(snapshot);
-        return new MultiDimensionCacheStats(immutableSnapshot, dimensionNames, storeName);
-    }
-
-    /**
-     * Remove the stats for all keys containing these dimension values.
-     */
-    public void removeDimensions(List<CacheStatsDimension> dims) {
-        Set<Key> keysToRemove = new HashSet<>();
-        for (Map.Entry<Key, CacheStatsCounter> entry : statsMap.entrySet()) {
-            Key key = entry.getKey();
-            if (keyContainsAllDimensions(key, dims)) {
-                keysToRemove.add(key);
+        MDCSDimensionNode snapshot = new MDCSDimensionNode(null, statsRoot.getStatsSnapshot());
+        snapshot.createChildrenMap();
+        // Traverse the tree and build a corresponding tree of MDCSDimensionNode, to pass to MultiDimensionCacheStats.
+        if (statsRoot.getChildren() != null) {
+            for (DimensionNode child : statsRoot.getChildren().values()) {
+                getCacheStatsHelper(child, snapshot);
             }
         }
-        for (Key key : keysToRemove) {
-            statsMap.remove(key);
+        return new MultiDimensionCacheStats(snapshot, dimensionNames, storeName);
+    }
+
+    private void getCacheStatsHelper(DimensionNode currentNodeInOriginalTree, MDCSDimensionNode parentInNewTree) {
+        MDCSDimensionNode newNode = createMatchingMDCSDimensionNode(currentNodeInOriginalTree);
+        parentInNewTree.getChildren().put(newNode.getDimensionValue(), newNode);
+        for (DimensionNode child : currentNodeInOriginalTree.children.values()) {
+            getCacheStatsHelper(child, newNode);
         }
     }
 
-    /**
-     * Check if the Key contains all the dimensions in dims, matching both dimension name and value.
-     */
-    boolean keyContainsAllDimensions(Key key, List<CacheStatsDimension> dims) {
-        for (CacheStatsDimension dim : dims) {
-            int dimensionPosition = dimensionNames.indexOf(dim.dimensionName);
-            if (dimensionPosition == -1) {
-                throw new IllegalArgumentException("Unrecognized dimension: " + dim.dimensionName + " = " + dim.dimensionValue);
-            }
-            String keyDimensionValue = key.dimensions.get(dimensionPosition).dimensionValue;
-            if (!keyDimensionValue.equals(dim.dimensionValue)) {
-                return false;
-            }
+    private MDCSDimensionNode createMatchingMDCSDimensionNode(DimensionNode node) {
+        CacheStatsCounterSnapshot nodeSnapshot = node.getStatsSnapshot();
+        MDCSDimensionNode newNode = new MDCSDimensionNode(node.getDimensionValue(), nodeSnapshot);
+        if (!node.getChildren().isEmpty()) {
+            newNode.createChildrenMap();
         }
-        return true;
+        return newNode;
     }
 
-    /**
-     * Unmodifiable wrapper over a list of dimension values, ordered according to dimensionNames. Pkg-private for testing.
-     */
-    public static class Key {
-        final List<CacheStatsDimension> dimensions; // The dimensions must be ordered
-
-        public Key(List<CacheStatsDimension> dimensions) {
-            this.dimensions = Collections.unmodifiableList(dimensions);
+    public void removeDimensions(List<String> dimensionValues) {
+        // As we are removing nodes from the tree, obtain the lock
+        lock.lock();
+        try {
+            assert dimensionValues.size() == dimensionNames.size()
+                : "Must specify a value for every dimension when removing from StatsHolder";
+            removeDimensionsHelper(dimensionValues, statsRoot, 0);
+        } finally {
+            lock.unlock();
         }
+    }
 
-        public List<CacheStatsDimension> getDimensions() {
-            return dimensions;
+    // Returns a CacheStatsCounterSnapshot object for the stats to decrement if the removal happened, null otherwise.
+    private CacheStatsCounterSnapshot removeDimensionsHelper(List<String> dimensionValues, DimensionNode node, int depth) {
+        if (depth == dimensionValues.size()) {
+            // Pass up a snapshot of the original stats to avoid issues when the original is decremented by other fn invocations
+            return node.getStatsSnapshot();
         }
-
-        @Override
-        public boolean equals(Object o) {
-            if (o == this) {
-                return true;
+        DimensionNode child = node.getChild(dimensionValues.get(depth)); // false, false
+        if (child == null) {
+            return null;
+        }
+        CacheStatsCounterSnapshot statsToDecrement = removeDimensionsHelper(dimensionValues, child, depth + 1);
+        if (statsToDecrement != null) {
+            // The removal took place, decrement values and remove this node from its parent if it's now empty
+            node.decrementBySnapshot(statsToDecrement);
+            if (child.getChildren().isEmpty()) {
+                node.children.remove(child.getDimensionValue());
             }
-            if (o == null) {
-                return false;
-            }
-            if (o.getClass() != Key.class) {
-                return false;
-            }
-            Key other = (Key) o;
-            return this.dimensions.equals(other.dimensions);
         }
+        return statsToDecrement;
+    }
 
-        @Override
-        public int hashCode() {
-            return this.dimensions.hashCode();
-        }
+    // pkg-private for testing
+    DimensionNode getStatsRoot() {
+        return statsRoot;
     }
 }
