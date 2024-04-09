@@ -22,10 +22,11 @@ public class StatsHolderTests extends OpenSearchTestCase {
     // Since StatsHolder does not expose getter methods for aggregating stats,
     // we test the incrementing functionality in combination with MultiDimensionCacheStats,
     // in MultiDimensionCacheStatsTests.java.
+    private final String storeName = "dummy_store";
 
     public void testReset() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
         Map<String, List<String>> usedDimensionValues = getUsedDimensionValues(statsHolder, 10);
         Map<List<String>, CacheStatsCounter> expected = populateStats(statsHolder, usedDimensionValues, 100, 10);
 
@@ -44,7 +45,7 @@ public class StatsHolderTests extends OpenSearchTestCase {
 
     public void testDropStatsForDimensions() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
 
         // Create stats for the following dimension sets
         List<List<String>> populatedStats = List.of(List.of("A1", "B1"), List.of("A2", "B2"), List.of("A2", "B3"));
@@ -80,7 +81,7 @@ public class StatsHolderTests extends OpenSearchTestCase {
 
     public void testCount() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
         Map<String, List<String>> usedDimensionValues = getUsedDimensionValues(statsHolder, 10);
         Map<List<String>, CacheStatsCounter> expected = populateStats(statsHolder, usedDimensionValues, 100, 10);
 
@@ -93,7 +94,7 @@ public class StatsHolderTests extends OpenSearchTestCase {
 
     public void testConcurrentRemoval() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
 
         // Create stats for the following dimension sets
         List<List<String>> populatedStats = List.of(List.of("A1", "B1"), List.of("A2", "B2"), List.of("A2", "B3"));
@@ -150,5 +151,25 @@ public class StatsHolderTests extends OpenSearchTestCase {
             }
         }
         return current;
+    }
+
+    static void populateStatsHolderFromStatsValueMap(StatsHolder statsHolder, Map<List<String>, CacheStatsCounter> statsMap) {
+        for (Map.Entry<List<String>, CacheStatsCounter> entry : statsMap.entrySet()) {
+            CacheStatsCounter stats = entry.getValue();
+            List<String> dims = entry.getKey();
+            for (int i = 0; i < stats.getHits(); i++) {
+                statsHolder.incrementHits(dims);
+            }
+            for (int i = 0; i < stats.getMisses(); i++) {
+                statsHolder.incrementMisses(dims);
+            }
+            for (int i = 0; i < stats.getEvictions(); i++) {
+                statsHolder.incrementEvictions(dims);
+            }
+            statsHolder.incrementSizeInBytes(dims, stats.getSizeInBytes());
+            for (int i = 0; i < stats.getEntries(); i++) {
+                statsHolder.incrementEntries(dims);
+            }
+        }
     }
 }

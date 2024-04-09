@@ -8,20 +8,31 @@
 
 package org.opensearch.common.cache.store;
 
+import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.stats.CacheStats;
+import org.opensearch.common.cache.stats.MultiDimensionCacheStatsTests;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.xcontent.XContentFactory;
+import org.opensearch.common.xcontent.XContentHelper;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Random;
 import java.util.UUID;
 
 import static org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES_KEY;
@@ -96,6 +107,73 @@ public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
         return (OpenSearchOnHeapCache<String, String>) onHeapCacheFactory.create(cacheConfig, CacheType.INDICES_REQUEST_CACHE, null);
     }
 
+    public void testInvalidateWithDropDimensions() throws Exception {
+        MockRemovalListener<String, String> listener = new MockRemovalListener<>();
+        int maxKeys = 50;
+        OpenSearchOnHeapCache<String, String> cache = getCache(maxKeys, listener);
+
+        List<ICacheKey<String>> keysAdded = new ArrayList<>();
+
+        for (int i = 0; i < maxKeys - 5; i++) {
+            ICacheKey<String> key = new ICacheKey<>(UUID.randomUUID().toString(), getRandomDimensions());
+            keysAdded.add(key);
+            cache.computeIfAbsent(key, getLoadAwareCacheLoader());
+        }
+
+        ICacheKey<String> keyToDrop = keysAdded.get(0);
+
+        Map<String, Object> xContentMap = getStatsXContentMap(cache.stats(), dimensionNames);
+        List<String> xContentMapKeys = getXContentMapKeys(keyToDrop, dimensionNames);
+        Map<String, Object> individualSnapshotMap = (Map<String, Object>) MultiDimensionCacheStatsTests.getValueFromNestedXContentMap(
+            xContentMap,
+            xContentMapKeys
+        );
+        assertNotNull(individualSnapshotMap);
+        assertEquals(5, individualSnapshotMap.size()); // Assert all 5 stats are present and not null
+        for (Map.Entry<String, Object> entry : individualSnapshotMap.entrySet()) {
+            Integer value = (Integer) entry.getValue();
+            assertNotNull(value);
+        }
+
+        keyToDrop.setDropStatsForDimensions(true);
+        cache.invalidate(keyToDrop);
+
+        // Now assert the stats are gone for any key that has this combination of dimensions, but still there otherwise
+        xContentMap = getStatsXContentMap(cache.stats(), dimensionNames);
+        for (ICacheKey<String> keyAdded : keysAdded) {
+            xContentMapKeys = getXContentMapKeys(keyAdded, dimensionNames);
+            individualSnapshotMap = (Map<String, Object>) MultiDimensionCacheStatsTests.getValueFromNestedXContentMap(
+                xContentMap,
+                xContentMapKeys
+            );
+            if (keyAdded.dimensions.equals(keyToDrop.dimensions)) {
+                assertNull(individualSnapshotMap);
+            } else {
+                assertNotNull(individualSnapshotMap);
+            }
+        }
+    }
+
+    private List<String> getXContentMapKeys(ICacheKey<?> iCacheKey, List<String> dimensionNames) {
+        List<String> result = new ArrayList<>();
+        assert iCacheKey.dimensions.size() == dimensionNames.size();
+        for (int i = 0; i < dimensionNames.size(); i++) {
+            result.add(dimensionNames.get(i));
+            result.add(iCacheKey.dimensions.get(i));
+        }
+        return result;
+    }
+
+    private List<String> getRandomDimensions() {
+        Random rand = Randomness.get();
+        int bound = 3;
+        List<String> result = new ArrayList<>();
+        for (String dimName : dimensionNames) {
+            result.add(String.valueOf(rand.nextInt(bound)));
+        }
+        return result;
+    }
+
     private static class MockRemovalListener<K, V> implements RemovalListener<ICacheKey<K>, V> {
         CounterMetric numRemovals;
 
@@ -107,6 +185,20 @@ public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
         public void onRemoval(RemovalNotification<ICacheKey<K>, V> notification) {
             numRemovals.inc();
         }
+    }
+
+    // Public as this is used in other tests as well
+    public static Map<String, Object> getStatsXContentMap(CacheStats cacheStats, List<String> levels) throws IOException {
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        Map<String, String> paramMap = Map.of("level", String.join(",", levels));
+        ToXContent.Params params = new ToXContent.MapParams(paramMap);
+
+        builder.startObject();
+        cacheStats.toXContent(builder, params);
+        builder.endObject();
+
+        String resultString = builder.toString();
+        return XContentHelper.convertToMap(MediaTypeRegistry.JSON.xContent(), resultString, true);
     }
 
     private ICacheKey<String> getICacheKey(String key) {

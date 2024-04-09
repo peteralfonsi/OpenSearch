@@ -8,10 +8,12 @@
 
 package org.opensearch.common.cache.service;
 
+import org.opensearch.action.admin.indices.stats.CommonStatsFlags;
 import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.settings.CacheSettings;
+import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.store.OpenSearchOnHeapCache;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.settings.Setting;
@@ -19,6 +21,7 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.FeatureFlags;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -61,5 +64,13 @@ public class CacheService {
         ICache<K, V> iCache = factory.create(config, cacheType, cacheStoreTypeFactories);
         cacheTypeMap.put(cacheType, iCache);
         return iCache;
+    }
+
+    public NodeCacheStats stats(CommonStatsFlags flags) {
+        LinkedHashMap<CacheType, CacheStats> statsMap = new LinkedHashMap<>();
+        for (CacheType type : cacheTypeMap.keySet()) {
+            statsMap.put(type, cacheTypeMap.get(type).stats()); // TODO: We need to force some ordering on cacheTypeMap
+        }
+        return new NodeCacheStats(statsMap, flags);
     }
 }

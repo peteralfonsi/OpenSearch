@@ -34,6 +34,7 @@ package org.opensearch.action.admin.indices.stats;
 
 import org.opensearch.Version;
 import org.opensearch.common.annotation.PublicApi;
+import org.opensearch.common.cache.CacheType;
 import org.opensearch.core.common.Strings;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -63,6 +64,9 @@ public class CommonStatsFlags implements Writeable, Cloneable {
     private boolean includeAllShardIndexingPressureTrackers = false;
     private boolean includeOnlyTopIndexingPressureMetrics = false;
 
+    // Used for metric CACHE_STATS, to determine which caches to report stats for
+    private EnumSet<CacheType> includeCaches = EnumSet.noneOf(CacheType.class);
+
     /**
      * @param flags flags to set. If no flags are supplied, default flags will be set.
      */
@@ -91,6 +95,9 @@ public class CommonStatsFlags implements Writeable, Cloneable {
         includeUnloadedSegments = in.readBoolean();
         includeAllShardIndexingPressureTrackers = in.readBoolean();
         includeOnlyTopIndexingPressureMetrics = in.readBoolean();
+        if (in.getVersion().onOrAfter(Version.V_3_0_0)) {
+            includeCaches = in.readEnumSet(CacheType.class);
+        }
     }
 
     @Override
@@ -111,6 +118,9 @@ public class CommonStatsFlags implements Writeable, Cloneable {
         out.writeBoolean(includeUnloadedSegments);
         out.writeBoolean(includeAllShardIndexingPressureTrackers);
         out.writeBoolean(includeOnlyTopIndexingPressureMetrics);
+        if (out.getVersion().onOrAfter(Version.V_3_0_0)) {
+            out.writeEnumSet(includeCaches);
+        }
     }
 
     /**
@@ -125,6 +135,7 @@ public class CommonStatsFlags implements Writeable, Cloneable {
         includeUnloadedSegments = false;
         includeAllShardIndexingPressureTrackers = false;
         includeOnlyTopIndexingPressureMetrics = false;
+        includeCaches = EnumSet.noneOf(CacheType.class);
         return this;
     }
 
@@ -140,6 +151,7 @@ public class CommonStatsFlags implements Writeable, Cloneable {
         includeUnloadedSegments = false;
         includeAllShardIndexingPressureTrackers = false;
         includeOnlyTopIndexingPressureMetrics = false;
+        includeCaches = EnumSet.noneOf(CacheType.class);
         return this;
     }
 
@@ -149,6 +161,10 @@ public class CommonStatsFlags implements Writeable, Cloneable {
 
     public Flag[] getFlags() {
         return flags.toArray(new Flag[0]);
+    }
+
+    public EnumSet<CacheType> getIncludeCaches() {
+        return includeCaches;
     }
 
     /**
@@ -203,6 +219,16 @@ public class CommonStatsFlags implements Writeable, Cloneable {
 
     public CommonStatsFlags includeOnlyTopIndexingPressureMetrics(boolean includeOnlyTopIndexingPressureMetrics) {
         this.includeOnlyTopIndexingPressureMetrics = includeOnlyTopIndexingPressureMetrics;
+        return this;
+    }
+
+    public CommonStatsFlags includeCacheType(CacheType cacheType) {
+        includeCaches.add(cacheType);
+        return this;
+    }
+
+    public CommonStatsFlags includeAllCacheTypes() {
+        includeCaches = EnumSet.allOf(CacheType.class);
         return this;
     }
 
