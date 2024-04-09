@@ -19,7 +19,6 @@ import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.policy.CachedQueryResult;
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.DimensionNode;
 import org.opensearch.common.cache.stats.StatsHolder;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.collect.Tuple;
@@ -65,10 +64,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
 
     // In future we want to just read the stats from the individual tiers' statsHolder objects, but this isn't
     // possible right now because of the way computeIfAbsent is implemented.
-    //private final StatsHolder heapStats;
-    //private final StatsHolder diskStats;
     private final StatsHolder statsHolder;
-
     private ToLongBiFunction<ICacheKey<K>, V> weigher;
     private final List<String> dimensionNames;
     ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
@@ -123,14 +119,12 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         this.cacheList = Arrays.asList(onHeapCache, diskCache);
 
         this.dimensionNames = builder.cacheConfig.getDimensionNames();
-        //this.heapStats = new StatsHolder(dimensionNames);
-        //this.diskStats = new StatsHolder(dimensionNames);
         this.cacheAndTierValueList = List.of(
             new Tuple<>(onHeapCache, TIER_DIMENSION_VALUE_ON_HEAP),
             new Tuple<>(diskCache, TIER_DIMENSION_VALUE_DISK)
         );
-        // Pass "tier" as the innermost dimension name, on top of whatever dimensions are specified for the cache as a whole
-        this.statsHolder = new StatsHolder(addTierValueToDimensionValues(dimensionNames, TIER_DIMENSION_NAME));
+        // Pass "tier" as the innermost dimension name, in addition to whatever dimensions are specified for the cache as a whole
+        this.statsHolder = new StatsHolder(addTierValueToDimensionValues(dimensionNames, TIER_DIMENSION_NAME), TieredSpilloverCacheFactory.TIERED_SPILLOVER_CACHE_NAME);
         this.policies = builder.policies; // Will never be null; builder initializes it to an empty list
     }
 
@@ -159,7 +153,6 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
 
     @Override
     public V computeIfAbsent(ICacheKey<K> key, LoadAwareCacheLoader<ICacheKey<K>, V> loader) throws Exception {
-
         V cacheValue = getValueFromTieredCache().apply(key);
         if (cacheValue == null) {
             // Add the value to the onHeap cache. We are calling computeIfAbsent which does another get inside.
@@ -186,7 +179,6 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         // We don't update stats here, as this is handled by the removal listeners for the tiers.
         try (ReleasableLock ignore = writeLock.acquire()) {
             for (Tuple<ICache<K, V>, String> pair : cacheAndTierValueList) {
-                //cache.invalidate(key);
                 if (key.getDropStatsForDimensions()) {
                     List<String> dimensionValues = addTierValueToDimensionValues(key.dimensions, pair.v2());
                     statsHolder.removeDimensions(dimensionValues);
@@ -239,7 +231,6 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
 
     @Override
     public CacheStats stats() {
-        //return new TieredSpilloverCacheStats(heapStats.createSnapshot(), diskStats.createSnapshot(), dimensionNames);
         return statsHolder.getCacheStats();
     }
 
@@ -250,12 +241,10 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                     V value = pair.v1().get(key);
                     List<String> dimensionValues = addTierValueToDimensionValues(key.dimensions, pair.v2()); // Get the tier value corresponding to this cache
                     if (value != null) {
-                        //pair.v2().incrementHits(key.dimensions);
                         statsHolder.incrementHits(dimensionValues);
                         return value;
                     } else {
                         statsHolder.incrementMisses(dimensionValues);
-                        //pair.v2().incrementMisses(key.dimensions);
                     }
                 }
             }

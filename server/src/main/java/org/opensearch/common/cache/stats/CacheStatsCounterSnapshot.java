@@ -115,14 +115,14 @@ public class CacheStatsCounterSnapshot implements Writeable, ToXContent {
         return builder;
     }
 
-    static final class Fields {
-        static final String MEMORY_SIZE = "size"; // TODO: Bad name - think of something better
-        static final String MEMORY_SIZE_IN_BYTES = "size_in_bytes";
+    public static final class Fields {
+        public static final String MEMORY_SIZE = "size"; // TODO: Bad name - think of something better
+        public static final String MEMORY_SIZE_IN_BYTES = "size_in_bytes";
         // TODO: This might not be memory as it could be partially on disk, so I've changed it, but should it be consistent with the earlier
         // field?
-        static final String EVICTIONS = "evictions";
-        static final String HIT_COUNT = "hit_count";
-        static final String MISS_COUNT = "miss_count";
-        static final String ENTRIES = "entries";
+        public  static final String EVICTIONS = "evictions";
+        public static final String HIT_COUNT = "hit_count";
+        public static final String MISS_COUNT = "miss_count";
+        public static final String ENTRIES = "entries";
     }
 }
