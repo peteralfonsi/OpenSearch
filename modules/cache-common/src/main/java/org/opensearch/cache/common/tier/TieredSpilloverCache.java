@@ -8,6 +8,7 @@
 
 package org.opensearch.cache.common.tier;
 
+import org.opensearch.cache.common.policy.TookTimePolicy;
 import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
@@ -16,16 +17,19 @@ import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
+import org.opensearch.common.cache.policy.CachedQueryResult;
 import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.stats.StatsHolder;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.collect.Tuple;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.ReleasableLock;
 import org.opensearch.common.util.iterable.Iterables;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +38,7 @@ import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
 import java.util.function.ToLongBiFunction;
+import java.util.function.Predicate;
 
 /**
  * This cache spillover the evicted items from heap tier to disk tier. All the new items are first cached on heap
@@ -72,6 +77,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
      */
     private final List<ICache<K, V>> cacheList;
     private final List<Tuple<ICache<K, V>, StatsHolder>> cacheAndStatsList;
+    private final List<Predicate<V>> policies;
 
     TieredSpilloverCache(Builder<K, V> builder) {
         Objects.requireNonNull(builder.onHeapCacheFactory, "onHeap cache builder can't be null");
@@ -89,11 +95,13 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                 .setSettings(builder.cacheConfig.getSettings())
                 .setWeigher(builder.cacheConfig.getWeigher())
                 .setDimensionNames(builder.cacheConfig.getDimensionNames())
+                .setMaxSizeInBytes(builder.cacheConfig.getMaxSizeInBytes())
+                .setExpireAfterAccess(builder.cacheConfig.getExpireAfterAccess())
                 .build(),
             builder.cacheType,
             builder.cacheFactories
-
         );
+
         this.diskCache = builder.diskCacheFactory.create(
             new CacheConfig.Builder<K, V>().setRemovalListener(onDiskRemovalListener)
                 .setKeyType(builder.cacheConfig.getKeyType())
@@ -114,7 +122,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
             new Tuple<>(onHeapCache, heapStats),
             new Tuple<>(diskCache, diskStats)
         );
-
+        this.policies = builder.policies; // Will never be null; builder initializes it to an empty list
     }
 
     // Package private for testing
@@ -218,7 +226,9 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
 
     @Override
     public CacheStats stats() {
-        return new TieredSpilloverCacheStats(heapStats.createSnapshot(), diskStats.createSnapshot(), dimensionNames);
+        // TODO: Just reuse MDCS
+        //return new TieredSpilloverCacheStats(heapStats.createSnapshot(), diskStats.createSnapshot(), dimensionNames);
+        return null;
     }
 
     private Function<ICacheKey<K>, V> getValueFromTieredCache() {
@@ -227,10 +237,10 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                 for (Tuple<ICache<K, V>, StatsHolder> pair : cacheAndStatsList) {
                     V value = pair.v1().get(key);
                     if (value != null) {
-                        pair.v2().incrementHits(key);
+                        pair.v2().incrementHits(key.dimensions);
                         return value;
                     } else {
-                        pair.v2().incrementMisses(key);
+                        pair.v2().incrementMisses(key.dimensions);
                     }
                 }
             }
@@ -245,8 +255,10 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         if (RemovalReason.EVICTED.equals(notification.getRemovalReason())
             || RemovalReason.CAPACITY.equals(notification.getRemovalReason())) {
             try (ReleasableLock ignore = writeLock.acquire()) {
-                diskCache.put(key, notification.getValue()); // spill over to the disk tier and increment its stats
-                updateStatsOnPut(diskStats, key, notification.getValue());
+                if (evaluatePolicies(notification.getValue())) {
+                    diskCache.put(key, notification.getValue()); // spill over to the disk tier and increment its stats
+                    updateStatsOnPut(diskStats, key, notification.getValue());
+                }
             }
             wasEvicted = true;
         }
@@ -272,15 +284,24 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
 
     void updateStatsOnRemoval(StatsHolder statsHolder, boolean wasEvicted, ICacheKey<K> key, V value) {
         if (wasEvicted) {
-            statsHolder.incrementEvictions(key);
+            statsHolder.incrementEvictions(key.dimensions);
         }
-        statsHolder.decrementEntries(key);
-        statsHolder.incrementSizeInBytes(key, -weigher.applyAsLong(key, value));
+        statsHolder.decrementEntries(key.dimensions);
+        statsHolder.decrementSizeInBytes(key.dimensions, weigher.applyAsLong(key, value));
     }
 
     void updateStatsOnPut(StatsHolder statsHolder, ICacheKey<K> key, V value) {
-        statsHolder.incrementEntries(key);
-        statsHolder.incrementSizeInBytes(key, weigher.applyAsLong(key, value));
+        statsHolder.incrementEntries(key.dimensions);
+        statsHolder.incrementSizeInBytes(key.dimensions, weigher.applyAsLong(key, value));
+    }
+
+    boolean evaluatePolicies(V value) {
+        for (Predicate<V> policy : policies) {
+            if (!policy.test(value)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -306,6 +327,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         DiskTierRemovalListener(TieredSpilloverCache<K, V> tsc) {
             this.tsc = tsc;
         }
+
         @Override
         public void onRemoval(RemovalNotification<ICacheKey<K>, V> notification) {
             tsc.handleRemovalFromDiskTier(notification);
@@ -351,11 +373,21 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                 );
             }
             ICache.Factory diskCacheFactory = cacheFactories.get(diskCacheStoreName);
+
+            TimeValue diskPolicyThreshold = TieredSpilloverCacheSettings.TIERED_SPILLOVER_DISK_TOOK_TIME_THRESHOLD
+                .getConcreteSettingForNamespace(cacheType.getSettingPrefix())
+                .get(settings);
+            Function<V, CachedQueryResult.PolicyValues> cachedResultParser = Objects.requireNonNull(
+                config.getCachedResultParser(),
+                "Cached result parser fn can't be null"
+            );
+
             return new Builder<K, V>().setDiskCacheFactory(diskCacheFactory)
                 .setOnHeapCacheFactory(onHeapCacheFactory)
                 .setRemovalListener(config.getRemovalListener())
                 .setCacheConfig(config)
                 .setCacheType(cacheType)
+                .addPolicy(new TookTimePolicy<V>(diskPolicyThreshold, cachedResultParser))
                 .build();
         }
 
@@ -377,6 +409,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         private CacheConfig<K, V> cacheConfig;
         private CacheType cacheType;
         private Map<String, ICache.Factory> cacheFactories;
+        private final ArrayList<Predicate<V>> policies = new ArrayList<>();
 
         /**
          * Default constructor
@@ -440,6 +473,26 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
          */
         public Builder<K, V> setCacheFactories(Map<String, ICache.Factory> cacheFactories) {
             this.cacheFactories = cacheFactories;
+            return this;
+        }
+
+        /**
+         * Set a cache policy to be used to limit access to this cache's disk tier.
+         * @param policy the policy
+         * @return builder
+         */
+        public Builder<K, V> addPolicy(Predicate<V> policy) {
+            this.policies.add(policy);
+            return this;
+        }
+
+        /**
+         * Set multiple policies to be used to limit access to this cache's disk tier.
+         * @param policies the policies
+         * @return builder
+         */
+        public Builder<K, V> addPolicies(List<Predicate<V>> policies) {
+            this.policies.addAll(policies);
             return this;
         }
 

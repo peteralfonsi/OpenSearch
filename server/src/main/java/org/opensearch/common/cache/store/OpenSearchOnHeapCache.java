@@ -19,7 +19,6 @@ import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.settings.CacheSettings;
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.cache.stats.StatsHolder;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.store.config.CacheConfig;
@@ -33,6 +32,7 @@ import org.opensearch.core.common.unit.ByteSizeValue;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.ToLongBiFunction;
 
 import static org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings.EXPIRE_AFTER_ACCESS_KEY;
 import static org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES_KEY;
@@ -50,6 +50,7 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
     private final StatsHolder statsHolder;
     private final RemovalListener<ICacheKey<K>, V> removalListener;
     private final List<String> dimensionNames;
+    private final ToLongBiFunction<ICacheKey<K>, V> weigher;
 
     public OpenSearchOnHeapCache(Builder<K, V> builder) {
         CacheBuilder<ICacheKey<K>, V> cacheBuilder = CacheBuilder.<ICacheKey<K>, V>builder()
@@ -63,15 +64,16 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
         this.dimensionNames = Objects.requireNonNull(builder.dimensionNames, "Dimension names can't be null");
         this.statsHolder = new StatsHolder(dimensionNames);
         this.removalListener = builder.getRemovalListener();
+        this.weigher = builder.getWeigher();
     }
 
     @Override
     public V get(ICacheKey<K> key) {
         V value = cache.get(key);
         if (value != null) {
-            statsHolder.incrementHits(key);
+            statsHolder.incrementHits(key.dimensions);
         } else {
-            statsHolder.incrementMisses(key);
+            statsHolder.incrementMisses(key.dimensions);
         }
         return value;
     }
@@ -79,26 +81,31 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
     @Override
     public void put(ICacheKey<K> key, V value) {
         cache.put(key, value);
-        statsHolder.incrementEntries(key);
-        statsHolder.incrementSizeInBytes(key, cache.getWeigher().applyAsLong(key, value));
+        statsHolder.incrementEntries(key.dimensions);
+        statsHolder.incrementSizeInBytes(key.dimensions, weigher.applyAsLong(key, value));
     }
 
     @Override
     public V computeIfAbsent(ICacheKey<K> key, LoadAwareCacheLoader<ICacheKey<K>, V> loader) throws Exception {
         V value = cache.computeIfAbsent(key, key1 -> loader.load(key));
         if (!loader.isLoaded()) {
-            statsHolder.incrementHits(key);
+            statsHolder.incrementHits(key.dimensions);
         } else {
-            statsHolder.incrementMisses(key);
-            statsHolder.incrementEntries(key);
-            statsHolder.incrementSizeInBytes(key, cache.getWeigher().applyAsLong(key, value));
+            statsHolder.incrementMisses(key.dimensions);
+            statsHolder.incrementEntries(key.dimensions);
+            statsHolder.incrementSizeInBytes(key.dimensions, cache.getWeigher().applyAsLong(key, value));
         }
         return value;
     }
 
     @Override
     public void invalidate(ICacheKey<K> key) {
-        cache.invalidate(key);
+        if (key.getDropStatsForDimensions()) {
+            statsHolder.removeDimensions(key.dimensions);
+        }
+        if (key.key != null) {
+            cache.invalidate(key);
+        }
     }
 
     @Override
@@ -127,21 +134,21 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
 
     @Override
     public CacheStats stats() {
-        return new MultiDimensionCacheStats(statsHolder.createSnapshot(), statsHolder.getDimensionNames());
+        return statsHolder.getCacheStats();
     }
 
     @Override
     public void onRemoval(RemovalNotification<ICacheKey<K>, V> notification) {
         removalListener.onRemoval(notification);
-        statsHolder.decrementEntries(notification.getKey());
-        statsHolder.incrementSizeInBytes(
-            notification.getKey(),
-            -cache.getWeigher().applyAsLong(notification.getKey(), notification.getValue())
+        statsHolder.decrementEntries(notification.getKey().dimensions);
+        statsHolder.decrementSizeInBytes(
+            notification.getKey().dimensions,
+            cache.getWeigher().applyAsLong(notification.getKey(), notification.getValue())
         );
 
         if (RemovalReason.EVICTED.equals(notification.getRemovalReason())
             || RemovalReason.CAPACITY.equals(notification.getRemovalReason())) {
-            statsHolder.incrementEvictions(notification.getKey());
+            statsHolder.incrementEvictions(notification.getKey().dimensions);
         }
     }
 

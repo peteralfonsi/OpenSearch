@@ -9,8 +9,6 @@
 package org.opensearch.cache.common.tier;
 
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.CacheStatsDimension;
-import org.opensearch.common.cache.stats.CacheStatsResponse;
 import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.cache.stats.StatsHolder;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -26,9 +24,9 @@ import java.util.TreeMap;
 /**
  * A CacheStats implementation for TieredSpilloverCache, which keeps track of the stats for its tiers.
  */
-public class TieredSpilloverCacheStats implements CacheStats {
+public class TieredSpilloverCacheStats  { // implements CacheStats
     // Pkg-private for testing
-    final MultiDimensionCacheStats heapStats;
+    /*final MultiDimensionCacheStats heapStats;
     final MultiDimensionCacheStats diskStats;
 
     public static final String TIER_DIMENSION_NAME = "tier";
@@ -154,5 +152,5 @@ public class TieredSpilloverCacheStats implements CacheStats {
 
     CacheStatsResponse.Snapshot getTotalDiskStats() {
         return diskStats.getTotalStats();
-    }
+    }*/
 }

@@ -8,18 +8,41 @@
 
 package org.opensearch.common.cache;
 
-import org.opensearch.common.cache.stats.CacheStatsDimension;
+import org.opensearch.common.annotation.ExperimentalApi;
 
 import java.util.Collections;
 import java.util.List;
 
+/**
+ * A key wrapper used for ICache implementations, which carries dimensions with it.
+ * @param <K> the type of the underlying key
+ *
+ * @opensearch.experimental
+ */
+@ExperimentalApi
 public class ICacheKey<K> {
     public final K key; // K must implement equals()
-    public final List<CacheStatsDimension> dimensions;
+    public final List<String> dimensions; // Dimension values. The dimension names are implied.
+    /**
+     * If this key is invalidated and dropDimensions is true, the ICache implementation will also drop all stats,
+     * including hits/misses/evictions, with this combination of dimension values.
+     */
+    private boolean dropStatsForDimensions;
 
-    public ICacheKey(K key, List<CacheStatsDimension> dimensions) {
+    /**
+     * Constructor to use when specifying dimensions.
+     */
+    public ICacheKey(K key, List<String> dimensions) {
         this.key = key;
         this.dimensions = dimensions;
+    }
+
+    /**
+     * Constructor to use when no dimensions are needed.
+     */
+    public ICacheKey(K key) {
+        this.key = key;
+        this.dimensions = List.of();
     }
 
     @Override
@@ -42,11 +65,20 @@ public class ICacheKey<K> {
         return 31 * key.hashCode() + dimensions.hashCode();
     }
 
-    public long dimensionBytesEstimate() {
-        long estimate = 0L;
-        for (CacheStatsDimension dim : dimensions) {
-            estimate += dim.dimensionName.length() + dim.dimensionValue.length();
+    // As K might not be Accountable, directly pass in its memory usage to be added.
+    public long ramBytesUsed(long underlyingKeyRamBytes) {
+        long estimate = underlyingKeyRamBytes;
+        for (String dim : dimensions) {
+            estimate += dim.length();
         }
         return estimate;
+    }
+
+    public boolean getDropStatsForDimensions() {
+        return dropStatsForDimensions;
+    }
+
+    public void setDropStatsForDimensions(boolean newValue) {
+        dropStatsForDimensions = newValue;
     }
 }

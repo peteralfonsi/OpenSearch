@@ -18,7 +18,9 @@ import org.opensearch.action.delete.DeleteResponse;
 import org.opensearch.action.support.PlainActionFuture;
 import org.opensearch.client.Client;
 import org.opensearch.client.Requests;
+import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.metadata.IndexMetadata;
+import org.opensearch.common.Nullable;
 import org.opensearch.common.io.PathUtils;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.io.IOUtils;
@@ -26,6 +28,8 @@ import org.opensearch.core.index.Index;
 import org.opensearch.core.rest.RestStatus;
 import org.opensearch.index.IndexService;
 import org.opensearch.index.IndexSettings;
+import org.opensearch.index.remote.RemoteStoreEnums.PathHashAlgorithm;
+import org.opensearch.index.remote.RemoteStoreEnums.PathType;
 import org.opensearch.index.shard.IndexShard;
 import org.opensearch.indices.IndicesService;
 import org.opensearch.indices.replication.common.ReplicationType;
@@ -43,6 +47,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -50,7 +56,7 @@ import java.util.stream.Stream;
 
 import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_REMOTE_SEGMENT_STORE_REPOSITORY;
 import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_REMOTE_STORE_ENABLED;
-import static org.opensearch.remotestore.RemoteStoreBaseIntegTestCase.remoteStoreClusterSettings;
+import static org.opensearch.indices.IndicesService.CLUSTER_REMOTE_STORE_PATH_PREFIX_TYPE_SETTING;
 import static org.opensearch.test.hamcrest.OpenSearchAssertions.assertAcked;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThan;
@@ -255,6 +261,118 @@ public class RemoteRestoreSnapshotIT extends AbstractSnapshotIntegTestCase {
         indexDocuments(client, restoredIndexName1Doc, numDocsInIndex1, numDocsInIndex1 + 2);
         ensureGreen(restoredIndexName1Doc);
         assertDocsPresentInIndex(client, restoredIndexName1Doc, numDocsInIndex1 + 2);
+    }
+
+    /**
+     * In this test, we validate presence of remote_store custom data in index metadata for standard index creation and
+     * on snapshot restore.
+     */
+    public void testRemoteStoreCustomDataOnIndexCreationAndRestore() {
+        String clusterManagerNode = internalCluster().startClusterManagerOnlyNode();
+        internalCluster().startDataOnlyNode();
+        String indexName1 = "testindex1";
+        String indexName2 = "testindex2";
+        String snapshotRepoName = "test-restore-snapshot-repo";
+        String snapshotName1 = "test-restore-snapshot1";
+        Path absolutePath1 = randomRepoPath().toAbsolutePath();
+        logger.info("Snapshot Path [{}]", absolutePath1);
+        String restoredIndexName1version1 = indexName1 + "-restored-1";
+        String restoredIndexName1version2 = indexName1 + "-restored-2";
+
+        createRepository(snapshotRepoName, "fs", getRepositorySettings(absolutePath1, true));
+        Client client = client();
+        Settings indexSettings = getIndexSettings(1, 0).build();
+        createIndex(indexName1, indexSettings);
+
+        indexDocuments(client, indexName1, randomIntBetween(5, 10));
+        ensureGreen(indexName1);
+        validatePathType(indexName1, PathType.FIXED);
+
+        logger.info("--> snapshot");
+        SnapshotInfo snapshotInfo = createSnapshot(snapshotRepoName, snapshotName1, new ArrayList<>(Arrays.asList(indexName1)));
+        assertEquals(SnapshotState.SUCCESS, snapshotInfo.state());
+        assertTrue(snapshotInfo.successfulShards() > 0);
+        assertEquals(snapshotInfo.totalShards(), snapshotInfo.successfulShards());
+
+        RestoreSnapshotResponse restoreSnapshotResponse = client.admin()
+            .cluster()
+            .prepareRestoreSnapshot(snapshotRepoName, snapshotName1)
+            .setWaitForCompletion(false)
+            .setRenamePattern(indexName1)
+            .setRenameReplacement(restoredIndexName1version1)
+            .get();
+        assertEquals(RestStatus.ACCEPTED, restoreSnapshotResponse.status());
+        ensureGreen(restoredIndexName1version1);
+        validatePathType(restoredIndexName1version1, PathType.FIXED);
+
+        client(clusterManagerNode).admin()
+            .cluster()
+            .prepareUpdateSettings()
+            .setTransientSettings(Settings.builder().put(CLUSTER_REMOTE_STORE_PATH_PREFIX_TYPE_SETTING.getKey(), PathType.HASHED_PREFIX))
+            .get();
+
+        restoreSnapshotResponse = client.admin()
+            .cluster()
+            .prepareRestoreSnapshot(snapshotRepoName, snapshotName1)
+            .setWaitForCompletion(false)
+            .setRenamePattern(indexName1)
+            .setRenameReplacement(restoredIndexName1version2)
+            .get();
+        assertEquals(RestStatus.ACCEPTED, restoreSnapshotResponse.status());
+        ensureGreen(restoredIndexName1version2);
+        validatePathType(restoredIndexName1version2, PathType.HASHED_PREFIX, PathHashAlgorithm.FNV_1A);
+
+        // Create index with cluster setting cluster.remote_store.index.path.prefix.type as hashed_prefix.
+        indexSettings = getIndexSettings(1, 0).build();
+        createIndex(indexName2, indexSettings);
+        ensureGreen(indexName2);
+        validatePathType(indexName2, PathType.HASHED_PREFIX, PathHashAlgorithm.FNV_1A);
+
+        // Validating that custom data has not changed for indexes which were created before the cluster setting got updated
+        validatePathType(indexName1, PathType.FIXED);
+
+        // Create Snapshot of index 2
+        String snapshotName2 = "test-restore-snapshot2";
+        snapshotInfo = createSnapshot(snapshotRepoName, snapshotName2, new ArrayList<>(List.of(indexName2)));
+        assertEquals(SnapshotState.SUCCESS, snapshotInfo.state());
+        assertTrue(snapshotInfo.successfulShards() > 0);
+        assertEquals(snapshotInfo.totalShards(), snapshotInfo.successfulShards());
+
+        // Update cluster settings to FIXED
+        client(clusterManagerNode).admin()
+            .cluster()
+            .prepareUpdateSettings()
+            .setTransientSettings(Settings.builder().put(CLUSTER_REMOTE_STORE_PATH_PREFIX_TYPE_SETTING.getKey(), PathType.FIXED))
+            .get();
+
+        // Close index 2
+        assertAcked(client().admin().indices().prepareClose(indexName2));
+        restoreSnapshotResponse = client.admin()
+            .cluster()
+            .prepareRestoreSnapshot(snapshotRepoName, snapshotName2)
+            .setWaitForCompletion(false)
+            .setIndices(indexName2)
+            .get();
+        assertEquals(RestStatus.ACCEPTED, restoreSnapshotResponse.status());
+        ensureGreen(indexName2);
+
+        // Validating that custom data has not changed for testindex2 which was created before the cluster setting got updated
+        validatePathType(indexName2, PathType.HASHED_PREFIX, PathHashAlgorithm.FNV_1A);
+    }
+
+    private void validatePathType(String index, PathType pathType) {
+        validatePathType(index, pathType, null);
+    }
+
+    private void validatePathType(String index, PathType pathType, @Nullable PathHashAlgorithm pathHashAlgorithm) {
+        ClusterState state = client().admin().cluster().prepareState().execute().actionGet().getState();
+        // Validate that the remote_store custom data is present in index metadata for the created index.
+        Map<String, String> remoteCustomData = state.metadata().index(index).getCustomData(IndexMetadata.REMOTE_STORE_CUSTOM_KEY);
+        assertNotNull(remoteCustomData);
+        assertEquals(pathType.name(), remoteCustomData.get(PathType.NAME));
+        if (Objects.nonNull(pathHashAlgorithm)) {
+            assertEquals(pathHashAlgorithm.name(), remoteCustomData.get(PathHashAlgorithm.NAME));
+        }
     }
 
     public void testRestoreInSameRemoteStoreEnabledIndex() throws IOException {

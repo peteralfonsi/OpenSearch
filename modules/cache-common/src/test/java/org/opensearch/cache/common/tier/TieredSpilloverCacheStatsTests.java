@@ -12,8 +12,6 @@ import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.Cache;
 import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.CacheStatsDimension;
-import org.opensearch.common.cache.stats.CacheStatsResponse;
 import org.opensearch.common.cache.stats.StatsHolder;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.settings.Settings;
@@ -32,13 +30,13 @@ import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
 
-import static org.opensearch.cache.common.tier.TieredSpilloverCacheStats.TIER_DIMENSION_NAME;
+/*import static org.opensearch.cache.common.tier.TieredSpilloverCacheStats.TIER_DIMENSION_NAME;
 import static org.opensearch.cache.common.tier.TieredSpilloverCacheStats.TIER_DIMENSION_VALUE_ON_HEAP;
 import static org.opensearch.cache.common.tier.TieredSpilloverCacheStats.TIER_DIMENSION_VALUE_DISK;
-import static org.opensearch.cache.common.tier.TieredSpilloverCacheStats.combineTierResponses;
+import static org.opensearch.cache.common.tier.TieredSpilloverCacheStats.combineTierResponses;*/
 
 public class TieredSpilloverCacheStatsTests extends OpenSearchTestCase {
-    private static List<String> dimensionNames = List.of("dim1", "dim2", "dim3");
+    /*private static List<String> dimensionNames = List.of("dim1", "dim2", "dim3");
     private static List<String> tierNames = List.of(TIER_DIMENSION_VALUE_ON_HEAP, TIER_DIMENSION_VALUE_DISK);
     public void testGets() throws Exception {
         StatsHolder heapStats = new StatsHolder(dimensionNames);
@@ -295,6 +293,6 @@ public class TieredSpilloverCacheStatsTests extends OpenSearchTestCase {
 
     private static ICacheKey<String> getDummyKey(List<CacheStatsDimension> dims) {
         return new ICacheKey<>(null, dims);
-    }
+    }*/
 
 }

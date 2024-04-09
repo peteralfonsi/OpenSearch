@@ -108,6 +108,7 @@ import org.opensearch.core.xcontent.MediaTypeRegistry;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.core.xcontent.XContentParser;
 import org.opensearch.index.mapper.MapperService;
+import org.opensearch.index.remote.RemoteStorePathStrategy;
 import org.opensearch.index.snapshots.IndexShardRestoreFailedException;
 import org.opensearch.index.snapshots.IndexShardSnapshotStatus;
 import org.opensearch.index.snapshots.blobstore.BlobStoreIndexShardSnapshot;
@@ -669,7 +670,8 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent imp
             RemoteStoreLockManager remoteStoreMetadataLockManger = remoteStoreLockManagerFactory.newLockManager(
                 remoteStoreRepository,
                 indexUUID,
-                String.valueOf(shardId.shardId())
+                String.valueOf(shardId.shardId()),
+                remStoreBasedShardMetadata.getRemoteStorePathStrategy()
             );
             remoteStoreMetadataLockManger.cloneLock(
                 FileLockInfo.getLockInfoBuilder().withAcquirerId(source.getUUID()).build(),
@@ -1107,7 +1109,8 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent imp
         String remoteStoreRepoForIndex,
         String indexUUID,
         ShardId shardId,
-        String threadPoolName
+        String threadPoolName,
+        RemoteStorePathStrategy pathStrategy
     ) {
         threadpool.executor(threadPoolName)
             .execute(
@@ -1116,7 +1119,8 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent imp
                         remoteDirectoryFactory,
                         remoteStoreRepoForIndex,
                         indexUUID,
-                        shardId
+                        shardId,
+                        pathStrategy
                     ),
                     indexUUID,
                     shardId
@@ -1147,17 +1151,19 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent imp
         RemoteStoreLockManager remoteStoreMetadataLockManager = remoteStoreLockManagerFactory.newLockManager(
             remoteStoreRepoForIndex,
             indexUUID,
-            shardId
+            shardId,
+            remoteStoreShardShallowCopySnapshot.getRemoteStorePathStrategy()
         );
         remoteStoreMetadataLockManager.release(FileLockInfo.getLockInfoBuilder().withAcquirerId(shallowSnapshotUUID).build());
         logger.debug("Successfully released lock for shard {} of index with uuid {}", shardId, indexUUID);
         if (!isIndexPresent(clusterService, indexUUID)) {
             // Note: this is a temporary solution where snapshot deletion triggers remote store side cleanup if
-            // index is already deleted. shard cleanup will still happen asynchronously using REMOTE_PURGE
-            // threadpool. if it fails, it could leave some stale files in remote directory. this issue could
-            // even happen in cases of shard level remote store data cleanup which also happens asynchronously.
-            // in long term, we have plans to implement remote store GC poller mechanism which will take care of
-            // such stale data. related issue: https://github.com/opensearch-project/OpenSearch/issues/8469
+            // index is already deleted. this is the best effort at the moment since shard cleanup will still happen
+            // asynchronously using REMOTE_PURGE thread pool. if it fails, it could leave some stale files in remote
+            // directory. this issue could even happen in cases of shard level remote store data cleanup which also
+            // happens asynchronously. in long term, we have plans to implement remote store GC poller mechanism which
+            // will take care of such stale data.
+            // related issue: https://github.com/opensearch-project/OpenSearch/issues/8469
             RemoteSegmentStoreDirectoryFactory remoteDirectoryFactory = new RemoteSegmentStoreDirectoryFactory(
                 remoteStoreLockManagerFactory.getRepositoriesService(),
                 threadPool
@@ -1168,7 +1174,8 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent imp
                 remoteStoreRepoForIndex,
                 indexUUID,
                 new ShardId(Index.UNKNOWN_INDEX_NAME, indexUUID, Integer.parseInt(shardId)),
-                ThreadPool.Names.REMOTE_PURGE
+                ThreadPool.Names.REMOTE_PURGE,
+                remoteStoreShardShallowCopySnapshot.getRemoteStorePathStrategy()
             );
         }
     }
@@ -2683,6 +2690,7 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent imp
             // now create and write the commit point
             logger.trace("[{}] [{}] writing shard snapshot file", shardId, snapshotId);
             try {
+                RemoteStorePathStrategy pathStrategy = store.indexSettings().getRemoteStorePathStrategy();
                 REMOTE_STORE_SHARD_SHALLOW_COPY_SNAPSHOT_FORMAT.write(
                     new RemoteStoreShardShallowCopySnapshot(
                         snapshotId.getName(),
@@ -2696,7 +2704,9 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent imp
                         store.indexSettings().getUUID(),
                         store.indexSettings().getRemoteStoreRepository(),
                         this.basePath().toString(),
-                        fileNames
+                        fileNames,
+                        pathStrategy.getType(),
+                        pathStrategy.getHashAlgorithm()
                     ),
                     shardContainer,
                     snapshotId.getUUID(),
@@ -3387,7 +3397,8 @@ public abstract class BlobStoreRepository extends AbstractLifecycleComponent imp
                             blob.substring(SNAPSHOT_PREFIX.length(), blob.length() - ".dat".length())
                         ) == false)
                     || (remoteStoreLockManagerFactory != null
-                        && extractShallowSnapshotUUID(blob).map(survivingSnapshotUUIDs::contains).orElse(false))
+                        && extractShallowSnapshotUUID(blob).map(snapshotUUID -> !survivingSnapshotUUIDs.contains(snapshotUUID))
+                            .orElse(false))
                     || (blob.startsWith(UPLOADED_DATA_BLOB_PREFIX) && updatedSnapshots.findNameFile(canonicalName(blob)) == null)
                     || FsBlobContainer.isTempBlobName(blob)
             )

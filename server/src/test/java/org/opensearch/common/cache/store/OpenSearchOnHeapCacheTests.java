@@ -14,7 +14,6 @@ import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
-import org.opensearch.common.cache.stats.CacheStatsDimension;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings;
 import org.opensearch.common.metrics.CounterMetric;
@@ -29,7 +28,7 @@ import static org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSe
 
 public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
     private final static long keyValueSize = 50;
-    private final static List<String> dimensionNames = List.of("dim1", "dim2");
+    private final static List<String> dimensionNames = List.of("dim1", "dim2", "dim3");
 
     public void testStats() throws Exception {
         MockRemovalListener<String, String> listener = new MockRemovalListener<>();
@@ -111,9 +110,9 @@ public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
     }
 
     private ICacheKey<String> getICacheKey(String key) {
-        List<CacheStatsDimension> dims = new ArrayList<>();
+        List<String> dims = new ArrayList<>();
         for (String dimName : dimensionNames) {
-            dims.add(new CacheStatsDimension(dimName, "0"));
+            dims.add("0");
         }
         return new ICacheKey<>(key, dims);
     }
