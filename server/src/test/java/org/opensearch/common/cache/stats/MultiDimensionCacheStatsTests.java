@@ -31,6 +31,7 @@ import java.util.function.BiConsumer;
 
 public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
     private final String storeName = "dummy_store";
+
     public void testSerialization() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2", "dim3");
         StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
@@ -179,12 +180,19 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
         List<String> dimensionNames = List.of("A", "B", "C");
 
         StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
-        StatsHolderTests.populateStatsHolderFromStatsValueMap(statsHolder, Map.of(
-            List.of("A1", "B1", "C1"), new CacheStatsCounter(1, 1, 1, 1, 1),
-            List.of("A1", "B1", "C2"), new CacheStatsCounter(2, 2, 2, 2, 2),
-            List.of("A1", "B2", "C1"), new CacheStatsCounter(3, 3, 3, 3, 3),
-            List.of("A2", "B1", "C3"), new CacheStatsCounter(4, 4, 4, 4, 4)
-        ));
+        StatsHolderTests.populateStatsHolderFromStatsValueMap(
+            statsHolder,
+            Map.of(
+                List.of("A1", "B1", "C1"),
+                new CacheStatsCounter(1, 1, 1, 1, 1),
+                List.of("A1", "B1", "C2"),
+                new CacheStatsCounter(2, 2, 2, 2, 2),
+                List.of("A1", "B2", "C1"),
+                new CacheStatsCounter(3, 3, 3, 3, 3),
+                List.of("A2", "B1", "C3"),
+                new CacheStatsCounter(4, 4, 4, 4, 4)
+            )
+        );
         MultiDimensionCacheStats stats = (MultiDimensionCacheStats) statsHolder.getCacheStats();
 
         XContentBuilder builder = XContentFactory.jsonBuilder();

@@ -45,8 +45,6 @@ import org.opensearch.cluster.service.ClusterStateStats;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.service.NodeCacheStats;
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.CacheStatsCounterSnapshot;
-import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.cache.stats.StatsHolder;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.metrics.OperationStats;
@@ -946,7 +944,7 @@ public class NodeStatsTests extends OpenSearchTestCase {
         if (frequently()) {
             int numIndices = randomIntBetween(1, 10);
             int numShardsPerIndex = randomIntBetween(1, 50);
-            //Map<StatsHolder.Key, CounterSnapshot> snapshotMap = new HashMap<>();
+            // Map<StatsHolder.Key, CounterSnapshot> snapshotMap = new HashMap<>();
 
             List<String> dimensionNames = List.of("index", "shard", "tier");
             StatsHolder statsHolder = new StatsHolder(dimensionNames, "dummyStoreName");
@@ -963,17 +961,17 @@ public class NodeStatsTests extends OpenSearchTestCase {
                             randomInt(100)
                         );*/
                         List<String> dimensionValues = List.of(indexName, shardName, tierName);
-                        for (int i = 0; i < randomInt(20); i++){
+                        for (int i = 0; i < randomInt(20); i++) {
                             statsHolder.incrementHits(dimensionValues);
                         }
-                        for (int i = 0; i < randomInt(20); i++){
+                        for (int i = 0; i < randomInt(20); i++) {
                             statsHolder.incrementMisses(dimensionValues);
                         }
-                        for (int i = 0; i < randomInt(20); i++){
+                        for (int i = 0; i < randomInt(20); i++) {
                             statsHolder.incrementEvictions(dimensionValues);
                         }
                         statsHolder.incrementSizeInBytes(dimensionValues, randomInt(20));
-                        for (int i = 0; i < randomInt(20); i++){
+                        for (int i = 0; i < randomInt(20); i++) {
                             statsHolder.incrementEntries(dimensionValues);
                         }
                         /*snapshotMap.put(

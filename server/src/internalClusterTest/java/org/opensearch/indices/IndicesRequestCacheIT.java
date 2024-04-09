@@ -42,11 +42,8 @@ import org.opensearch.action.admin.indices.forcemerge.ForceMergeResponse;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.action.search.SearchType;
 import org.opensearch.client.Client;
-import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.metadata.IndexMetadata;
-import org.opensearch.cluster.routing.ShardRouting;
 import org.opensearch.common.cache.service.NodeCacheStats;
-import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.time.DateFormatter;
 import org.opensearch.common.util.FeatureFlags;
@@ -57,7 +54,6 @@ import org.opensearch.core.xcontent.ToXContent;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.index.cache.request.RequestCacheStats;
 import org.opensearch.index.query.QueryBuilders;
-import org.opensearch.index.shard.IndexShard;
 import org.opensearch.search.aggregations.bucket.global.GlobalAggregationBuilder;
 import org.opensearch.search.aggregations.bucket.histogram.DateHistogramInterval;
 import org.opensearch.search.aggregations.bucket.histogram.Histogram;
@@ -737,10 +733,11 @@ public class IndicesRequestCacheIT extends ParameterizedStaticSettingsOpenSearch
 
     }
 
-    private static Map<String, Object> getNodeCacheStatsXContentMap(Client client, String nodeId, List<String> aggregationLevels) throws IOException {
+    private static Map<String, Object> getNodeCacheStatsXContentMap(Client client, String nodeId, List<String> aggregationLevels)
+        throws IOException {
 
-
-        NodesStatsResponse nodeStatsResponse = client.admin().cluster()
+        NodesStatsResponse nodeStatsResponse = client.admin()
+            .cluster()
             .prepareNodesStats("data:true")
             .addMetric(NodesStatsRequest.Metric.CACHE_STATS.metricName())
             .get();

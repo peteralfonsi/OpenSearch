@@ -259,8 +259,13 @@ public class MultiDimensionCacheStats implements CacheStats {
 
     }
 
-    private void toXContentForLevelsHelper(int depth, MDCSDimensionNode current, List<String> levels, XContentBuilder builder, Params params)
-        throws IOException {
+    private void toXContentForLevelsHelper(
+        int depth,
+        MDCSDimensionNode current,
+        List<String> levels,
+        XContentBuilder builder,
+        Params params
+    ) throws IOException {
         if (depth >= 0) {
             builder.startObject(current.dimensionValue);
         }
@@ -361,7 +366,9 @@ public class MultiDimensionCacheStats implements CacheStats {
             // TODO: Simplify this logic once we inherit from normal DimensionNode and have the static empty map thing
             return true;
         }
-        if (thisNode.children == null || otherNode.children == null || !thisNode.getChildren().keySet().equals(otherNode.getChildren().keySet())) {
+        if (thisNode.children == null
+            || otherNode.children == null
+            || !thisNode.getChildren().keySet().equals(otherNode.getChildren().keySet())) {
             return false;
         }
         boolean allChildrenMatch = true;

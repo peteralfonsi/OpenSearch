@@ -8,12 +8,12 @@
 
 package org.opensearch.common.cache.stats;
 
+import org.opensearch.common.annotation.ExperimentalApi;
+
 import java.util.List;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
-
-import org.opensearch.common.annotation.ExperimentalApi;
 
 import static org.opensearch.common.cache.stats.MultiDimensionCacheStats.MDCSDimensionNode;
 
