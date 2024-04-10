@@ -16,8 +16,8 @@ import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.policy.CachedQueryResult;
 import org.opensearch.common.cache.settings.CacheSettings;
-import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.stats.CacheStatsCounterSnapshot;
+import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.cache.store.OpenSearchOnHeapCache;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings;
@@ -26,11 +26,6 @@ import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.FeatureFlags;
-import org.opensearch.common.xcontent.XContentFactory;
-import org.opensearch.common.xcontent.XContentHelper;
-import org.opensearch.core.xcontent.MediaTypeRegistry;
-import org.opensearch.core.xcontent.ToXContent;
-import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 
 import java.io.IOException;
@@ -47,9 +42,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
-import static org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES_KEY;
-import static org.opensearch.cache.common.tier.TieredSpilloverCache.TIER_DIMENSION_VALUE_ON_HEAP;
 import static org.opensearch.cache.common.tier.TieredSpilloverCache.TIER_DIMENSION_VALUE_DISK;
+import static org.opensearch.cache.common.tier.TieredSpilloverCache.TIER_DIMENSION_VALUE_ON_HEAP;
+import static org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES_KEY;
 
 public class TieredSpilloverCacheTests extends OpenSearchTestCase {
     static final List<String> dimensionNames = List.of("dim1", "dim2", "dim3");
@@ -417,7 +412,10 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         int evictions = numOfItems - (totalSize); // Evictions from the cache as a whole
         assertEquals(evictions, removalListener.evictionsMetric.count());
         assertEquals(evictions, getEvictionsForTier(tieredSpilloverCache, TIER_DIMENSION_VALUE_DISK));
-        assertEquals(evictions + getEntriesForTier(tieredSpilloverCache, TIER_DIMENSION_VALUE_DISK), getEvictionsForTier(tieredSpilloverCache, TIER_DIMENSION_VALUE_ON_HEAP));
+        assertEquals(
+            evictions + getEntriesForTier(tieredSpilloverCache, TIER_DIMENSION_VALUE_DISK),
+            getEvictionsForTier(tieredSpilloverCache, TIER_DIMENSION_VALUE_ON_HEAP)
+        );
     }
 
     public void testGetAndCount() throws Exception {
@@ -1188,61 +1186,37 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
     }
 
     // Helper functions for extracting tier aggregated stats.
-    private static int getHitsForTier(TieredSpilloverCache<?, ?> tsc, String tierValue) throws IOException {
-        return getStatsValueForTier(tsc, tierValue, CacheStatsCounterSnapshot.Fields.HIT_COUNT);
+    private long getHitsForTier(TieredSpilloverCache<?, ?> tsc, String tierValue) throws IOException {
+        return getStatsSnapshotForTier(tsc, tierValue).getHits();
     }
 
-    private static int getMissesForTier(TieredSpilloverCache<?, ?> tsc, String tierValue) throws IOException {
-        return getStatsValueForTier(tsc, tierValue, CacheStatsCounterSnapshot.Fields.MISS_COUNT);
+    private long getMissesForTier(TieredSpilloverCache<?, ?> tsc, String tierValue) throws IOException {
+        return getStatsSnapshotForTier(tsc, tierValue).getMisses();
     }
 
-    private static int getEvictionsForTier(TieredSpilloverCache<?, ?> tsc, String tierValue) throws IOException {
-        return getStatsValueForTier(tsc, tierValue, CacheStatsCounterSnapshot.Fields.EVICTIONS);
+    private long getEvictionsForTier(TieredSpilloverCache<?, ?> tsc, String tierValue) throws IOException {
+        return getStatsSnapshotForTier(tsc, tierValue).getEvictions();
     }
 
-    private static int getSizeInBytesForTier(TieredSpilloverCache<?, ?> tsc, String tierValue) throws IOException {
-        return getStatsValueForTier(tsc, tierValue, CacheStatsCounterSnapshot.Fields.MEMORY_SIZE_IN_BYTES);
+    private long getSizeInBytesForTier(TieredSpilloverCache<?, ?> tsc, String tierValue) throws IOException {
+        return getStatsSnapshotForTier(tsc, tierValue).getSizeInBytes();
     }
 
-    private static int getEntriesForTier(TieredSpilloverCache<?, ?> tsc, String tierValue) throws IOException {
-        return getStatsValueForTier(tsc, tierValue, CacheStatsCounterSnapshot.Fields.ENTRIES);
+    private long getEntriesForTier(TieredSpilloverCache<?, ?> tsc, String tierValue) throws IOException {
+        return getStatsSnapshotForTier(tsc, tierValue).getEntries();
     }
 
-    private static int getStatsValueForTier(TieredSpilloverCache<?, ?> tsc, String tierValue, String fieldName) throws IOException {
-        CacheStats cacheStats = tsc.stats();
-        Map<String, Object> aggregatedXContentMap = getStatsXContentMap(cacheStats, List.of(TieredSpilloverCache.TIER_DIMENSION_NAME));
-        Object result = getValueFromNestedXContentMap(aggregatedXContentMap, List.of(TieredSpilloverCache.TIER_DIMENSION_NAME, tierValue, fieldName));
-        if (result == null) {
-            // This can happen if no cache actions have happened for this set of dimensions yet
-            return 0;
+    private CacheStatsCounterSnapshot getStatsSnapshotForTier(TieredSpilloverCache<?, ?> tsc, String tierValue) throws IOException {
+        MultiDimensionCacheStats cacheStats = (MultiDimensionCacheStats) tsc.stats();
+        // Since we always use the same list of dimensions from getMockDimensions() in keys for these tests, we can get all the stats values
+        // for a given tier with a single node in MDCS
+        List<String> mockDimensions = getMockDimensions();
+        mockDimensions.add(tierValue);
+        CacheStatsCounterSnapshot snapshot = cacheStats.getStatsForDimensionValues(mockDimensions);
+        if (snapshot == null) {
+            return new CacheStatsCounterSnapshot(0, 0, 0, 0, 0); // This can happen if no cache actions have happened for this set of
+                                                                 // dimensions yet
         }
-        return (int) result;
-    }
-
-    // Duplicated from OpenSearchOnHeapCacheTests.java; we can't add a dependency on server.test
-    private static Map<String, Object> getStatsXContentMap(CacheStats cacheStats, List<String> levels) throws IOException {
-        XContentBuilder builder = XContentFactory.jsonBuilder();
-        Map<String, String> paramMap = Map.of("level", String.join(",", levels));
-        ToXContent.Params params = new ToXContent.MapParams(paramMap);
-
-        builder.startObject();
-        cacheStats.toXContent(builder, params);
-        builder.endObject();
-
-        String resultString = builder.toString();
-        return XContentHelper.convertToMap(MediaTypeRegistry.JSON.xContent(), resultString, true);
-    }
-
-    // Duplicated from MultiDimensionCacheStatsTests.java; we can't add a dependency on server.test
-    private static Object getValueFromNestedXContentMap(Map<String, Object> xContentMap, List<String> keys) {
-        Map<String, Object> current = xContentMap;
-        for (int i = 0; i < keys.size() - 1; i++) {
-            Object next = current.get(keys.get(i));
-            if (next == null) {
-                return null;
-            }
-            current = (Map<String, Object>) next;
-        }
-        return current.get(keys.get(keys.size() - 1));
+        return snapshot;
     }
 }

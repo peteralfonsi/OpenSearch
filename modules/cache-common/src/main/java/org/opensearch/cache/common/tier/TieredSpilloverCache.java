@@ -37,8 +37,8 @@ import java.util.Objects;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
-import java.util.function.ToLongBiFunction;
 import java.util.function.Predicate;
+import java.util.function.ToLongBiFunction;
 
 /**
  * This cache spillover the evicted items from heap tier to disk tier. All the new items are first cached on heap
@@ -239,7 +239,8 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
             try (ReleasableLock ignore = readLock.acquire()) {
                 for (Tuple<ICache<K, V>, String> pair : cacheAndTierValueList) {
                     V value = pair.v1().get(key);
-                    List<String> dimensionValues = addTierValueToDimensionValues(key.dimensions, pair.v2()); // Get the tier value corresponding to this cache
+                    List<String> dimensionValues = addTierValueToDimensionValues(key.dimensions, pair.v2()); // Get the tier value
+                                                                                                             // corresponding to this cache
                     if (value != null) {
                         statsHolder.incrementHits(dimensionValues);
                         return value;
@@ -268,7 +269,8 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         }
 
         else {
-            // If the removal was for another reason, send this notification to the TSC's removal listener, as the value is leaving the TSC entirely
+            // If the removal was for another reason, send this notification to the TSC's removal listener, as the value is leaving the TSC
+            // entirely
             removalListener.onRemoval(notification);
         }
         updateStatsOnRemoval(TIER_DIMENSION_VALUE_ON_HEAP, wasEvicted, key, notification.getValue());
@@ -324,9 +326,11 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
      */
     private class HeapTierRemovalListener implements RemovalListener<ICacheKey<K>, V> {
         private final TieredSpilloverCache<K, V> tsc;
+
         HeapTierRemovalListener(TieredSpilloverCache<K, V> tsc) {
             this.tsc = tsc;
         }
+
         @Override
         public void onRemoval(RemovalNotification<ICacheKey<K>, V> notification) {
             tsc.handleRemovalFromHeapTier(notification);

@@ -10,7 +10,6 @@ package org.opensearch.common.cache;
 
 import org.opensearch.common.annotation.ExperimentalApi;
 
-import java.util.Collections;
 import java.util.List;
 
 /**
