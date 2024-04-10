@@ -731,7 +731,10 @@ public class IndicesRequestCacheIT extends ParameterizedStaticSettingsOpenSearch
         ensureSearchable(index1Name, index2Name);
         // Search twice for the same doc in index 1
         for (int i = 0; i < 2; i++) {
-            SearchResponse resp = client.prepareSearch(index1Name).setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello")).get();
+            SearchResponse resp = client.prepareSearch(index1Name)
+                .setRequestCache(true)
+                .setQuery(QueryBuilders.termQuery("k", "hello"))
+                .get();
             assertSearchResponse(resp);
             OpenSearchAssertions.assertAllSuccessful(resp);
             assertEquals(1, resp.getHits().getTotalHits().value);
@@ -748,16 +751,31 @@ public class IndicesRequestCacheIT extends ParameterizedStaticSettingsOpenSearch
         String nodeIdIndex2Shard1 = getNodeIdForShard(client, index2Name, 1);
 
         // First, aggregate by indices only
-        Map<String, Object> xContentMap = getNodeCacheStatsXContentMap(client, nodeIdIndex1, List.of(IndicesRequestCache.INDEX_DIMENSION_NAME));
-        List<String> xContentMapIndex1Keys = List.of(CacheType.INDICES_REQUEST_CACHE.getApiRepresentation(), IndicesRequestCache.INDEX_DIMENSION_NAME, index1Name);
+        Map<String, Object> xContentMap = getNodeCacheStatsXContentMap(
+            client,
+            nodeIdIndex1,
+            List.of(IndicesRequestCache.INDEX_DIMENSION_NAME)
+        );
+        List<String> xContentMapIndex1Keys = List.of(
+            CacheType.INDICES_REQUEST_CACHE.getApiRepresentation(),
+            IndicesRequestCache.INDEX_DIMENSION_NAME,
+            index1Name
+        );
         // Since we searched twice, we expect to see 1 hit, 1 miss and 1 entry for index 1
         checkCacheStatsAPIResponse(xContentMap, xContentMapIndex1Keys, new CacheStatsCounterSnapshot(1, 1, 0, 0, 1), false);
         // Get the request size for one request, so we can reuse it for next index
-        int requestSize = (int) ((Map<String, Object>) MultiDimensionCacheStatsTests.getValueFromNestedXContentMap(xContentMap, xContentMapIndex1Keys)).get(CacheStatsCounterSnapshot.Fields.MEMORY_SIZE_IN_BYTES);
+        int requestSize = (int) ((Map<String, Object>) MultiDimensionCacheStatsTests.getValueFromNestedXContentMap(
+            xContentMap,
+            xContentMapIndex1Keys
+        )).get(CacheStatsCounterSnapshot.Fields.MEMORY_SIZE_IN_BYTES);
         assertTrue(requestSize > 0);
 
-        //xContentMap = getNodeCacheStatsXContentMap(client, nodeIdIndex2, List.of(IndicesRequestCache.INDEX_DIMENSION_NAME));
-        List<String> xContentMapIndex2Keys = List.of(CacheType.INDICES_REQUEST_CACHE.getApiRepresentation(), IndicesRequestCache.INDEX_DIMENSION_NAME, index2Name);
+        // xContentMap = getNodeCacheStatsXContentMap(client, nodeIdIndex2, List.of(IndicesRequestCache.INDEX_DIMENSION_NAME));
+        List<String> xContentMapIndex2Keys = List.of(
+            CacheType.INDICES_REQUEST_CACHE.getApiRepresentation(),
+            IndicesRequestCache.INDEX_DIMENSION_NAME,
+            index2Name
+        );
 
         // TODO: INCOMPLETE
 
@@ -813,15 +831,27 @@ public class IndicesRequestCacheIT extends ParameterizedStaticSettingsOpenSearch
         return XContentHelper.convertToMap(MediaTypeRegistry.JSON.xContent(), resultString, true);
     }
 
-    private static void checkCacheStatsAPIResponse(Map<String, Object> xContentMap, List<String> xContentMapKeys, CacheStatsCounterSnapshot expectedStats, boolean checkMemorySize) {
-        // Assumes the keys point to a level whose keys are the field values ("size_in_bytes", "evictions", etc) and whose values store those stats
-        Map<String, Object> aggregatedStatsResponse = (Map<String, Object>) MultiDimensionCacheStatsTests.getValueFromNestedXContentMap(xContentMap, xContentMapKeys);
+    private static void checkCacheStatsAPIResponse(
+        Map<String, Object> xContentMap,
+        List<String> xContentMapKeys,
+        CacheStatsCounterSnapshot expectedStats,
+        boolean checkMemorySize
+    ) {
+        // Assumes the keys point to a level whose keys are the field values ("size_in_bytes", "evictions", etc) and whose values store
+        // those stats
+        Map<String, Object> aggregatedStatsResponse = (Map<String, Object>) MultiDimensionCacheStatsTests.getValueFromNestedXContentMap(
+            xContentMap,
+            xContentMapKeys
+        );
         assertNotNull(aggregatedStatsResponse);
         assertEquals(expectedStats.getHits(), (int) aggregatedStatsResponse.get(CacheStatsCounterSnapshot.Fields.HIT_COUNT));
         assertEquals(expectedStats.getMisses(), (int) aggregatedStatsResponse.get(CacheStatsCounterSnapshot.Fields.MISS_COUNT));
         assertEquals(expectedStats.getEvictions(), (int) aggregatedStatsResponse.get(CacheStatsCounterSnapshot.Fields.EVICTIONS));
         if (checkMemorySize) {
-            assertEquals(expectedStats.getSizeInBytes(), (int) aggregatedStatsResponse.get(CacheStatsCounterSnapshot.Fields.MEMORY_SIZE_IN_BYTES));
+            assertEquals(
+                expectedStats.getSizeInBytes(),
+                (int) aggregatedStatsResponse.get(CacheStatsCounterSnapshot.Fields.MEMORY_SIZE_IN_BYTES)
+            );
         }
         assertEquals(expectedStats.getEntries(), (int) aggregatedStatsResponse.get(CacheStatsCounterSnapshot.Fields.ENTRIES));
     }

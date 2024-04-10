@@ -52,8 +52,8 @@ import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.module.CacheModule;
 import org.opensearch.common.cache.service.CacheService;
-import org.opensearch.common.cache.stats.MultiDimensionCacheStatsTests;
-import org.opensearch.common.cache.store.OpenSearchOnHeapCacheTests;
+import org.opensearch.common.cache.stats.CacheStatsCounterSnapshot;
+import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
 import org.opensearch.common.settings.Settings;
@@ -82,14 +82,11 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.opensearch.indices.IndicesRequestCache.INDEX_DIMENSION_NAME;
 import static org.opensearch.indices.IndicesRequestCache.INDICES_REQUEST_CACHE_STALENESS_THRESHOLD_SETTING;
-import static org.opensearch.indices.IndicesRequestCache.SHARD_ID_DIMENSION_NAME;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -823,25 +820,19 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         }
 
         // Check resulting stats
-        List<String> dimensionNames = List.of(INDEX_DIMENSION_NAME, SHARD_ID_DIMENSION_NAME);
-        Map<String, Object> xContentMap = OpenSearchOnHeapCacheTests.getStatsXContentMap(cache.getCacheStats(), dimensionNames);
-        List<List<String>> initialXContentPaths = new ArrayList<>();
+        List<List<String>> initialDimensionValues = new ArrayList<>();
         for (IndexService indexService : new IndexService[] { indexToKeep, indexToClose }) {
             for (int i = 0; i < numShards; i++) {
                 ShardId shardId = indexService.getShard(i).shardId();
-                List<String> xContentPath = List.of(
-                    INDEX_DIMENSION_NAME,
-                    shardId.getIndexName(),
-                    SHARD_ID_DIMENSION_NAME,
-                    shardId.toString()
+                List<String> dimensionValues = List.of(shardId.getIndexName(), shardId.toString());
+                initialDimensionValues.add(dimensionValues);
+                CacheStatsCounterSnapshot snapshot = ((MultiDimensionCacheStats) cache.getCacheStats()).getStatsForDimensionValues(
+                    dimensionValues
                 );
-                initialXContentPaths.add(xContentPath);
-                Map<String, Object> individualSnapshotMap = (Map<String, Object>) MultiDimensionCacheStatsTests
-                    .getValueFromNestedXContentMap(xContentMap, xContentPath);
-                assertNotNull(individualSnapshotMap);
+                assertNotNull(snapshot);
                 // check the values are not empty by confirming entries != 0, this should always be true since the missed value is loaded
                 // into the cache
-                assertNotEquals(0, (int) individualSnapshotMap.get("entries"));
+                assertNotEquals(0, snapshot.getEntries());
             }
         }
 
@@ -857,19 +848,17 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         cache.cacheCleanupManager.cleanCache();
 
         // Now stats for the closed index should be gone
-        xContentMap = OpenSearchOnHeapCacheTests.getStatsXContentMap(cache.getCacheStats(), dimensionNames);
-        for (List<String> path : initialXContentPaths) {
-            Map<String, Object> individualSnapshotMap = (Map<String, Object>) MultiDimensionCacheStatsTests.getValueFromNestedXContentMap(
-                xContentMap,
-                path
+        for (List<String> dimensionValues : initialDimensionValues) {
+            CacheStatsCounterSnapshot snapshot = ((MultiDimensionCacheStats) cache.getCacheStats()).getStatsForDimensionValues(
+                dimensionValues
             );
-            if (path.get(1).equals(indexToCloseName)) {
-                assertNull(individualSnapshotMap);
+            if (dimensionValues.get(0).equals(indexToCloseName)) {
+                assertNull(snapshot);
             } else {
-                assertNotNull(individualSnapshotMap);
+                assertNotNull(snapshot);
                 // check the values are not empty by confirming entries != 0, this should always be true since the missed value is loaded
                 // into the cache
-                assertNotEquals(0, (int) individualSnapshotMap.get("entries"));
+                assertNotEquals(0, snapshot.getEntries());
             }
         }
 

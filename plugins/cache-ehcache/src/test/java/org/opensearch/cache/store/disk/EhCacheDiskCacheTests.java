@@ -20,19 +20,15 @@ import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.serializer.BytesReferenceSerializer;
 import org.opensearch.common.cache.serializer.Serializer;
-import org.opensearch.common.cache.stats.CacheStats;
+import org.opensearch.common.cache.stats.CacheStatsCounterSnapshot;
+import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
-import org.opensearch.common.xcontent.XContentFactory;
-import org.opensearch.common.xcontent.XContentHelper;
 import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.bytes.CompositeBytesReference;
-import org.opensearch.core.xcontent.MediaTypeRegistry;
-import org.opensearch.core.xcontent.ToXContent;
-import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
 
@@ -51,6 +47,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Phaser;
 import java.util.function.ToLongBiFunction;
+
+import org.ehcache.impl.serialization.StringSerializer;
 
 import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_LISTENER_MODE_SYNC_KEY;
 import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_MAX_SIZE_IN_BYTES_KEY;
@@ -833,28 +831,21 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
 
             ICacheKey<String> keyToDrop = keysAdded.get(0);
 
-            Map<String, Object> xContentMap = getStatsXContentMap(ehCacheDiskCachingTier.stats(), dimensionNames);
-            List<String> xContentMapKeys = getXContentMapKeys(keyToDrop, dimensionNames);
-            Map<String, Object> individualSnapshotMap = (Map<String, Object>) getValueFromNestedXContentMap(xContentMap, xContentMapKeys);
-            assertNotNull(individualSnapshotMap);
-            assertEquals(5, individualSnapshotMap.size()); // Assert all 5 stats are present and not null
-            for (Map.Entry<String, Object> entry : individualSnapshotMap.entrySet()) {
-                Integer value = (Integer) entry.getValue();
-                assertNotNull(value);
-            }
+            CacheStatsCounterSnapshot snapshot = ((MultiDimensionCacheStats) ehCacheDiskCachingTier.stats()).getStatsForDimensionValues(
+                keyToDrop.dimensions
+            );
+            assertNotNull(snapshot);
 
             keyToDrop.setDropStatsForDimensions(true);
             ehCacheDiskCachingTier.invalidate(keyToDrop);
 
             // Now assert the stats are gone for any key that has this combination of dimensions, but still there otherwise
-            xContentMap = getStatsXContentMap(ehCacheDiskCachingTier.stats(), dimensionNames);
             for (ICacheKey<String> keyAdded : keysAdded) {
-                xContentMapKeys = getXContentMapKeys(keyAdded, dimensionNames);
-                individualSnapshotMap = (Map<String, Object>) getValueFromNestedXContentMap(xContentMap, xContentMapKeys);
+                snapshot = ((MultiDimensionCacheStats) ehCacheDiskCachingTier.stats()).getStatsForDimensionValues(keyAdded.dimensions);
                 if (keyAdded.dimensions.equals(keyToDrop.dimensions)) {
-                    assertNull(individualSnapshotMap);
+                    assertNull(snapshot);
                 } else {
-                    assertNotNull(individualSnapshotMap);
+                    assertNotNull(snapshot);
                 }
             }
 
@@ -904,42 +895,6 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             totalSize += value.length();
             return totalSize;
         };
-    }
-
-    // Helper functions duplicated from server.test; we can't add a dependency on that module
-    private static Map<String, Object> getStatsXContentMap(CacheStats cacheStats, List<String> levels) throws IOException {
-        XContentBuilder builder = XContentFactory.jsonBuilder();
-        Map<String, String> paramMap = Map.of("level", String.join(",", levels));
-        ToXContent.Params params = new ToXContent.MapParams(paramMap);
-
-        builder.startObject();
-        cacheStats.toXContent(builder, params);
-        builder.endObject();
-
-        String resultString = builder.toString();
-        return XContentHelper.convertToMap(MediaTypeRegistry.JSON.xContent(), resultString, true);
-    }
-
-    private List<String> getXContentMapKeys(ICacheKey<?> iCacheKey, List<String> dimensionNames) {
-        List<String> result = new ArrayList<>();
-        assert iCacheKey.dimensions.size() == dimensionNames.size();
-        for (int i = 0; i < dimensionNames.size(); i++) {
-            result.add(dimensionNames.get(i));
-            result.add(iCacheKey.dimensions.get(i));
-        }
-        return result;
-    }
-
-    public static Object getValueFromNestedXContentMap(Map<String, Object> xContentMap, List<String> keys) {
-        Map<String, Object> current = xContentMap;
-        for (int i = 0; i < keys.size() - 1; i++) {
-            Object next = current.get(keys.get(i));
-            if (next == null) {
-                return null;
-            }
-            current = (Map<String, Object>) next;
-        }
-        return current.get(keys.get(keys.size() - 1));
     }
 
     static class MockRemovalListener<K, V> implements RemovalListener<ICacheKey<K>, V> {

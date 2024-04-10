@@ -16,7 +16,8 @@ import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.stats.CacheStats;
-import org.opensearch.common.cache.stats.MultiDimensionCacheStatsTests;
+import org.opensearch.common.cache.stats.CacheStatsCounterSnapshot;
+import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings;
 import org.opensearch.common.metrics.CounterMetric;
@@ -122,46 +123,21 @@ public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
 
         ICacheKey<String> keyToDrop = keysAdded.get(0);
 
-        Map<String, Object> xContentMap = getStatsXContentMap(cache.stats(), dimensionNames);
-        List<String> xContentMapKeys = getXContentMapKeys(keyToDrop, dimensionNames);
-        Map<String, Object> individualSnapshotMap = (Map<String, Object>) MultiDimensionCacheStatsTests.getValueFromNestedXContentMap(
-            xContentMap,
-            xContentMapKeys
-        );
-        assertNotNull(individualSnapshotMap);
-        assertEquals(5, individualSnapshotMap.size()); // Assert all 5 stats are present and not null
-        for (Map.Entry<String, Object> entry : individualSnapshotMap.entrySet()) {
-            Integer value = (Integer) entry.getValue();
-            assertNotNull(value);
-        }
+        CacheStatsCounterSnapshot snapshot = ((MultiDimensionCacheStats) cache.stats()).getStatsForDimensionValues(keyToDrop.dimensions);
+        assertNotNull(snapshot);
 
         keyToDrop.setDropStatsForDimensions(true);
         cache.invalidate(keyToDrop);
 
         // Now assert the stats are gone for any key that has this combination of dimensions, but still there otherwise
-        xContentMap = getStatsXContentMap(cache.stats(), dimensionNames);
         for (ICacheKey<String> keyAdded : keysAdded) {
-            xContentMapKeys = getXContentMapKeys(keyAdded, dimensionNames);
-            individualSnapshotMap = (Map<String, Object>) MultiDimensionCacheStatsTests.getValueFromNestedXContentMap(
-                xContentMap,
-                xContentMapKeys
-            );
+            snapshot = ((MultiDimensionCacheStats) cache.stats()).getStatsForDimensionValues(keyAdded.dimensions);
             if (keyAdded.dimensions.equals(keyToDrop.dimensions)) {
-                assertNull(individualSnapshotMap);
+                assertNull(snapshot);
             } else {
-                assertNotNull(individualSnapshotMap);
+                assertNotNull(snapshot);
             }
         }
-    }
-
-    private List<String> getXContentMapKeys(ICacheKey<?> iCacheKey, List<String> dimensionNames) {
-        List<String> result = new ArrayList<>();
-        assert iCacheKey.dimensions.size() == dimensionNames.size();
-        for (int i = 0; i < dimensionNames.size(); i++) {
-            result.add(dimensionNames.get(i));
-            result.add(iCacheKey.dimensions.get(i));
-        }
-        return result;
     }
 
     private List<String> getRandomDimensions() {

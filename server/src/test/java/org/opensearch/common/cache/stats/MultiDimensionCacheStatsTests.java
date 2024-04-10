@@ -88,7 +88,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
 
             CacheStatsCounterSnapshot actualStatsHolder = StatsHolderTests.getNode(dimensionValues, statsHolder.getStatsRoot())
                 .getStatsSnapshot();
-            CacheStatsCounterSnapshot actualCacheStats = getNode(dimensionValues, stats.getStatsRoot()).getStatsSnapshot();
+            CacheStatsCounterSnapshot actualCacheStats = getNode(dimensionValues, stats.getStatsRoot()).getStats();
 
             assertEquals(expectedCounter.snapshot(), actualStatsHolder);
             assertEquals(expectedCounter.snapshot(), actualCacheStats);
@@ -119,7 +119,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
 
         MultiDimensionCacheStats.MDCSDimensionNode statsRoot = stats.getStatsRoot();
         assertEquals(0, statsRoot.children.size());
-        assertEquals(stats.getTotalStats(), statsRoot.getStatsSnapshot());
+        assertEquals(stats.getTotalStats(), statsRoot.getStats());
     }
 
     public void testAggregateByAllDimensions() throws Exception {
@@ -136,7 +136,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
             for (String dimValue : expectedEntry.getKey()) {
                 dimensionValues.add(dimValue);
             }
-            assertEquals(expectedEntry.getValue().snapshot(), getNode(dimensionValues, aggregated).getStatsSnapshot());
+            assertEquals(expectedEntry.getValue().snapshot(), getNode(dimensionValues, aggregated).getStats());
         }
         assertSumOfChildrenStats(aggregated);
     }
@@ -169,7 +169,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
                             expectedCounter.add(expected.get(expectedDims));
                         }
                     }
-                    assertEquals(expectedCounter.snapshot(), aggEntry.getValue().getStatsSnapshot());
+                    assertEquals(expectedCounter.snapshot(), aggEntry.getValue().getStats());
                 }
                 assertSumOfChildrenStats(aggregated);
             }
@@ -234,7 +234,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
                 incrementer.accept(counterFromXContent, valueInXContent);
             }
 
-            CacheStatsCounterSnapshot expected = entry.getValue().getStatsSnapshot();
+            CacheStatsCounterSnapshot expected = entry.getValue().getStats();
             assertEquals(counterFromXContent.snapshot(), expected);
         }
     }
@@ -263,7 +263,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
         MultiDimensionCacheStats.MDCSDimensionNode current,
         List<String> pathToCurrent
     ) {
-        if (!current.hasChildren()) {
+        if (current.children.isEmpty()) {
             result.put(pathToCurrent, current);
         } else {
             for (Map.Entry<String, MultiDimensionCacheStats.MDCSDimensionNode> entry : current.children.entrySet()) {
@@ -275,12 +275,12 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
     }
 
     private void assertSumOfChildrenStats(MultiDimensionCacheStats.MDCSDimensionNode current) {
-        if (current.hasChildren()) {
+        if (!current.children.isEmpty()) {
             CacheStatsCounter expectedTotal = new CacheStatsCounter();
             for (MultiDimensionCacheStats.MDCSDimensionNode child : current.children.values()) {
-                expectedTotal.add(child.getStatsSnapshot());
+                expectedTotal.add(child.getStats());
             }
-            assertEquals(expectedTotal.snapshot(), current.getStatsSnapshot());
+            assertEquals(expectedTotal.snapshot(), current.getStats());
             for (MultiDimensionCacheStats.MDCSDimensionNode child : current.children.values()) {
                 assertSumOfChildrenStats(child);
             }
