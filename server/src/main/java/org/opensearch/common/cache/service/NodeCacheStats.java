@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.TreeMap;
 
 /**
  * A class creating XContent responses to cache stats API requests.
@@ -30,18 +31,18 @@ import java.util.Objects;
  */
 @ExperimentalApi
 public class NodeCacheStats implements ToXContentFragment, Writeable {
-    private final LinkedHashMap<CacheType, CacheStats> statsByCache;
+    private final TreeMap<CacheType, CacheStats> statsByCache;
     private final CommonStatsFlags flags;
 
-    public NodeCacheStats(LinkedHashMap<CacheType, CacheStats> statsByCache, CommonStatsFlags flags) {
-        this.statsByCache = statsByCache;
+    public NodeCacheStats(Map<CacheType, CacheStats> statsByCache, CommonStatsFlags flags) {
+        this.statsByCache = new TreeMap<>(statsByCache); // Use TreeMap to force consistent ordering of caches in API responses
         this.flags = flags;
     }
 
     public NodeCacheStats(StreamInput in) throws IOException {
         this.flags = new CommonStatsFlags(in);
         Map<CacheType, CacheStats> readMap = in.readMap(i -> i.readEnum(CacheType.class), CacheStats::readFromStreamWithClassName);
-        this.statsByCache = new LinkedHashMap<>(readMap);
+        this.statsByCache = new TreeMap<>(readMap);
     }
 
     @Override

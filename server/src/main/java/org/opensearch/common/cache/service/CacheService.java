@@ -23,6 +23,7 @@ import org.opensearch.common.util.FeatureFlags;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.TreeMap;
 
 /**
  * Service responsible to create caches.
@@ -67,9 +68,9 @@ public class CacheService {
     }
 
     public NodeCacheStats stats(CommonStatsFlags flags) {
-        LinkedHashMap<CacheType, CacheStats> statsMap = new LinkedHashMap<>();
+        Map<CacheType, CacheStats> statsMap = new HashMap<>();
         for (CacheType type : cacheTypeMap.keySet()) {
-            statsMap.put(type, cacheTypeMap.get(type).stats()); // TODO: We need to force some ordering on cacheTypeMap
+            statsMap.put(type, cacheTypeMap.get(type).stats());
         }
         return new NodeCacheStats(statsMap, flags);
     }
