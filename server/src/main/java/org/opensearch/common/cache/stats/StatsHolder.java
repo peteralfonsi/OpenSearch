@@ -17,8 +17,6 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
-import org.opensearch.common.annotation.ExperimentalApi;
-
 import static org.opensearch.common.cache.stats.MultiDimensionCacheStats.MDCSDimensionNode;
 
 /**
@@ -31,7 +29,6 @@ import static org.opensearch.common.cache.stats.MultiDimensionCacheStats.MDCSDim
  *
  * @opensearch.experimental
  */
-@ExperimentalApi
 public class StatsHolder {
 
     // The list of permitted dimensions. Should be ordered from "outermost" to "innermost", as you would like to
@@ -44,12 +41,8 @@ public class StatsHolder {
     // No lock is needed to edit stats on existing nodes.
     private final Lock lock = new ReentrantLock();
 
-    // The name of the cache type using these stats
-    private final String storeName;
-
-    public StatsHolder(List<String> dimensionNames, String storeName) {
+    public StatsHolder(List<String> dimensionNames) {
         this.dimensionNames = dimensionNames;
-        this.storeName = storeName;
         this.statsRoot = new DimensionNode(null, true); // The root node has no dimension value associated with it, only children
     }
 
@@ -167,7 +160,7 @@ public class StatsHolder {
                 getCacheStatsHelper(child, snapshot);
             }
         }
-        return new MultiDimensionCacheStats(snapshot, dimensionNames, storeName);
+        return new MultiDimensionCacheStats(snapshot, dimensionNames);
     }
 
     private void getCacheStatsHelper(DimensionNode currentNodeInOriginalTree, MDCSDimensionNode parentInNewTree) {

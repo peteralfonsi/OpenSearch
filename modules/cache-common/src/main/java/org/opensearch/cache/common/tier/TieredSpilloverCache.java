@@ -124,7 +124,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
             new Tuple<>(diskCache, TIER_DIMENSION_VALUE_DISK)
         );
         // Pass "tier" as the innermost dimension name, in addition to whatever dimensions are specified for the cache as a whole
-        this.statsHolder = new StatsHolder(addTierValueToDimensionValues(dimensionNames, TIER_DIMENSION_NAME), TieredSpilloverCacheFactory.TIERED_SPILLOVER_CACHE_NAME);
+        this.statsHolder = new StatsHolder(addTierValueToDimensionValues(dimensionNames, TIER_DIMENSION_NAME));
         this.policies = builder.policies; // Will never be null; builder initializes it to an empty list
     }
 

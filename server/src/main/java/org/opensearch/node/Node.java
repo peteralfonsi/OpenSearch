@@ -1180,8 +1180,7 @@ public class Node implements Closeable {
                 resourceUsageCollectorService,
                 segmentReplicationStatsTracker,
                 repositoryService,
-                admissionControlService,
-                cacheService
+                admissionControlService
             );
 
             final SearchService searchService = newSearchService(
