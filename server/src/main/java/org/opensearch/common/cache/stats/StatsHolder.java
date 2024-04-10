@@ -36,6 +36,8 @@ public class StatsHolder {
     private final List<String> dimensionNames;
     // A tree structure based on dimension values, which stores stats values in its leaf nodes.
     // Non-leaf nodes have stats matching the sum of their children.
+    // We use a tree structure, rather than a map with concatenated keys, to save on memory usage. If there are many leaf
+    // nodes that share a parent, that parent's dimension value will only be stored once, not many times.
     private final DimensionNode statsRoot;
     // To avoid sync problems, obtain a lock before creating or removing nodes in the stats tree.
     // No lock is needed to edit stats on existing nodes.
@@ -152,8 +154,7 @@ public class StatsHolder {
      * Produce an immutable CacheStats representation of these stats.
      */
     public CacheStats getCacheStats() {
-        MDCSDimensionNode snapshot = new MDCSDimensionNode(null, statsRoot.getStatsSnapshot());
-        snapshot.createChildrenMap();
+        MDCSDimensionNode snapshot = new MDCSDimensionNode(null, true, statsRoot.getStatsSnapshot());
         // Traverse the tree and build a corresponding tree of MDCSDimensionNode, to pass to MultiDimensionCacheStats.
         if (statsRoot.getChildren() != null) {
             for (DimensionNode child : statsRoot.getChildren().values()) {
@@ -173,10 +174,8 @@ public class StatsHolder {
 
     private MDCSDimensionNode createMatchingMDCSDimensionNode(DimensionNode node) {
         CacheStatsCounterSnapshot nodeSnapshot = node.getStatsSnapshot();
-        MDCSDimensionNode newNode = new MDCSDimensionNode(node.getDimensionValue(), nodeSnapshot);
-        if (!node.getChildren().isEmpty()) {
-            newNode.createChildrenMap();
-        }
+        boolean isLeafNode = node.getChildren().isEmpty();
+        MDCSDimensionNode newNode = new MDCSDimensionNode(node.getDimensionValue(), !isLeafNode, nodeSnapshot);
         return newNode;
     }
 
@@ -197,7 +196,7 @@ public class StatsHolder {
             // Pass up a snapshot of the original stats to avoid issues when the original is decremented by other fn invocations
             return node.getStatsSnapshot();
         }
-        DimensionNode child = node.getChild(dimensionValues.get(depth)); // false, false
+        DimensionNode child = node.getChild(dimensionValues.get(depth));
         if (child == null) {
             return null;
         }

@@ -8,6 +8,7 @@
 
 package org.opensearch.common.cache.stats;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -17,13 +18,13 @@ import java.util.concurrent.ConcurrentHashMap;
 class DimensionNode {
     private final String dimensionValue;
     // Map from dimensionValue to the DimensionNode for that dimension value.
-    final ConcurrentHashMap<String, DimensionNode> children;
+    final Map<String, DimensionNode> children;
     // The stats for this node. If a leaf node, corresponds to the stats for this combination of dimensions; if not,
     // contains the sum of its children's stats.
     private CacheStatsCounter stats;
 
     // Used for leaf nodes to avoid allocating many unnecessary maps
-    private static final ConcurrentHashMap<String, DimensionNode> EMPTY_CHILDREN_MAP = new ConcurrentHashMap<>();
+    private static final Map<String, DimensionNode> EMPTY_CHILDREN_MAP = new HashMap<>();
 
     DimensionNode(String dimensionValue, boolean createChildrenMap) {
         this.dimensionValue = dimensionValue;
@@ -90,22 +91,11 @@ class DimensionNode {
         this.stats.resetSizeAndEntries();
     }
 
-    DimensionNode getChild(String dimensionValue) { // , boolean createIfAbsent, boolean createMapInChild
-        /*return children.computeIfAbsent(
-            dimensionValue,
-            (key) -> createIfAbsent ? new DimensionNode(dimensionValue, createMapInChild) : null
-        );*/
+    DimensionNode getChild(String dimensionValue) {
         return children.get(dimensionValue);
     }
 
     DimensionNode createChild(String dimensionValue, boolean createMapInChild) {
         return children.computeIfAbsent(dimensionValue, (key) -> new DimensionNode(dimensionValue, createMapInChild));
-    }
-
-    public void resetNode() {
-        for (String childDimensionValue : children.keySet()) {
-            children.remove(childDimensionValue);
-        }
-        stats = new CacheStatsCounter();
     }
 }
