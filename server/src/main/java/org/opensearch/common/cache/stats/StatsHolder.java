@@ -64,7 +64,6 @@ public class StatsHolder {
 
     public void incrementMisses(List<String> dimensionValues) {
         internalIncrement(dimensionValues, DimensionNode::incrementMisses, true);
-        int i = 0; // TODO: Debug only - remove
     }
 
     public void incrementEvictions(List<String> dimensionValues) {

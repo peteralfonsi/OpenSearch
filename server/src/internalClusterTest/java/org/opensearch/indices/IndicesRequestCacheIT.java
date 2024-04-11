@@ -34,31 +34,15 @@ package org.opensearch.indices;
 
 import com.carrotsearch.randomizedtesting.annotations.ParametersFactory;
 
-import org.opensearch.action.admin.cluster.node.stats.NodeStats;
-import org.opensearch.action.admin.cluster.node.stats.NodesStatsRequest;
-import org.opensearch.action.admin.cluster.node.stats.NodesStatsResponse;
 import org.opensearch.action.admin.indices.alias.Alias;
 import org.opensearch.action.admin.indices.forcemerge.ForceMergeResponse;
-import org.opensearch.action.admin.indices.stats.CommonStatsFlags;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.action.search.SearchType;
 import org.opensearch.client.Client;
-import org.opensearch.cluster.ClusterState;
 import org.opensearch.cluster.metadata.IndexMetadata;
-import org.opensearch.cluster.routing.RoutingTable;
-import org.opensearch.cluster.routing.ShardRouting;
-import org.opensearch.common.cache.CacheType;
-import org.opensearch.common.cache.service.NodeCacheStats;
-import org.opensearch.common.cache.stats.CacheStatsCounterSnapshot;
-import org.opensearch.common.cache.stats.MultiDimensionCacheStatsTests;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.time.DateFormatter;
 import org.opensearch.common.util.FeatureFlags;
-import org.opensearch.common.xcontent.XContentFactory;
-import org.opensearch.common.xcontent.XContentHelper;
-import org.opensearch.core.xcontent.MediaTypeRegistry;
-import org.opensearch.core.xcontent.ToXContent;
-import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.index.cache.request.RequestCacheStats;
 import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.search.aggregations.bucket.global.GlobalAggregationBuilder;
@@ -68,7 +52,6 @@ import org.opensearch.search.aggregations.bucket.histogram.Histogram.Bucket;
 import org.opensearch.test.ParameterizedStaticSettingsOpenSearchIntegTestCase;
 import org.opensearch.test.hamcrest.OpenSearchAssertions;
 
-import java.io.IOException;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -76,7 +59,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
-import java.util.Map;
 
 import static org.opensearch.search.SearchService.CLUSTER_CONCURRENT_SEGMENT_SEARCH_SETTING;
 import static org.opensearch.search.aggregations.AggregationBuilders.dateHistogram;
@@ -696,98 +678,6 @@ public class IndicesRequestCacheIT extends ParameterizedStaticSettingsOpenSearch
         assertCacheState(client, "index", 1, 2);
     }
 
-    public void testCacheStatsAPIWIthOnHeapCache() throws Exception {
-        String index1Name = "index1"; // Contains 1 shard
-        String index2Name = "index2"; // Contains 2 shards
-        Client client = client();
-        assertAcked(
-            client.admin()
-                .indices()
-                .prepareCreate(index1Name)
-                .setMapping("k", "type=keyword")
-                .setSettings(
-                    Settings.builder()
-                        .put(IndicesRequestCache.INDEX_CACHE_REQUEST_ENABLED_SETTING.getKey(), true)
-                        .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 1)
-                        .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
-                )
-                .get()
-        );
-        assertAcked(
-            client.admin()
-                .indices()
-                .prepareCreate(index2Name)
-                .setMapping("k", "type=keyword")
-                .setSettings(
-                    Settings.builder()
-                        .put(IndicesRequestCache.INDEX_CACHE_REQUEST_ENABLED_SETTING.getKey(), true)
-                        .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 2)
-                        .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
-                )
-                .get()
-        );
-
-        indexRandom(true, client.prepareIndex(index1Name).setSource("k", "hello"));
-        indexRandom(true, client.prepareIndex(index2Name).setSource("k", "hello"));
-        ensureSearchable(index1Name, index2Name);
-        // Search twice for the same doc in index 1
-        for (int i = 0; i < 2; i++) {
-            SearchResponse resp = client.prepareSearch(index1Name)
-                .setRequestCache(true)
-                .setQuery(QueryBuilders.termQuery("k", "hello"))
-                .get();
-            assertSearchResponse(resp);
-            OpenSearchAssertions.assertAllSuccessful(resp);
-            assertEquals(1, resp.getHits().getTotalHits().value);
-        }
-
-        // Search once for a doc in index 2
-        SearchResponse resp = client.prepareSearch(index2Name).setRequestCache(true).setQuery(QueryBuilders.termQuery("k", "hello")).get();
-        assertSearchResponse(resp);
-        OpenSearchAssertions.assertAllSuccessful(resp);
-        assertEquals(1, resp.getHits().getTotalHits().value);
-
-        String nodeIdIndex1 = getNodeIdForShard(client, index1Name, 0);
-        String nodeIdIndex2Shard0 = getNodeIdForShard(client, index2Name, 0);
-        String nodeIdIndex2Shard1 = getNodeIdForShard(client, index2Name, 1);
-
-        // First, aggregate by indices only
-        Map<String, Object> xContentMap = getNodeCacheStatsXContentMap(
-            client,
-            nodeIdIndex1,
-            List.of(IndicesRequestCache.INDEX_DIMENSION_NAME)
-        );
-        List<String> xContentMapIndex1Keys = List.of(
-            CacheType.INDICES_REQUEST_CACHE.getApiRepresentation(),
-            IndicesRequestCache.INDEX_DIMENSION_NAME,
-            index1Name
-        );
-        // Since we searched twice, we expect to see 1 hit, 1 miss and 1 entry for index 1
-        checkCacheStatsAPIResponse(xContentMap, xContentMapIndex1Keys, new CacheStatsCounterSnapshot(1, 1, 0, 0, 1), false);
-        // Get the request size for one request, so we can reuse it for next index
-        int requestSize = (int) ((Map<String, Object>) MultiDimensionCacheStatsTests.getValueFromNestedXContentMap(
-            xContentMap,
-            xContentMapIndex1Keys
-        )).get(CacheStatsCounterSnapshot.Fields.MEMORY_SIZE_IN_BYTES);
-        assertTrue(requestSize > 0);
-
-        // xContentMap = getNodeCacheStatsXContentMap(client, nodeIdIndex2, List.of(IndicesRequestCache.INDEX_DIMENSION_NAME));
-        List<String> xContentMapIndex2Keys = List.of(
-            CacheType.INDICES_REQUEST_CACHE.getApiRepresentation(),
-            IndicesRequestCache.INDEX_DIMENSION_NAME,
-            index2Name
-        );
-
-        // TODO: INCOMPLETE
-
-        int j = 0;
-
-    }
-
-    public void testCacheStatsAPIWithTieredCache() throws Exception {
-
-    }
-
     private static void assertCacheState(Client client, String index, long expectedHits, long expectedMisses) {
         RequestCacheStats requestCacheStats = client.admin()
             .indices()
@@ -804,64 +694,4 @@ public class IndicesRequestCacheIT extends ParameterizedStaticSettingsOpenSearch
         );
 
     }
-
-    private static Map<String, Object> getNodeCacheStatsXContentMap(Client client, String nodeId, List<String> aggregationLevels)
-        throws IOException {
-
-        CommonStatsFlags statsFlags = new CommonStatsFlags();
-        statsFlags.includeAllCacheTypes();
-
-        NodesStatsResponse nodeStatsResponse = client.admin()
-            .cluster()
-            .prepareNodesStats(internalCluster().getNodeNames())
-            .addMetric(NodesStatsRequest.Metric.CACHE_STATS.metricName())
-            .setIndices(statsFlags)
-            .get();
-        Map<String, NodeStats> intermediate = nodeStatsResponse.getNodesMap(); // TODO: Debug only
-        NodeCacheStats ncs = intermediate.get(nodeId).getNodeCacheStats();
-
-        XContentBuilder builder = XContentFactory.jsonBuilder();
-        Map<String, String> paramMap = Map.of("level", String.join(",", aggregationLevels));
-        ToXContent.Params params = new ToXContent.MapParams(paramMap);
-
-        builder.startObject();
-        ncs.toXContent(builder, params);
-        builder.endObject();
-
-        String resultString = builder.toString();
-        return XContentHelper.convertToMap(MediaTypeRegistry.JSON.xContent(), resultString, true);
-    }
-
-    private static void checkCacheStatsAPIResponse(
-        Map<String, Object> xContentMap,
-        List<String> xContentMapKeys,
-        CacheStatsCounterSnapshot expectedStats,
-        boolean checkMemorySize
-    ) {
-        // Assumes the keys point to a level whose keys are the field values ("size_in_bytes", "evictions", etc) and whose values store
-        // those stats
-        Map<String, Object> aggregatedStatsResponse = (Map<String, Object>) MultiDimensionCacheStatsTests.getValueFromNestedXContentMap(
-            xContentMap,
-            xContentMapKeys
-        );
-        assertNotNull(aggregatedStatsResponse);
-        assertEquals(expectedStats.getHits(), (int) aggregatedStatsResponse.get(CacheStatsCounterSnapshot.Fields.HIT_COUNT));
-        assertEquals(expectedStats.getMisses(), (int) aggregatedStatsResponse.get(CacheStatsCounterSnapshot.Fields.MISS_COUNT));
-        assertEquals(expectedStats.getEvictions(), (int) aggregatedStatsResponse.get(CacheStatsCounterSnapshot.Fields.EVICTIONS));
-        if (checkMemorySize) {
-            assertEquals(
-                expectedStats.getSizeInBytes(),
-                (int) aggregatedStatsResponse.get(CacheStatsCounterSnapshot.Fields.MEMORY_SIZE_IN_BYTES)
-            );
-        }
-        assertEquals(expectedStats.getEntries(), (int) aggregatedStatsResponse.get(CacheStatsCounterSnapshot.Fields.ENTRIES));
-    }
-
-    private String getNodeIdForShard(Client client, String index, int shardNumber) {
-        ClusterState clusterState = client.admin().cluster().prepareState().execute().actionGet().getState();
-        RoutingTable rt = clusterState.routingTable();
-        ShardRouting shardRouting = rt.allShards(index).get(shardNumber);
-        return shardRouting.currentNodeId();
-    }
-
 }
