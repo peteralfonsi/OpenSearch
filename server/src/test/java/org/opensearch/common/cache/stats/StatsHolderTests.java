@@ -22,9 +22,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 
 public class StatsHolderTests extends OpenSearchTestCase {
+    private final String storeName = "dummy_store";
+
     public void testAddAndGet() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2", "dim3", "dim4");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
         Map<String, List<String>> usedDimensionValues = StatsHolderTests.getUsedDimensionValues(statsHolder, 10);
         Map<List<String>, CacheStatsCounter> expected = StatsHolderTests.populateStats(statsHolder, usedDimensionValues, 1000, 10);
 
@@ -53,7 +55,7 @@ public class StatsHolderTests extends OpenSearchTestCase {
 
     public void testReset() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
         Map<String, List<String>> usedDimensionValues = getUsedDimensionValues(statsHolder, 10);
         Map<List<String>, CacheStatsCounter> expected = populateStats(statsHolder, usedDimensionValues, 100, 10);
 
@@ -72,7 +74,7 @@ public class StatsHolderTests extends OpenSearchTestCase {
 
     public void testDropStatsForDimensions() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
 
         // Create stats for the following dimension sets
         List<List<String>> populatedStats = List.of(List.of("A1", "B1"), List.of("A2", "B2"), List.of("A2", "B3"));
@@ -108,7 +110,7 @@ public class StatsHolderTests extends OpenSearchTestCase {
 
     public void testCount() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
         Map<String, List<String>> usedDimensionValues = getUsedDimensionValues(statsHolder, 10);
         Map<List<String>, CacheStatsCounter> expected = populateStats(statsHolder, usedDimensionValues, 100, 10);
 
@@ -121,7 +123,7 @@ public class StatsHolderTests extends OpenSearchTestCase {
 
     public void testConcurrentRemoval() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
 
         // Create stats for the following dimension sets
         List<List<String>> populatedStats = List.of(List.of("A1", "B1"), List.of("A2", "B2"), List.of("A2", "B3"));
@@ -186,32 +188,47 @@ public class StatsHolderTests extends OpenSearchTestCase {
         int numDistinctValuePairs,
         int numRepetitionsPerValue
     ) throws InterruptedException {
+        return populateStats(List.of(statsHolder), usedDimensionValues, numDistinctValuePairs, numRepetitionsPerValue);
+    }
+
+    static Map<List<String>, CacheStatsCounter> populateStats(
+        List<StatsHolder> statsHolders,
+        Map<String, List<String>> usedDimensionValues,
+        int numDistinctValuePairs,
+        int numRepetitionsPerValue
+    ) throws InterruptedException {
         Map<List<String>, CacheStatsCounter> expected = new ConcurrentHashMap<>();
+
+        for (StatsHolder statsHolder : statsHolders) {
+            assertEquals(statsHolders.get(0).getDimensionNames(), statsHolder.getDimensionNames());
+        }
         Thread[] threads = new Thread[numDistinctValuePairs];
         CountDownLatch countDownLatch = new CountDownLatch(numDistinctValuePairs);
         Random rand = Randomness.get();
         List<List<String>> dimensionsForThreads = new ArrayList<>();
         for (int i = 0; i < numDistinctValuePairs; i++) {
-            dimensionsForThreads.add(getRandomDimList(statsHolder.getDimensionNames(), usedDimensionValues, true, rand));
+            dimensionsForThreads.add(getRandomDimList(statsHolders.get(0).getDimensionNames(), usedDimensionValues, true, rand));
             int finalI = i;
             threads[i] = new Thread(() -> {
                 Random threadRand = Randomness.get();
                 List<String> dimensions = dimensionsForThreads.get(finalI);
                 expected.computeIfAbsent(dimensions, (key) -> new CacheStatsCounter());
-                for (int j = 0; j < numRepetitionsPerValue; j++) {
-                    CacheStatsCounter statsToInc = new CacheStatsCounter(
-                        threadRand.nextInt(10),
-                        threadRand.nextInt(10),
-                        threadRand.nextInt(10),
-                        threadRand.nextInt(5000),
-                        threadRand.nextInt(10)
-                    );
-                    expected.get(dimensions).hits.inc(statsToInc.getHits());
-                    expected.get(dimensions).misses.inc(statsToInc.getMisses());
-                    expected.get(dimensions).evictions.inc(statsToInc.getEvictions());
-                    expected.get(dimensions).sizeInBytes.inc(statsToInc.getSizeInBytes());
-                    expected.get(dimensions).entries.inc(statsToInc.getEntries());
-                    StatsHolderTests.populateStatsHolderFromStatsValueMap(statsHolder, Map.of(dimensions, statsToInc));
+                for (StatsHolder statsHolder : statsHolders) {
+                    for (int j = 0; j < numRepetitionsPerValue; j++) {
+                        CacheStatsCounter statsToInc = new CacheStatsCounter(
+                            threadRand.nextInt(10),
+                            threadRand.nextInt(10),
+                            threadRand.nextInt(10),
+                            threadRand.nextInt(5000),
+                            threadRand.nextInt(10)
+                        );
+                        expected.get(dimensions).hits.inc(statsToInc.getHits());
+                        expected.get(dimensions).misses.inc(statsToInc.getMisses());
+                        expected.get(dimensions).evictions.inc(statsToInc.getEvictions());
+                        expected.get(dimensions).sizeInBytes.inc(statsToInc.getSizeInBytes());
+                        expected.get(dimensions).entries.inc(statsToInc.getEntries());
+                        StatsHolderTests.populateStatsHolderFromStatsValueMap(statsHolder, Map.of(dimensions, statsToInc));
+                    }
                 }
                 countDownLatch.countDown();
             });

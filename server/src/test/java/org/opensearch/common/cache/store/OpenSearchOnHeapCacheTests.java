@@ -15,16 +15,24 @@ import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.stats.CacheStats;
 import org.opensearch.common.cache.stats.CacheStatsCounterSnapshot;
 import org.opensearch.common.cache.stats.MultiDimensionCacheStats;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings;
 import org.opensearch.common.metrics.CounterMetric;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.xcontent.XContentFactory;
+import org.opensearch.common.xcontent.XContentHelper;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.UUID;
 
@@ -153,6 +161,20 @@ public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
         public void onRemoval(RemovalNotification<ICacheKey<K>, V> notification) {
             numRemovals.inc();
         }
+    }
+
+    // Public as this is used in other tests as well
+    public static Map<String, Object> getStatsXContentMap(CacheStats cacheStats, List<String> levels) throws IOException {
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        Map<String, String> paramMap = Map.of("level", String.join(",", levels));
+        ToXContent.Params params = new ToXContent.MapParams(paramMap);
+
+        builder.startObject();
+        cacheStats.toXContent(builder, params);
+        builder.endObject();
+
+        String resultString = builder.toString();
+        return XContentHelper.convertToMap(MediaTypeRegistry.JSON.xContent(), resultString, true);
     }
 
     private ICacheKey<String> getICacheKey(String key) {

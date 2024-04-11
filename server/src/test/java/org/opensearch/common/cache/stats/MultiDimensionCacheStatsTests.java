@@ -8,16 +8,71 @@
 
 package org.opensearch.common.cache.stats;
 
+import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.common.xcontent.XContentFactory;
+import org.opensearch.common.xcontent.XContentHelper;
+import org.opensearch.core.common.bytes.BytesReference;
+import org.opensearch.core.common.io.stream.BytesStreamInput;
+import org.opensearch.core.xcontent.MediaTypeRegistry;
+import org.opensearch.core.xcontent.ToXContent;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.test.OpenSearchTestCase;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiConsumer;
 
 public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
+    private final String storeName = "dummy_store";
+
+    public void testSerialization() throws Exception {
+        List<String> dimensionNames = List.of("dim1", "dim2", "dim3");
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
+        Map<String, List<String>> usedDimensionValues = StatsHolderTests.getUsedDimensionValues(statsHolder, 10);
+        StatsHolderTests.populateStats(statsHolder, usedDimensionValues, 100, 10);
+        MultiDimensionCacheStats stats = (MultiDimensionCacheStats) statsHolder.getCacheStats();
+
+        BytesStreamOutput os = new BytesStreamOutput();
+        stats.writeTo(os);
+        BytesStreamInput is = new BytesStreamInput(BytesReference.toBytes(os.bytes()));
+        MultiDimensionCacheStats deserialized = new MultiDimensionCacheStats(is);
+
+        assertEquals(stats.dimensionNames, deserialized.dimensionNames);
+        assertEquals(stats.storeName, deserialized.storeName);
+
+        os = new BytesStreamOutput();
+        stats.writeToWithClassName(os);
+        is = new BytesStreamInput(BytesReference.toBytes(os.bytes()));
+        CacheStats deserializedViaCacheStats = CacheStats.readFromStreamWithClassName(is);
+        assertEquals(MultiDimensionCacheStats.class, deserializedViaCacheStats.getClass());
+
+        assertEquals(stats, deserialized);
+        assertEquals(stats, deserializedViaCacheStats);
+    }
+
+    public void testEquals() throws Exception {
+        List<String> dimensionNames = List.of("dim1", "dim2", "dim3");
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
+        StatsHolder differentStoreNameStatsHolder = new StatsHolder(dimensionNames, "nonMatchingStoreName");
+        StatsHolder nonMatchingStatsHolder = new StatsHolder(dimensionNames, storeName);
+        Map<String, List<String>> usedDimensionValues = StatsHolderTests.getUsedDimensionValues(statsHolder, 10);
+        StatsHolderTests.populateStats(List.of(statsHolder, differentStoreNameStatsHolder), usedDimensionValues, 100, 10);
+        StatsHolderTests.populateStats(nonMatchingStatsHolder, usedDimensionValues, 100, 10);
+        MultiDimensionCacheStats stats = (MultiDimensionCacheStats) statsHolder.getCacheStats();
+
+        MultiDimensionCacheStats secondStats = (MultiDimensionCacheStats) statsHolder.getCacheStats();
+        assertEquals(stats, secondStats);
+        MultiDimensionCacheStats nonMatchingStats = (MultiDimensionCacheStats) nonMatchingStatsHolder.getCacheStats();
+        assertNotEquals(stats, nonMatchingStats);
+        MultiDimensionCacheStats differentStoreNameStats = (MultiDimensionCacheStats) differentStoreNameStatsHolder.getCacheStats();
+        assertNotEquals(stats, differentStoreNameStats);
+    }
 
     public void testGet() throws Exception {
         List<String> dimensionNames = List.of("dim1", "dim2", "dim3", "dim4");
-        StatsHolder statsHolder = new StatsHolder(dimensionNames);
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
         Map<String, List<String>> usedDimensionValues = StatsHolderTests.getUsedDimensionValues(statsHolder, 10);
         Map<List<String>, CacheStatsCounter> expected = StatsHolderTests.populateStats(statsHolder, usedDimensionValues, 1000, 10);
         MultiDimensionCacheStats stats = (MultiDimensionCacheStats) statsHolder.getCacheStats();
@@ -52,7 +107,7 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
 
     public void testEmptyDimsList() throws Exception {
         // If the dimension list is empty, the tree should have only the root node containing the total stats.
-        StatsHolder statsHolder = new StatsHolder(List.of());
+        StatsHolder statsHolder = new StatsHolder(List.of(), storeName);
         Map<String, List<String>> usedDimensionValues = StatsHolderTests.getUsedDimensionValues(statsHolder, 100);
         StatsHolderTests.populateStats(statsHolder, usedDimensionValues, 10, 100);
         MultiDimensionCacheStats stats = (MultiDimensionCacheStats) statsHolder.getCacheStats();
@@ -60,6 +115,158 @@ public class MultiDimensionCacheStatsTests extends OpenSearchTestCase {
         MultiDimensionCacheStats.MDCSDimensionNode statsRoot = stats.getStatsRoot();
         assertEquals(0, statsRoot.children.size());
         assertEquals(stats.getTotalStats(), statsRoot.getStats());
+    }
+
+    public void testAggregateByAllDimensions() throws Exception {
+        // Aggregating with all dimensions as levels should just give us the same values that were in the original map
+        List<String> dimensionNames = List.of("dim1", "dim2", "dim3", "dim4");
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
+        Map<String, List<String>> usedDimensionValues = StatsHolderTests.getUsedDimensionValues(statsHolder, 10);
+        Map<List<String>, CacheStatsCounter> expected = StatsHolderTests.populateStats(statsHolder, usedDimensionValues, 1000, 10);
+        MultiDimensionCacheStats stats = (MultiDimensionCacheStats) statsHolder.getCacheStats();
+
+        MultiDimensionCacheStats.MDCSDimensionNode aggregated = stats.aggregateByLevels(dimensionNames);
+        for (Map.Entry<List<String>, CacheStatsCounter> expectedEntry : expected.entrySet()) {
+            List<String> dimensionValues = new ArrayList<>();
+            for (String dimValue : expectedEntry.getKey()) {
+                dimensionValues.add(dimValue);
+            }
+            assertEquals(expectedEntry.getValue().snapshot(), getNode(dimensionValues, aggregated).getStats());
+        }
+        assertSumOfChildrenStats(aggregated);
+    }
+
+    public void testAggregateBySomeDimensions() throws Exception {
+        List<String> dimensionNames = List.of("dim1", "dim2", "dim3", "dim4");
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
+        Map<String, List<String>> usedDimensionValues = StatsHolderTests.getUsedDimensionValues(statsHolder, 10);
+        Map<List<String>, CacheStatsCounter> expected = StatsHolderTests.populateStats(statsHolder, usedDimensionValues, 1000, 10);
+        MultiDimensionCacheStats stats = (MultiDimensionCacheStats) statsHolder.getCacheStats();
+
+        for (int i = 0; i < (1 << dimensionNames.size()); i++) {
+            // Test each combination of possible levels
+            List<String> levels = new ArrayList<>();
+            for (int nameIndex = 0; nameIndex < dimensionNames.size(); nameIndex++) {
+                if ((i & (1 << nameIndex)) != 0) {
+                    levels.add(dimensionNames.get(nameIndex));
+                }
+            }
+            if (levels.size() == 0) {
+                assertThrows(IllegalArgumentException.class, () -> stats.aggregateByLevels(levels));
+            } else {
+                MultiDimensionCacheStats.MDCSDimensionNode aggregated = stats.aggregateByLevels(levels);
+                Map<List<String>, MultiDimensionCacheStats.MDCSDimensionNode> aggregatedLeafNodes = getAllLeafNodes(aggregated);
+
+                for (Map.Entry<List<String>, MultiDimensionCacheStats.MDCSDimensionNode> aggEntry : aggregatedLeafNodes.entrySet()) {
+                    CacheStatsCounter expectedCounter = new CacheStatsCounter();
+                    for (List<String> expectedDims : expected.keySet()) {
+                        if (expectedDims.containsAll(aggEntry.getKey())) {
+                            expectedCounter.add(expected.get(expectedDims));
+                        }
+                    }
+                    assertEquals(expectedCounter.snapshot(), aggEntry.getValue().getStats());
+                }
+                assertSumOfChildrenStats(aggregated);
+            }
+        }
+    }
+
+    public void testXContentForLevels() throws Exception {
+        List<String> dimensionNames = List.of("A", "B", "C");
+
+        StatsHolder statsHolder = new StatsHolder(dimensionNames, storeName);
+        StatsHolderTests.populateStatsHolderFromStatsValueMap(
+            statsHolder,
+            Map.of(
+                List.of("A1", "B1", "C1"),
+                new CacheStatsCounter(1, 1, 1, 1, 1),
+                List.of("A1", "B1", "C2"),
+                new CacheStatsCounter(2, 2, 2, 2, 2),
+                List.of("A1", "B2", "C1"),
+                new CacheStatsCounter(3, 3, 3, 3, 3),
+                List.of("A2", "B1", "C3"),
+                new CacheStatsCounter(4, 4, 4, 4, 4)
+            )
+        );
+        MultiDimensionCacheStats stats = (MultiDimensionCacheStats) statsHolder.getCacheStats();
+
+        XContentBuilder builder = XContentFactory.jsonBuilder();
+        ToXContent.Params params = ToXContent.EMPTY_PARAMS;
+
+        builder.startObject();
+        stats.toXContentForLevels(builder, params, List.of("A", "B", "C"));
+        builder.endObject();
+        String resultString = builder.toString();
+        Map<String, Object> result = XContentHelper.convertToMap(MediaTypeRegistry.JSON.xContent(), resultString, true);
+
+        Map<String, BiConsumer<CacheStatsCounter, Integer>> fieldNamesMap = Map.of(
+            CacheStatsCounterSnapshot.Fields.MEMORY_SIZE_IN_BYTES,
+            (counter, value) -> counter.sizeInBytes.inc(value),
+            CacheStatsCounterSnapshot.Fields.EVICTIONS,
+            (counter, value) -> counter.evictions.inc(value),
+            CacheStatsCounterSnapshot.Fields.HIT_COUNT,
+            (counter, value) -> counter.hits.inc(value),
+            CacheStatsCounterSnapshot.Fields.MISS_COUNT,
+            (counter, value) -> counter.misses.inc(value),
+            CacheStatsCounterSnapshot.Fields.ENTRIES,
+            (counter, value) -> counter.entries.inc(value)
+        );
+
+        Map<List<String>, MultiDimensionCacheStats.MDCSDimensionNode> leafNodes = getAllLeafNodes(stats.getStatsRoot());
+        for (Map.Entry<List<String>, MultiDimensionCacheStats.MDCSDimensionNode> entry : leafNodes.entrySet()) {
+            List<String> xContentKeys = new ArrayList<>();
+            for (int i = 0; i < dimensionNames.size(); i++) {
+                xContentKeys.add(dimensionNames.get(i));
+                xContentKeys.add(entry.getKey().get(i));
+            }
+            CacheStatsCounter counterFromXContent = new CacheStatsCounter();
+
+            for (Map.Entry<String, BiConsumer<CacheStatsCounter, Integer>> fieldNamesEntry : fieldNamesMap.entrySet()) {
+                List<String> fullXContentKeys = new ArrayList<>(xContentKeys);
+                fullXContentKeys.add(fieldNamesEntry.getKey());
+                int valueInXContent = (int) getValueFromNestedXContentMap(result, fullXContentKeys);
+                BiConsumer<CacheStatsCounter, Integer> incrementer = fieldNamesEntry.getValue();
+                incrementer.accept(counterFromXContent, valueInXContent);
+            }
+
+            CacheStatsCounterSnapshot expected = entry.getValue().getStats();
+            assertEquals(counterFromXContent.snapshot(), expected);
+        }
+    }
+
+    public static Object getValueFromNestedXContentMap(Map<String, Object> xContentMap, List<String> keys) {
+        Map<String, Object> current = xContentMap;
+        for (int i = 0; i < keys.size() - 1; i++) {
+            Object next = current.get(keys.get(i));
+            if (next == null) {
+                return null;
+            }
+            current = (Map<String, Object>) next;
+        }
+        return current.get(keys.get(keys.size() - 1));
+    }
+
+    // Get a map from the list of dimension values to the corresponding leaf node.
+    private Map<List<String>, MultiDimensionCacheStats.MDCSDimensionNode> getAllLeafNodes(MultiDimensionCacheStats.MDCSDimensionNode root) {
+        Map<List<String>, MultiDimensionCacheStats.MDCSDimensionNode> result = new HashMap<>();
+        getAllLeafNodesHelper(result, root, new ArrayList<>());
+        return result;
+    }
+
+    private void getAllLeafNodesHelper(
+        Map<List<String>, MultiDimensionCacheStats.MDCSDimensionNode> result,
+        MultiDimensionCacheStats.MDCSDimensionNode current,
+        List<String> pathToCurrent
+    ) {
+        if (current.children.isEmpty()) {
+            result.put(pathToCurrent, current);
+        } else {
+            for (Map.Entry<String, MultiDimensionCacheStats.MDCSDimensionNode> entry : current.children.entrySet()) {
+                List<String> newPath = new ArrayList<>(pathToCurrent);
+                newPath.add(entry.getKey());
+                getAllLeafNodesHelper(result, entry.getValue(), newPath);
+            }
+        }
     }
 
     private MultiDimensionCacheStats.MDCSDimensionNode getNode(
