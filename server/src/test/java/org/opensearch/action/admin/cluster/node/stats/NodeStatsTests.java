@@ -952,13 +952,6 @@ public class NodeStatsTests extends OpenSearchTestCase {
                 for (int shardNum = 0; shardNum < numShardsPerIndex; shardNum++) {
                     String shardName = "[" + indexName + "][" + shardNum + "]";
                     for (String tierName : new String[] { "dummy_tier_1", "dummy_tier_2" }) {
-                        /*CacheStatsCounterSnapshot response = new CacheStatsCounterSnapshot(
-                            randomInt(100),
-                            randomInt(100),
-                            randomInt(100),
-                            randomInt(100),
-                            randomInt(100)
-                        );*/
                         List<String> dimensionValues = List.of(indexName, shardName, tierName);
                         for (int i = 0; i < randomInt(20); i++) {
                             statsHolder.incrementHits(dimensionValues);
@@ -973,13 +966,6 @@ public class NodeStatsTests extends OpenSearchTestCase {
                         for (int i = 0; i < randomInt(20); i++) {
                             statsHolder.incrementEntries(dimensionValues);
                         }
-                        /*snapshotMap.put(
-                            new StatsHolder.Key(List.of(
-                                new CacheStatsDimension("testIndexDimensionName", indexName),
-                                new CacheStatsDimension("testShardDimensionName", shardName),
-                                new CacheStatsDimension("testTierDimensionName", tierName)
-                            )),
-                            response);*/
                     }
                 }
             }
