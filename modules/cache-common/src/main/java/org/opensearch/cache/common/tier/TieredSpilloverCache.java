@@ -19,6 +19,7 @@ import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
 import org.opensearch.common.cache.policy.CachedQueryResult;
 import org.opensearch.common.cache.stats.CacheStatsHolder;
+import org.opensearch.common.cache.stats.DefaultCacheStatsHolder;
 import org.opensearch.common.cache.stats.ImmutableCacheStatsHolder;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.collect.Tuple;
@@ -102,8 +103,6 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         this.onDiskRemovalListener = new DiskTierRemovalListener(this);
         this.weigher = Objects.requireNonNull(builder.cacheConfig.getWeigher(), "Weigher can't be null");
 
-        // TODO: Once the feature flag/NoopCacheStatsHolder PR has gone in, use NoopCacheStatsHolder for the tiers,
-        // to avoid storing redundant stats values.
         this.onHeapCache = builder.onHeapCacheFactory.create(
             new CacheConfig.Builder<K, V>().setRemovalListener(onHeapRemovalListener)
                 .setKeyType(builder.cacheConfig.getKeyType())
@@ -114,6 +113,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                 .setMaxSizeInBytes(builder.cacheConfig.getMaxSizeInBytes())
                 .setExpireAfterAccess(builder.cacheConfig.getExpireAfterAccess())
                 .setClusterSettings(builder.cacheConfig.getClusterSettings())
+                .setUseNoopStats(true)
                 .build(),
             builder.cacheType,
             builder.cacheFactories
@@ -126,6 +126,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                 .setSettings(builder.cacheConfig.getSettings())
                 .setWeigher(builder.cacheConfig.getWeigher())
                 .setDimensionNames(builder.cacheConfig.getDimensionNames())
+                .setUseNoopStats(true)
                 .build(),
             builder.cacheType,
             builder.cacheFactories
@@ -137,7 +138,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
             new Tuple<>(diskCache, TIER_DIMENSION_VALUE_DISK)
         );
         // Pass "tier" as the innermost dimension name, in addition to whatever dimensions are specified for the cache as a whole
-        this.statsHolder = new CacheStatsHolder(getDimensionsWithTierValue(dimensionNames, TIER_DIMENSION_NAME));
+        this.statsHolder = new DefaultCacheStatsHolder(getDimensionsWithTierValue(dimensionNames, TIER_DIMENSION_NAME));
         this.policies = builder.policies; // Will never be null; builder initializes it to an empty list
     }
 
