@@ -1403,10 +1403,10 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         assertEquals(0, tieredSpilloverCache.count());
     }
 
-    // TODO: Remove timing-testing related code before merging
     public void testForDeadlock() throws Exception {
-        int onHeapCacheSize = randomIntBetween(2400, 2401);
-        int diskCacheSize = randomIntBetween(2400, 2401);
+        // Test many requests concurrently, both hits and misses, in all tiers, to ensure no deadlock occurs
+        int onHeapCacheSize = randomIntBetween(1000, 3000);
+        int diskCacheSize = randomIntBetween(3000, 5000);
         int keyValueSize = 50;
         MockCacheRemovalListener<String, String> removalListener = new MockCacheRemovalListener<>();
         TieredSpilloverCache<String, String> tieredSpilloverCache = initializeTieredSpilloverCache(
@@ -1424,14 +1424,14 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
             0
         );
 
-        int numRequests = 100_000; //
+        int numRequests = 10_000;
         // Each thread will do this many requests for key with string value of i, and then that many again (for possible hits)
-        int numThreads = 8;
+        int numThreads = randomIntBetween(1, 10);
         Thread[] threads = new Thread[numThreads];
         Phaser phaser = new Phaser(numThreads + 1);
         CountDownLatch countDownLatch = new CountDownLatch(numThreads);
 
-        // Precompute the keys each thread will request so we don't include that in the time estimate
+        // Precompute the keys each thread will request
         List<List<ICacheKey<String>>> keysPerThread = new ArrayList<>();
 
         for (int i = 0; i < numThreads; i++) {
@@ -1454,19 +1454,8 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
             });
             threads[i].start();
         }
-        long now = System.nanoTime();
         phaser.arriveAndAwaitAdvance();
         countDownLatch.await();
-        long elapsed = System.nanoTime() - now;
-        System.out.println(
-            "TIME TAKEN FOR NUM_LOCKS = "
-                + TieredSpilloverCache.NUM_LOCKS
-                + " is "
-                + elapsed
-                + " ns or "
-                + (float) elapsed / 1000000000
-                + " sec"
-        );
     }
 
     private List<String> getMockDimensions() {

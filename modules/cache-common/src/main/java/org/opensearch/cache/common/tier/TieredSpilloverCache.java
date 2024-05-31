@@ -411,8 +411,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         // (key.hashCode() & 0xff), we use the second-least significant byte. This way, if two keys face
         // lock contention in the TSC's locks, they will be unlikely to also face lock contention in OpensearchOnHeapCache.
         // This should help p100 times.
-        return ((key.hashCode() & 0xfff00) >> 8) % NUM_LOCKS; // TODO: grabbing 1.5 bytes so we can test NUM_LOCKS > 256, revert if we dont
-                                                              // want this
+        return ((key.hashCode() & 0xff00) >> 8) % NUM_LOCKS;
     }
 
     private ReleasableLock getReadLockForKey(ICacheKey<K> key) {
