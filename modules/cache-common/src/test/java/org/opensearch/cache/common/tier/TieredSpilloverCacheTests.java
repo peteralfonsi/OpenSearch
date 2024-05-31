@@ -1243,7 +1243,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
          * totalEntries = heapEntries + diskEntries
          */
 
-        int onHeapCacheSize = 0; //randomIntBetween(10, 30);
+        int onHeapCacheSize = 0; // randomIntBetween(10, 30);
         int diskCacheSize = randomIntBetween(onHeapCacheSize + 1, 100);
         int keyValueSize = 50;
         MockCacheRemovalListener<String, String> removalListener = new MockCacheRemovalListener<>();
@@ -1403,10 +1403,10 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         assertEquals(0, tieredSpilloverCache.count());
     }
 
-    // TODO: This is for testing NUM_LOCKS only and should not be merged!!
-    public void testNumLocksTiming() throws Exception {
+    // TODO: Remove timing-testing related code before merging
+    public void testForDeadlock() throws Exception {
         int onHeapCacheSize = randomIntBetween(2400, 2401);
-        int diskCacheSize = randomIntBetween(5000, 10000);
+        int diskCacheSize = randomIntBetween(2400, 2401);
         int keyValueSize = 50;
         MockCacheRemovalListener<String, String> removalListener = new MockCacheRemovalListener<>();
         TieredSpilloverCache<String, String> tieredSpilloverCache = initializeTieredSpilloverCache(
@@ -1424,7 +1424,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
             0
         );
 
-        int numRequests = 100_000;
+        int numRequests = 100_000; //
         // Each thread will do this many requests for key with string value of i, and then that many again (for possible hits)
         int numThreads = 8;
         Thread[] threads = new Thread[numThreads];
@@ -1446,15 +1446,10 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
                 try {
                     for (int j = 0; j < numRequests; j++) {
                         tieredSpilloverCache.computeIfAbsent(keysPerThread.get(finalI).get(j), getLoadAwareCacheLoader());
-                        if (j % 100 == 0) {
-                            System.out.println("Finished iter " + j);
-                        }
                     }
-                } catch (Exception ignored) {}
-                // TODO: Something bad seems to happen at iteration ~300 when it freezes. I think this is when evictions begin (heap size 2400 and 8 threads -> freezes at iter 300)
-                // We see no more hits of diskCache.put() after the first 15 of them. So i think one of them is not giving up the lock properly?
-                // Not always 15: ~8 through ~30 observed. Probably  just the first colliding write lock in a key. Decrease num locks to 1 to speed along?
-
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                }
                 countDownLatch.countDown();
             });
             threads[i].start();
@@ -1463,7 +1458,15 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         phaser.arriveAndAwaitAdvance();
         countDownLatch.await();
         long elapsed = System.nanoTime() - now;
-        System.out.println("TIME TAKEN FOR NUM_LOCKS = " + TieredSpilloverCache.NUM_LOCKS + " is " + elapsed + " ns or " + (float) elapsed / 1000000000 + " sec");
+        System.out.println(
+            "TIME TAKEN FOR NUM_LOCKS = "
+                + TieredSpilloverCache.NUM_LOCKS
+                + " is "
+                + elapsed
+                + " ns or "
+                + (float) elapsed / 1000000000
+                + " sec"
+        );
     }
 
     private List<String> getMockDimensions() {
