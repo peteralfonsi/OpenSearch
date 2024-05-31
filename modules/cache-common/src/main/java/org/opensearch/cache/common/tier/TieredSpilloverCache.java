@@ -35,8 +35,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
-import java.util.PriorityQueue;
 import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -82,10 +82,10 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
 
     // The locks ensure keys can't end up in both the heap and disk tier simultaneously.
     // For performance, we have several locks, which effectively segment the cache by key.hashCode().
-    static final int NUM_LOCKS = 1;
+    static final int NUM_LOCKS = 256;
     private final ReleasableLock[] readLocks;
     private final ReleasableLock[] writeLocks;
-    private final Queue<Tuple<ICacheKey<K>, V>> diskTierQueue;
+    private final Queue<RemovalNotification<ICacheKey<K>, V>> diskTierQueue;
 
     /**
      * Maintains caching tiers in ascending order of cache latency.
@@ -155,7 +155,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
             readLocks[i] = new ReleasableLock(locks[i].readLock());
             writeLocks[i] = new ReleasableLock(locks[i].writeLock());
         }
-        this.diskTierQueue = new PriorityQueue<>();
+        this.diskTierQueue = new ConcurrentLinkedQueue<>();
     }
 
     // Package private for testing
@@ -365,10 +365,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         ICacheKey<K> key = notification.getKey();
         boolean wasEvicted = SPILLOVER_REMOVAL_REASONS.contains(notification.getRemovalReason());
         if (caches.get(diskCache).isEnabled() && wasEvicted && evaluatePolicies(notification.getValue())) {
-            /*try (ReleasableLock ignore = writeLocks[getLockIndexForKey(key)].acquire()) {//(ReleasableLock ignore = getWriteLockForKey(key).acquire()) {
-                diskCache.put(key, notification.getValue()); // spill over to the disk tier and increment its stats
-            }*/
-            diskTierQueue.add(new Tuple<>(key, notification.getValue()));
+            diskTierQueue.add(notification);
             updateStatsOnPut(TIER_DIMENSION_VALUE_DISK, key, notification.getValue());
         } else {
             // If the value is not going to the disk cache, send this notification to the TSC's removal listener
@@ -414,7 +411,8 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         // (key.hashCode() & 0xff), we use the second-least significant byte. This way, if two keys face
         // lock contention in the TSC's locks, they will be unlikely to also face lock contention in OpensearchOnHeapCache.
         // This should help p100 times.
-        return ((key.hashCode() & 0xff00) >> 8) % NUM_LOCKS; // TODO: If greater than 256 this doesnt work
+        return ((key.hashCode() & 0xfff00) >> 8) % NUM_LOCKS; // TODO: grabbing 1.5 bytes so we can test NUM_LOCKS > 256, revert if we dont
+                                                              // want this
     }
 
     private ReleasableLock getReadLockForKey(ICacheKey<K> key) {
@@ -427,9 +425,11 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
 
     private void flushDiskTierQueue() {
         while (!diskTierQueue.isEmpty()) {
-            Tuple<ICacheKey<K>, V> tuple = diskTierQueue.poll();
-            try (ReleasableLock ignore = getWriteLockForKey(tuple.v1()).acquire()) {//(ReleasableLock ignore = getWriteLockForKey(key).acquire()) {
-                diskCache.put(tuple.v1(), tuple.v2());
+            RemovalNotification<ICacheKey<K>, V> tuple = diskTierQueue.poll();
+            if (tuple != null) {
+                try (ReleasableLock ignore = getWriteLockForKey(tuple.getKey()).acquire()) {
+                    diskCache.put(tuple.getKey(), tuple.getValue());
+                }
             }
         }
     }
