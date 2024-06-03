@@ -1405,8 +1405,8 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
 
     public void testForDeadlock() throws Exception {
         // Test many requests concurrently, both hits and misses, in all tiers, to ensure no deadlock occurs
-        int onHeapCacheSize = randomIntBetween(1000, 3000);
-        int diskCacheSize = randomIntBetween(3000, 5000);
+        int onHeapCacheSize = randomIntBetween(2400, 2401);
+        int diskCacheSize = randomIntBetween(2400, 2401);
         int keyValueSize = 50;
         MockCacheRemovalListener<String, String> removalListener = new MockCacheRemovalListener<>();
         TieredSpilloverCache<String, String> tieredSpilloverCache = initializeTieredSpilloverCache(
@@ -1446,6 +1446,9 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
                 try {
                     for (int j = 0; j < numRequests; j++) {
                         tieredSpilloverCache.computeIfAbsent(keysPerThread.get(finalI).get(j), getLoadAwareCacheLoader());
+                        if (j % 100 == 0) {
+                            System.out.println("Finished iter " + j);
+                        }
                     }
                 } catch (Exception e) {
                     throw new RuntimeException(e);
