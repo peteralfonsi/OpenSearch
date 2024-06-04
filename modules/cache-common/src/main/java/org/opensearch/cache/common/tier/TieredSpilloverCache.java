@@ -36,11 +36,15 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.ToLongBiFunction;
@@ -87,9 +91,12 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
     //private final ReleasableLock[] readLocks;
     //private final ReleasableLock[] writeLocks;
     private final LockWrapper[] locks;
-    ThreadLocal<LockWrapper> threadLocal = new ThreadLocal<>();
+    //ThreadLocal<LockWrapper> threadLocal = new ThreadLocal<>();
     //ThreadLocal<LockWrapper>[] threadLocals;//
-    //private final Queue<RemovalNotification<ICacheKey<K>, V>> diskTierQueue;
+    private final Queue<RemovalNotification<ICacheKey<K>, V>> diskTierQueue;
+
+    Map<ICacheKey<K>, CompletableFuture<Tuple<ICacheKey<K>, V>>> completableFutureMap = new ConcurrentHashMap<>();
+    ThreadLocal<LockWrapper> threadLocal = new ThreadLocal<>();
 
     /**
      * Maintains caching tiers in ascending order of cache latency.
@@ -162,7 +169,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
             locks[i] = new LockWrapper();
             //threadLocals[i] = new ThreadLocal<>();
         }
-        //this.diskTierQueue = new ConcurrentLinkedQueue<>();
+        this.diskTierQueue = new ConcurrentLinkedQueue<>();
     }
 
     // Package private for testing
@@ -217,13 +224,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
             // Add the value to the onHeap cache. We are calling computeIfAbsent which does another get inside.
             // This is needed as there can be many requests for the same key at the same time and we only want to load
             // the value once.
-            V value = null;
-            try {// (ReleasableLock ignore = getWriteLockForKey(key).acquire()) {
-                writeLock(key);
-                value = onHeapCache.computeIfAbsent(key, loader);
-            } finally {
-                unlockWriteLock(key);
-            }
+            V value = compute(key, loader);
             // Handle stats
             if (loader.isLoaded()) {
                 // The value was just computed and added to the cache by this thread. Register a miss for the heap cache, and the disk cache
@@ -237,7 +238,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                 // Another thread requesting this key already loaded the value. Register a hit for the heap cache
                 statsHolder.incrementHits(heapDimensionValues);
             }
-            //flushDiskTierQueue();
+            flushDiskTierQueue();
             return value;
         } else {
             // Handle stats for an initial hit from getValueFromTieredCache()
@@ -354,7 +355,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
      */
     private Function<ICacheKey<K>, Tuple<V, String>> getValueFromTieredCache(boolean captureStats) {
         return key -> {
-            //flushDiskTierQueue();
+            flushDiskTierQueue();
             try {// (ReleasableLock ignore = getReadLockForKey(key).acquire()) {
                 readLock(key);
                 for (Map.Entry<ICache<K, V>, TierInfo> cacheEntry : caches.entrySet()) {
@@ -380,16 +381,75 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         };
     }
 
+    private V compute(ICacheKey<K> key, LoadAwareCacheLoader<ICacheKey<K>, V> loader) throws Exception {
+        // A future that returns a pair of key/value.
+        CompletableFuture<Tuple<ICacheKey<K>, V>> completableFuture = new CompletableFuture<>();
+        // Only one of the threads will succeed putting a future into map for the same key.
+        // Rest will fetch existing future.
+        CompletableFuture<Tuple<ICacheKey<K>, V>> future = completableFutureMap.putIfAbsent(key, completableFuture);
+        // Handler to handle results post processing. Takes a tuple<key, value> or exception as an input and returns
+        // the value. Also before returning value, puts the value in cache.
+        BiFunction<Tuple<ICacheKey<K>, V>, Throwable, V> handler = (pair, ex) -> {
+            V value = null;
+            if (pair != null) {
+                try {
+                    writeLock(key);
+                    onHeapCache.put(pair.v1(), pair.v2());
+                } finally {
+                    unlockWriteLock(key);
+                }
+                value = pair.v2(); // Returning a value itself assuming that a next get should return the same. Should
+                // be safe to assume if we got no exception and reached here.
+            }
+            completableFutureMap.remove(key); // Remove key from map as not needed anymore.
+            return value;
+        };
+        CompletableFuture<V> completableValue;
+        if (future == null) {
+            future = completableFuture;
+            completableValue = future.handle(handler);
+            V value;
+            try {
+                value = loader.load(key);
+            } catch (Exception ex) {
+                future.completeExceptionally(ex);
+                throw new ExecutionException(ex);
+            }
+            if (value == null) {
+                NullPointerException npe = new NullPointerException("loader returned a null value");
+                future.completeExceptionally(npe);
+                throw new ExecutionException(npe);
+            } else {
+                future.complete(new Tuple<>(key, value));
+            }
+
+        } else {
+            completableValue = future.handle(handler);
+        }
+        V value;
+        try {
+            value = completableValue.get();
+            if (future.isCompletedExceptionally()) {
+                future.get(); // call get to force the exception to be thrown for other concurrent callers
+                throw new IllegalStateException("Future completed exceptionally but no error thrown");
+            }
+        } catch (InterruptedException ex) {
+            throw new IllegalStateException(ex);
+        }
+        return value;
+    }
+
     void handleRemovalFromHeapTier(RemovalNotification<ICacheKey<K>, V> notification) {
         ICacheKey<K> key = notification.getKey();
         boolean wasEvicted = SPILLOVER_REMOVAL_REASONS.contains(notification.getRemovalReason());
         if (caches.get(diskCache).isEnabled() && wasEvicted && evaluatePolicies(notification.getValue())) {
-            try {
+            /*try {
                 writeLock(key);
                 diskCache.put(notification.getKey(), notification.getValue());
             } finally {
                 unlockWriteLock(key);
-            }
+            }*/
+            diskTierQueue.add(notification);
             updateStatsOnPut(TIER_DIMENSION_VALUE_DISK, key, notification.getValue());
         } else {
             // If the value is not going to the disk cache, send this notification to the TSC's removal listener
@@ -516,16 +576,19 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         return writeLocks[getLockIndexForKey(key)];
     }*/
 
-    /*private void flushDiskTierQueue() {
+    private void flushDiskTierQueue() {
         while (!diskTierQueue.isEmpty()) {
             RemovalNotification<ICacheKey<K>, V> tuple = diskTierQueue.poll();
             if (tuple != null) {
-                try (ReleasableLock ignore = getWriteLockForKey(tuple.getKey()).acquire()) {
+                try { //(ReleasableLock ignore = getWriteLockForKey(tuple.getKey()).acquire()) {
+                    writeLock(tuple.getKey());
                     diskCache.put(tuple.getKey(), tuple.getValue());
+                } finally {
+                    unlockWriteLock(tuple.getKey());
                 }
             }
         }
-    }*/
+    }
 
     /**
      * A class which receives removal events from the heap tier.
