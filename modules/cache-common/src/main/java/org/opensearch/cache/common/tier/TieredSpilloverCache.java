@@ -77,9 +77,11 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
     private final TieredSpilloverCacheStatsHolder statsHolder;
     private ToLongBiFunction<ICacheKey<K>, V> weigher;
     private final List<String> dimensionNames;
-    ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
+    /*ReadWriteLock readWriteLock = new ReentrantReadWriteLock();
     ReleasableLock readLock = new ReleasableLock(readWriteLock.readLock());
-    ReleasableLock writeLock = new ReleasableLock(readWriteLock.writeLock());
+    ReleasableLock writeLock = new ReleasableLock(readWriteLock.writeLock());*/
+
+    // No locks no problems !!
     /**
      * Maintains caching tiers in ascending order of cache latency.
      */
@@ -170,10 +172,10 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
 
     @Override
     public void put(ICacheKey<K> key, V value) {
-        try (ReleasableLock ignore = writeLock.acquire()) {
+        //try (ReleasableLock ignore = writeLock.acquire()) {
             onHeapCache.put(key, value);
             updateStatsOnPut(TIER_DIMENSION_VALUE_ON_HEAP, key, value);
-        }
+        //}
     }
 
     @Override
@@ -191,9 +193,9 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
             // This is needed as there can be many requests for the same key at the same time and we only want to load
             // the value once.
             V value = null;
-            try (ReleasableLock ignore = writeLock.acquire()) {
+            //try (ReleasableLock ignore = writeLock.acquire()) {
                 value = onHeapCache.computeIfAbsent(key, loader);
-            }
+            //}
             // Handle stats
             if (loader.isLoaded()) {
                 // The value was just computed and added to the cache by this thread. Register a miss for the heap cache, and the disk cache
@@ -234,20 +236,20 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                 statsHolder.removeDimensions(dimensionValues);
             }
             if (key.key != null) {
-                try (ReleasableLock ignore = writeLock.acquire()) {
+                //try (ReleasableLock ignore = writeLock.acquire()) {
                     cacheEntry.getKey().invalidate(key);
-                }
+                //}
             }
         }
     }
 
     @Override
     public void invalidateAll() {
-        try (ReleasableLock ignore = writeLock.acquire()) {
+        //try (ReleasableLock ignore = writeLock.acquire()) {
             for (Map.Entry<ICache<K, V>, TierInfo> cacheEntry : caches.entrySet()) {
                 cacheEntry.getKey().invalidateAll();
             }
-        }
+        //}
         statsHolder.reset();
     }
 
@@ -275,11 +277,11 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
 
     @Override
     public void refresh() {
-        try (ReleasableLock ignore = writeLock.acquire()) {
+        //try (ReleasableLock ignore = writeLock.acquire()) {
             for (Map.Entry<ICache<K, V>, TierInfo> cacheEntry : caches.entrySet()) {
                 cacheEntry.getKey().refresh();
             }
-        }
+        //}
     }
 
     @Override
@@ -302,7 +304,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
      */
     private Function<ICacheKey<K>, Tuple<V, String>> getValueFromTieredCache(boolean captureStats) {
         return key -> {
-            try (ReleasableLock ignore = readLock.acquire()) {
+            //try (ReleasableLock ignore = readLock.acquire()) {
                 for (Map.Entry<ICache<K, V>, TierInfo> cacheEntry : caches.entrySet()) {
                     if (cacheEntry.getValue().isEnabled()) {
                         V value = cacheEntry.getKey().get(key);
@@ -320,7 +322,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                     }
                 }
                 return null;
-            }
+            //}
         };
     }
 
@@ -329,9 +331,9 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         boolean wasEvicted = SPILLOVER_REMOVAL_REASONS.contains(notification.getRemovalReason());
         boolean countEvictionTowardsTotal = false; // Don't count this eviction towards the cache's total if it ends up in the disk tier
         if (caches.get(diskCache).isEnabled() && wasEvicted && evaluatePolicies(notification.getValue())) {
-            try (ReleasableLock ignore = writeLock.acquire()) {
+            //try (ReleasableLock ignore = writeLock.acquire()) {
                 diskCache.put(key, notification.getValue()); // spill over to the disk tier and increment its stats
-            }
+            //}
             updateStatsOnPut(TIER_DIMENSION_VALUE_DISK, key, notification.getValue());
         } else {
             // If the value is not going to the disk cache, send this notification to the TSC's removal listener
