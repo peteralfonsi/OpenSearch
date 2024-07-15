@@ -12,6 +12,8 @@ import com.carrotsearch.randomizedtesting.annotations.ThreadLeakFilters;
 
 import org.opensearch.cache.EhcacheDiskCacheSettings;
 import org.opensearch.common.Randomness;
+import org.opensearch.cache.keystore.DummyKeystore;
+import org.opensearch.cache.keystore.RBMIntKeyLookupStore;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.ICacheKey;
@@ -50,6 +52,7 @@ import java.util.function.ToLongBiFunction;
 import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_LISTENER_MODE_SYNC_KEY;
 import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_MAX_SIZE_IN_BYTES_KEY;
 import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_STORAGE_PATH_KEY;
+import static org.opensearch.cache.EhcacheDiskCacheSettings.USE_KEYSTORE_KEY;
 import static org.hamcrest.CoreMatchers.instanceOf;
 
 @ThreadLeakFilters(filters = { EhcacheThreadLeakFilter.class })
@@ -549,7 +552,6 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             ehcacheTest.close();
         }
     }
-
     public void testMemoryTracking() throws Exception {
         // Test all cases for EhCacheEventListener.onEvent and check stats memory usage is updated correctly
         Settings settings = Settings.builder().build();
@@ -620,7 +622,122 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
             // TODO: Ehcache incorrectly evicts at 30-40% of max size. Fix this test once we figure out why.
             // Since the EVICTED and EXPIRED cases use the same code as REMOVED, we should be ok on testing them for now.
             // assertEquals(maxEntries * sizeForOneInitialEntry, ehcacheTest.stats().getTotalMemorySize());
+            ehcacheTest.close();
+        }
+    }
 
+    public void testKeystoreSettings() throws Exception {
+        Settings useRBMsettings = Settings.builder()
+            .put(
+                EhcacheDiskCacheSettings.getSettingListForCacheType(CacheType.INDICES_REQUEST_CACHE).get(USE_KEYSTORE_KEY).getKey(),
+                RBMIntKeyLookupStore.KEYSTORE_NAME
+            )
+            .build();
+
+        MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
+        try (NodeEnvironment env = newNodeEnvironment(Settings.EMPTY)) {
+            EhcacheDiskCache<String, String> ehcacheTest = (EhcacheDiskCache<String, String>) new EhcacheDiskCache.Builder<String, String>()
+                .setDiskCacheAlias("test1")
+                .setThreadPoolAlias("ehcacheTest")
+                .setIsEventListenerModeSync(true)
+                .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
+                .setKeyType(String.class)
+                .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
+                .setDimensionNames(List.of(dimensionName))
+                .setCacheType(CacheType.INDICES_REQUEST_CACHE)
+                .setSettings(useRBMsettings)
+                .setExpireAfterAccess(TimeValue.MAX_VALUE)
+                .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
+                .setRemovalListener(removalListener)
+                .setWeigher(getWeigher())
+                .build();
+            assertEquals(RBMIntKeyLookupStore.class, ehcacheTest.getKeystore().getClass());
+            ehcacheTest.close();
+        }
+
+        Settings useDummySettings = Settings.builder()
+            .put(
+                EhcacheDiskCacheSettings.getSettingListForCacheType(CacheType.INDICES_REQUEST_CACHE).get(USE_KEYSTORE_KEY).getKey(),
+                "unrecognized_name"
+            )
+            .build();
+
+        try (NodeEnvironment env = newNodeEnvironment(Settings.EMPTY)) {
+            EhcacheDiskCache<String, String> ehcacheTest = (EhcacheDiskCache<String, String>) new EhcacheDiskCache.Builder<String, String>()
+                .setDiskCacheAlias("test1")
+                .setThreadPoolAlias("ehcacheTest")
+                .setIsEventListenerModeSync(true)
+                .setStoragePath(env.nodePaths()[0].indicesPath.toString() + "/request_cache")
+                .setKeyType(String.class)
+                .setValueType(String.class)
+                .setKeySerializer(new StringSerializer())
+                .setValueSerializer(new StringSerializer())
+                .setDimensionNames(List.of(dimensionName))
+                .setCacheType(CacheType.INDICES_REQUEST_CACHE)
+                .setSettings(useDummySettings)
+                .setExpireAfterAccess(TimeValue.MAX_VALUE)
+                .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
+                .setRemovalListener(removalListener)
+                .setWeigher(getWeigher())
+                .build();
+            assertEquals(DummyKeystore.class, ehcacheTest.getKeystore().getClass());
+
+            // Also test the dummy keystore doesn't incorrectly block any gets
+            int numKeys = 50;
+            Map<String, String> keyValueMap = new HashMap<>();
+            for (int i = 0; i < numKeys; i++) {
+                String key = generateRandomString(50);
+                String value = generateRandomString(50);
+                keyValueMap.put(key, value);
+                ehcacheTest.put(getICacheKey(key), value);
+            }
+            for (String key : keyValueMap.keySet()) {
+                assertEquals(keyValueMap.get(key), ehcacheTest.get(getICacheKey(key)));
+            }
+            ehcacheTest.close();
+        }
+
+        // Check the factory correctly gives RBM keystore
+        try (NodeEnvironment env = newNodeEnvironment(Settings.EMPTY)) {
+            ICache.Factory ehcacheFactory = new EhcacheDiskCache.EhcacheDiskCacheFactory();
+            EhcacheDiskCache<String, String> ehcacheTest = (EhcacheDiskCache<String, String>) ehcacheFactory.create(
+                new CacheConfig.Builder<String, String>()
+                    .setValueType(String.class)
+                    .setKeyType(String.class)
+                    .setKeySerializer(new StringSerializer())
+                    .setValueSerializer(new StringSerializer())
+                    .setRemovalListener(removalListener)
+                    .setDimensionNames(List.of(dimensionName))
+                    .setWeigher(getWeigher())
+                    .setSettings(
+                        Settings.builder()
+                            .put(
+                                EhcacheDiskCacheSettings.getSettingListForCacheType(CacheType.INDICES_REQUEST_CACHE)
+                                    .get(DISK_MAX_SIZE_IN_BYTES_KEY)
+                                    .getKey(),
+                                CACHE_SIZE_IN_BYTES
+                            )
+                            .put(
+                                EhcacheDiskCacheSettings.getSettingListForCacheType(CacheType.INDICES_REQUEST_CACHE)
+                                    .get(DISK_STORAGE_PATH_KEY)
+                                    .getKey(),
+                                env.nodePaths()[0].indicesPath.toString() + "/request_cache"
+                            )
+                            .put(
+                                EhcacheDiskCacheSettings.getSettingListForCacheType(CacheType.INDICES_REQUEST_CACHE)
+                                    .get(DISK_LISTENER_MODE_SYNC_KEY)
+                                    .getKey(),
+                                true
+                            )
+                            .build()
+                    )
+                    .build(),
+                CacheType.INDICES_REQUEST_CACHE,
+                Map.of()
+            );
+            assertEquals(RBMIntKeyLookupStore.class, ehcacheTest.getKeystore().getClass());
             ehcacheTest.close();
         }
     }
