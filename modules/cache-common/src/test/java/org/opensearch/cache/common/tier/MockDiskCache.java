@@ -27,6 +27,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class MockDiskCache<K, V> implements ICache<K, V> {
@@ -88,6 +89,13 @@ public class MockDiskCache<K, V> implements ICache<K, V> {
     public void invalidate(ICacheKey<K> key) {
         removalListener.onRemoval(new RemovalNotification<>(key, cache.get(key), RemovalReason.INVALIDATED));
         this.cache.remove(key);
+    }
+
+    @Override
+    public void invalidate(Set<ICacheKey<K>> keys) {
+        for (ICacheKey<K> key : keys) {
+            invalidate(key);
+        }
     }
 
     @Override

@@ -36,16 +36,20 @@ import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Phaser;
 import java.util.function.ToLongBiFunction;
+
+import org.ehcache.impl.serialization.StringSerializer;
 
 import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_LISTENER_MODE_SYNC_KEY;
 import static org.opensearch.cache.EhcacheDiskCacheSettings.DISK_MAX_SIZE_IN_BYTES_KEY;
@@ -794,6 +798,16 @@ public class EhCacheDiskCacheTests extends OpenSearchSingleNodeTestCase {
                 assertNull(ehcacheTest.get(removedKey));
             }
             assertEquals(keyValueMap.size() - removedKeyList.size(), ehcacheTest.count());
+            // Remove remaining keys using bulk invalidate function
+            Set<ICacheKey<String>> remainingKeys = new HashSet<>();
+            for (ICacheKey<String> key : keyValueMap.keySet()) {
+                if (!removedKeyList.contains(key)) {
+                    remainingKeys.add(key);
+                }
+            }
+            ehcacheTest.invalidate(remainingKeys);
+            assertEquals(0, ehcacheTest.count());
+            assertEquals(0, ehcacheTest.stats().getTotalSizeInBytes());
             ehcacheTest.close();
         }
     }

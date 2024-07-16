@@ -14,6 +14,7 @@ import org.opensearch.common.cache.store.config.CacheConfig;
 
 import java.io.Closeable;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Represents a cache interface.
@@ -36,6 +37,12 @@ public interface ICache<K, V> extends Closeable {
      * actually invalidated.
      */
     void invalidate(ICacheKey<K> key);
+
+    /**
+     * Invalidates the set of keys. key.key must not be null for all keys in the set. If any key has dropStatsOnInvalidation set to true,
+     * this will be ignored.
+     */
+    void invalidate(Set<ICacheKey<K>> keys);
 
     void invalidateAll();
 

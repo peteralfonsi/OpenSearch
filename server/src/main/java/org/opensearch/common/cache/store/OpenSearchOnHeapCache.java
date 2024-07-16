@@ -34,6 +34,7 @@ import org.opensearch.core.common.unit.ByteSizeValue;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.ToLongBiFunction;
 
 import static org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings.EXPIRE_AFTER_ACCESS_KEY;
@@ -113,6 +114,13 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
         }
         if (key.key != null) {
             cache.invalidate(key);
+        }
+    }
+
+    @Override
+    public void invalidate(Set<ICacheKey<K>> keys) {
+        for (ICacheKey<K> key : keys) {
+            invalidate(key);
         }
     }
 

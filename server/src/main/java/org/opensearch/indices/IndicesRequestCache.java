@@ -746,6 +746,8 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                 return;
             }
 
+            int bulkInvalidateBatchSize = 10_000; // TODO: make a setting or smth
+            Set<ICacheKey<Key>> invalidationBatch = new HashSet<>();
             Set<List<String>> dimensionListsToDrop = new HashSet<>();
 
             for (Iterator<ICacheKey<Key>> iterator = cache.keys().iterator(); iterator.hasNext();) {
@@ -753,18 +755,21 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                 Key delegatingKey = key.key;
                 Tuple<ShardId, Integer> shardIdInfo = new Tuple<>(delegatingKey.shardId, delegatingKey.indexShardHashCode);
                 if (cleanupKeysFromFullClean.contains(shardIdInfo) || cleanupKeysFromClosedShards.contains(shardIdInfo)) {
-                    iterator.remove();
+                    invalidationBatch.add(key);
+                    // iterator.remove();
                 } else {
                     CacheEntity cacheEntity = cacheEntityLookup.apply(delegatingKey.shardId).orElse(null);
                     if (cacheEntity == null) {
                         // If cache entity is null, it means that index or shard got deleted/closed meanwhile.
                         // So we will delete this key.
                         dimensionListsToDrop.add(key.dimensions);
-                        iterator.remove();
+                        invalidationBatch.add(key);
+                        // iterator.remove();
                     } else {
                         CleanupKey cleanupKey = new CleanupKey(cacheEntity, delegatingKey.readerCacheKeyId);
                         if (cleanupKeysFromOutdatedReaders.contains(cleanupKey)) {
-                            iterator.remove();
+                            invalidationBatch.add(key);
+                            // iterator.remove();
                         }
                     }
                 }
@@ -774,6 +779,13 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                     // This should not happen on a full cache cleanup.
                     dimensionListsToDrop.add(key.dimensions);
                 }
+                if (invalidationBatch.size() >= bulkInvalidateBatchSize) {
+                    cache.invalidate(invalidationBatch);
+                    invalidationBatch = new HashSet<>();
+                }
+            }
+            if (!invalidationBatch.isEmpty()) {
+                cache.invalidate(invalidationBatch);
             }
             for (List<String> closedDimensions : dimensionListsToDrop) {
                 // Invalidate a dummy key containing the dimensions we need to drop stats for

@@ -51,6 +51,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -404,6 +405,17 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
             if (key.key != null) {
                 cache.remove(key);
             }
+        } catch (CacheWritingException ex) {
+            // Handle
+            throw new RuntimeException(ex);
+        }
+
+    }
+
+    @Override
+    public void invalidate(Set<ICacheKey<K>> keys) {
+        try {
+            cache.removeAll(keys);
         } catch (CacheWritingException ex) {
             // Handle
             throw new RuntimeException(ex);

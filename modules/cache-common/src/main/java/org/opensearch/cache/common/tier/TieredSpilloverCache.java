@@ -37,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -305,6 +306,15 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                 try (ReleasableLock ignore = writeLock.acquire()) {
                     cacheEntry.getKey().invalidate(key);
                 }
+            }
+        }
+    }
+
+    @Override
+    public void invalidate(Set<ICacheKey<K>> keys) {
+        for (Map.Entry<ICache<K, V>, TierInfo> cacheEntry : caches.entrySet()) {
+            try (ReleasableLock ignore = writeLock.acquire()) {
+                cacheEntry.getKey().invalidate(keys);
             }
         }
     }
