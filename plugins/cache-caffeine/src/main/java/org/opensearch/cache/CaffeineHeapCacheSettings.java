@@ -21,7 +21,7 @@ import static org.opensearch.common.settings.Setting.Property.NodeScope;
 public class CaffeineHeapCacheSettings {
 
     /**
-     * Setting to define maximum size for the cache as a percentage of heap memory available.
+     * Setting to define maximum size for the cache as 1% of heap memory available.
      *
      * Setting pattern: {cache_type}.caffeine_heap.size
      */
