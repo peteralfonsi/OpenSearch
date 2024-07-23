@@ -11,6 +11,7 @@ import org.opensearch.cache.store.CaffeineHeapCache;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.common.unit.ByteSizeValue;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -24,9 +25,9 @@ public class CaffeineHeapCacheSettings {
      *
      * Setting pattern: {cache_type}.caffeine_heap.size
      */
-    public static final Setting.AffixSetting<Long> MAXIMUM_SIZE_IN_BYTES_SETTING = Setting.suffixKeySetting(
+    public static final Setting.AffixSetting<ByteSizeValue> MAXIMUM_SIZE_IN_BYTES_SETTING = Setting.suffixKeySetting(
         CaffeineHeapCache.CaffeineHeapCacheFactory.NAME + ".maximum_size_in_bytes",
-        (key) -> Setting.longSetting(key, 100_000, NodeScope)
+        (key) -> Setting.memorySizeSetting(key, "1%", NodeScope)
     );
 
     /**

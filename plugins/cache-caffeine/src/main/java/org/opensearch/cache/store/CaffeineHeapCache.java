@@ -29,6 +29,7 @@ import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
+import org.opensearch.core.common.unit.ByteSizeValue;
 
 import java.security.AccessController;
 import java.security.PrivilegedAction;
@@ -235,7 +236,7 @@ public class CaffeineHeapCache<K,V> implements ICache<K,V> {
                 .setWeigher(config.getWeigher())
                 .setRemovalListener(config.getRemovalListener())
                 .setExpireAfterAccess((TimeValue) settingList.get(EXPIRE_AFTER_ACCESS_KEY).get(settings))
-                .setMaximumWeightInBytes((long) settingList.get(MAXIMUM_SIZE_IN_BYTES_KEY).get(settings))
+                .setMaximumWeightInBytes(((ByteSizeValue) settingList.get(MAXIMUM_SIZE_IN_BYTES_KEY).get(settings)).getBytes())
                 .setSettings(settings)
                 .build();
         }

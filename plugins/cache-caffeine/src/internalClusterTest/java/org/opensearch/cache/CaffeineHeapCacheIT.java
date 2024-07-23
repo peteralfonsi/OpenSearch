@@ -46,8 +46,6 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static org.opensearch.cache.CaffeineHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES_KEY;
-import static org.opensearch.cache.CaffeineHeapCacheSettings.EXPIRE_AFTER_ACCESS_KEY;
 import static org.opensearch.indices.IndicesService.INDICES_CACHE_CLEAN_INTERVAL_SETTING;
 import static org.opensearch.search.aggregations.AggregationBuilders.dateHistogram;
 import static org.opensearch.test.hamcrest.OpenSearchAssertions.assertAcked;
@@ -68,27 +66,12 @@ public class CaffeineHeapCacheIT extends OpenSearchIntegTestCase {
         return Settings.builder().put(super.featureFlagSettings()).put(FeatureFlags.PLUGGABLE_CACHE, "true").build();
     }
 
-    private Settings defaultSettings(long sizeInBytes, TimeValue expirationTime) {
-        if (expirationTime == null) {
-            expirationTime = TimeValue.MAX_VALUE;
-        }
+    private Settings defaultSettings() {
         try (NodeEnvironment env = newNodeEnvironment(Settings.EMPTY)) {
             return Settings.builder()
                 .put(
                     CacheSettings.getConcreteStoreNameSettingForCacheType(CacheType.INDICES_REQUEST_CACHE).getKey(),
                     CaffeineHeapCache.CaffeineHeapCacheFactory.NAME
-                )
-                .put(
-                    CaffeineHeapCacheSettings.getSettingListForCacheType(CacheType.INDICES_REQUEST_CACHE)
-                        .get(MAXIMUM_SIZE_IN_BYTES_KEY)
-                        .getKey(),
-                    sizeInBytes
-                )
-                .put(
-                    CaffeineHeapCacheSettings.getSettingListForCacheType(CacheType.INDICES_REQUEST_CACHE)
-                        .get(EXPIRE_AFTER_ACCESS_KEY)
-                        .getKey(),
-                    expirationTime
                 )
                 .build();
         } catch (IOException e) {
@@ -97,7 +80,7 @@ public class CaffeineHeapCacheIT extends OpenSearchIntegTestCase {
     }
 
     public void testPluginsAreInstalled() {
-        internalCluster().startNode(Settings.builder().put(defaultSettings(100_000, null)).build());
+        internalCluster().startNode(Settings.builder().put(defaultSettings()).build());
         NodesInfoRequest nodesInfoRequest = new NodesInfoRequest();
         nodesInfoRequest.addMetric(NodesInfoRequest.Metric.PLUGINS.metricName());
         NodesInfoResponse nodesInfoResponse = OpenSearchIntegTestCase.client().admin().cluster().nodesInfo(nodesInfoRequest).actionGet();
@@ -113,7 +96,7 @@ public class CaffeineHeapCacheIT extends OpenSearchIntegTestCase {
     }
 
     public void testSanityChecksWithIndicesRequestCache() throws InterruptedException {
-        internalCluster().startNode(Settings.builder().put(defaultSettings(100_000, null)).build());
+        internalCluster().startNode(Settings.builder().put(defaultSettings()).build());
         Client client = client();
         assertAcked(
             client.admin()
@@ -161,7 +144,7 @@ public class CaffeineHeapCacheIT extends OpenSearchIntegTestCase {
     public void testInvalidationWithIndicesRequestCache() throws Exception {
         internalCluster().startNode(
             Settings.builder()
-                .put(defaultSettings(100_000, null))
+                .put(defaultSettings())
                 .put(INDICES_CACHE_CLEAN_INTERVAL_SETTING.getKey(), new TimeValue(1))
                 .build()
         );
@@ -234,7 +217,7 @@ public class CaffeineHeapCacheIT extends OpenSearchIntegTestCase {
     public void testExplicitCacheClearWithIndicesRequestCache() throws Exception {
         internalCluster().startNode(
             Settings.builder()
-                .put(defaultSettings(100_000, null))
+                .put(defaultSettings())
                 .put(INDICES_CACHE_CLEAN_INTERVAL_SETTING.getKey(), new TimeValue(1))
                 .build()
         );
