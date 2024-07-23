@@ -6,6 +6,4 @@
  * compatible open source license.
  */
 
-grant {
-};
-
+package org.opensearch.cache.store;

@@ -6,11 +6,6 @@
  * compatible open source license.
  */
 
-import org.apache.tools.ant.taskdefs.condition.Os
-import org.opensearch.gradle.Architecture
-import org.opensearch.gradle.OS
-import org.opensearch.gradle.info.BuildParams
-
 apply plugin: 'opensearch.internal-cluster-test'
 
 opensearchplugin {
@@ -33,10 +28,6 @@ thirdPartyAudit {
     'org.slf4j.impl.StaticMDCBinder',
     'org.slf4j.impl.StaticMarkerBinder'
   )
-}
-
-test {
-  systemProperty 'tests.security.manager', 'false'
 }
 
 tasks.named("bundlePlugin").configure {

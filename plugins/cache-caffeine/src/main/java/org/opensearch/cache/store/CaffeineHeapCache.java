@@ -6,31 +6,46 @@
  * compatible open source license.
  */
 
+package org.opensearch.cache.store;
+import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.RemovalCause;
-import com.github.benmanes.caffeine.cache.LoadingCache;
 import com.github.benmanes.caffeine.cache.RemovalListener;
+import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.Weigher;
 import org.opensearch.OpenSearchException;
-import org.opensearch.common.cache.*;
+import org.opensearch.cache.CaffeineHeapCacheSettings;
+import org.opensearch.common.cache.ICache;
+import org.opensearch.common.cache.ICacheKey;
+import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.RemovalReason;
+import org.opensearch.common.cache.LoadAwareCacheLoader;
+import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.stats.CacheStatsHolder;
 import org.opensearch.common.cache.stats.DefaultCacheStatsHolder;
 import org.opensearch.common.cache.stats.ImmutableCacheStatsHolder;
 import org.opensearch.common.cache.stats.NoopCacheStatsHolder;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
+import org.opensearch.common.cache.store.config.CacheConfig;
+import org.opensearch.common.settings.Setting;
+import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 
+import java.security.AccessController;
+import java.security.PrivilegedAction;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.*;
 import java.util.function.Function;
 import java.util.function.ToLongBiFunction;
+
+import static org.opensearch.cache.CaffeineHeapCacheSettings.EXPIRE_AFTER_ACCESS_KEY;
+import static org.opensearch.cache.CaffeineHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES_KEY;
 
 
 public class CaffeineHeapCache<K,V> implements ICache<K,V> {
 
-    private final LoadingCache<ICacheKey<K>, V> cache;
+    private final Cache<ICacheKey<K>, V> cache;
     private final CacheStatsHolder cacheStatsHolder;
     private final ToLongBiFunction<ICacheKey<K>, V> weigher;
     private final CaffeineRemovalListener caffeineRemovalListener;
@@ -38,22 +53,22 @@ public class CaffeineHeapCache<K,V> implements ICache<K,V> {
     private CaffeineHeapCache(Builder<K, V> builder) {
         List<String> dimensionNames = Objects.requireNonNull(builder.dimensionNames, "Dimension names can't be null");
         if (builder.getStatsTrackingEnabled()) {
+            // If this cache is being used, FeatureFlags.PLUGGABLE_CACHE is already on, so we can always use the DefaultCacheStatsHolder
+            // unless statsTrackingEnabled is explicitly set to false in CacheConfig.
             this.cacheStatsHolder = new DefaultCacheStatsHolder(dimensionNames, "caffeine_heap");
         } else {
             this.cacheStatsHolder = NoopCacheStatsHolder.getInstance();
         }
-        Objects.requireNonNull(builder.getWeigher(), "Weigher can't be null");
-        this.weigher = builder.getWeigher();
-        Objects.requireNonNull(builder.getRemovalListener(), "Removal listener can't be null");
-        this.caffeineRemovalListener = new CaffeineRemovalListener(builder.getRemovalListener());
+        this.weigher = Objects.requireNonNull(builder.getWeigher(), "Weigher can't be null");
+        this.caffeineRemovalListener = new CaffeineRemovalListener(Objects.requireNonNull(builder.getRemovalListener(), "Removal listener can't be null"));
 
-        cache = Caffeine.newBuilder()
+        cache = AccessController.doPrivileged((PrivilegedAction<Cache<ICacheKey<K>, V>>) () -> Caffeine.newBuilder()
             .removalListener(this.caffeineRemovalListener)
             .maximumWeight(builder.getMaxWeightInBytes())
             .expireAfterAccess(builder.getExpireAfterAcess().duration(), builder.getExpireAfterAcess().timeUnit())
-            .weigher(new CaffeineWeigher(builder.getWeigher()))
-            .executor(builder.getExecutor())
-            .build(k -> null);
+            .weigher(new CaffeineWeigher(this.weigher))
+            .executor(Runnable::run)
+            .build());
     }
 
     /**
@@ -84,7 +99,7 @@ public class CaffeineHeapCache<K,V> implements ICache<K,V> {
             switch (removalCause) {
                 case SIZE:
                     removalListener.onRemoval(
-                        new RemovalNotification<>(key, value, RemovalReason.CAPACITY)
+                        new RemovalNotification<>(key, value, RemovalReason.EVICTED)
                     );
                     cacheStatsHolder.incrementEvictions(key.dimensions);
                     break;
@@ -127,8 +142,11 @@ public class CaffeineHeapCache<K,V> implements ICache<K,V> {
 
     @Override
     public void put(ICacheKey<K> key, V value) {
-        if (key == null || value == null) {
-            throw new IllegalArgumentException("Key and/or value passed to caffeine heap cache was null.");
+        if (key == null) {
+            throw new IllegalArgumentException("Key passed to caffeine heap cache was null.");
+        }
+        if (value == null) {
+            throw new IllegalArgumentException("Value passed to caffeine heap cache was null.");
         }
         cache.put(key, value);
         cacheStatsHolder.incrementItems(key.dimensions);
@@ -166,8 +184,9 @@ public class CaffeineHeapCache<K,V> implements ICache<K,V> {
         if (key.getDropStatsForDimensions()) {
             cacheStatsHolder.removeDimensions(key.dimensions);
         }
-        V value = cache.get(key);
-        cache.invalidate(key);
+        if (key.key != null) {
+            cache.invalidate(key);
+        }
     }
 
     @Override
@@ -189,7 +208,7 @@ public class CaffeineHeapCache<K,V> implements ICache<K,V> {
 
     @Override
     public void refresh() {
-        cache.refreshAll(this.keys());
+        // Left empty, as ehcache doesn't provide a refresh method either.
     }
 
     @Override
@@ -199,6 +218,33 @@ public class CaffeineHeapCache<K,V> implements ICache<K,V> {
 
     @Override
     public void close() {}
+
+    public static class CaffeineHeapCacheFactory implements ICache.Factory {
+
+        public static final String NAME = "caffeine_heap";
+
+        public CaffeineHeapCacheFactory() {}
+
+        @Override
+        public <K, V> ICache<K, V> create(CacheConfig<K, V> config, CacheType cacheType, Map<String, Factory> cacheFactories) {
+            Map<String, Setting<?>> settingList = CaffeineHeapCacheSettings.getSettingListForCacheType(cacheType);
+            Settings settings = config.getSettings();
+
+            return new Builder<K, V>()
+                .setDimensionNames(config.getDimensionNames())
+                .setWeigher(config.getWeigher())
+                .setRemovalListener(config.getRemovalListener())
+                .setExpireAfterAccess((TimeValue) settingList.get(EXPIRE_AFTER_ACCESS_KEY).get(settings))
+                .setMaximumWeightInBytes((long) settingList.get(MAXIMUM_SIZE_IN_BYTES_KEY).get(settings))
+                .setSettings(settings)
+                .build();
+        }
+
+        @Override
+        public String getCacheName() {
+            return NAME;
+        }
+    }
 
     public static class Builder<K, V> extends ICacheBuilder<K, V> {
         private List<String> dimensionNames;
