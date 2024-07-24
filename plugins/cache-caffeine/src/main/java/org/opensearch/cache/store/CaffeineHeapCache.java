@@ -7,19 +7,21 @@
  */
 
 package org.opensearch.cache.store;
+
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import com.github.benmanes.caffeine.cache.RemovalListener;
 import com.github.benmanes.caffeine.cache.RemovalCause;
+import com.github.benmanes.caffeine.cache.RemovalListener;
 import com.github.benmanes.caffeine.cache.Weigher;
+
 import org.opensearch.OpenSearchException;
 import org.opensearch.cache.CaffeineHeapCacheSettings;
+import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.ICacheKey;
+import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
-import org.opensearch.common.cache.LoadAwareCacheLoader;
-import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.stats.CacheStatsHolder;
 import org.opensearch.common.cache.stats.DefaultCacheStatsHolder;
 import org.opensearch.common.cache.stats.ImmutableCacheStatsHolder;
@@ -45,8 +47,7 @@ import java.util.function.ToLongBiFunction;
 import static org.opensearch.cache.CaffeineHeapCacheSettings.EXPIRE_AFTER_ACCESS_KEY;
 import static org.opensearch.cache.CaffeineHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES_KEY;
 
-
-public class CaffeineHeapCache<K,V> implements ICache<K,V> {
+public class CaffeineHeapCache<K, V> implements ICache<K, V> {
 
     private final Cache<ICacheKey<K>, V> cache;
     private final CacheStatsHolder cacheStatsHolder;
@@ -63,15 +64,19 @@ public class CaffeineHeapCache<K,V> implements ICache<K,V> {
             this.cacheStatsHolder = NoopCacheStatsHolder.getInstance();
         }
         this.weigher = Objects.requireNonNull(builder.getWeigher(), "Weigher can't be null");
-        this.caffeineRemovalListener = new CaffeineRemovalListener(Objects.requireNonNull(builder.getRemovalListener(), "Removal listener can't be null"));
+        this.caffeineRemovalListener = new CaffeineRemovalListener(
+            Objects.requireNonNull(builder.getRemovalListener(), "Removal listener can't be null")
+        );
 
-        cache = AccessController.doPrivileged((PrivilegedAction<Cache<ICacheKey<K>, V>>) () -> Caffeine.newBuilder()
-            .removalListener(this.caffeineRemovalListener)
-            .maximumWeight(builder.getMaxWeightInBytes())
-            .expireAfterAccess(builder.getExpireAfterAcess().duration(), builder.getExpireAfterAcess().timeUnit())
-            .weigher(new CaffeineWeigher(this.weigher))
-            .executor(Runnable::run)
-            .build());
+        cache = AccessController.doPrivileged(
+            (PrivilegedAction<Cache<ICacheKey<K>, V>>) () -> Caffeine.newBuilder()
+                .removalListener(this.caffeineRemovalListener)
+                .maximumWeight(builder.getMaxWeightInBytes())
+                .expireAfterAccess(builder.getExpireAfterAcess().duration(), builder.getExpireAfterAcess().timeUnit())
+                .weigher(new CaffeineWeigher(this.weigher))
+                .executor(Runnable::run)
+                .build()
+        );
     }
 
     /**
@@ -101,26 +106,18 @@ public class CaffeineHeapCache<K,V> implements ICache<K,V> {
         public void onRemoval(ICacheKey<K> key, V value, RemovalCause removalCause) {
             switch (removalCause) {
                 case SIZE:
-                    removalListener.onRemoval(
-                        new RemovalNotification<>(key, value, RemovalReason.EVICTED)
-                    );
+                    removalListener.onRemoval(new RemovalNotification<>(key, value, RemovalReason.EVICTED));
                     cacheStatsHolder.incrementEvictions(key.dimensions);
                     break;
                 case EXPIRED:
-                    removalListener.onRemoval(
-                        new RemovalNotification<>(key, value, RemovalReason.INVALIDATED)
-                    );
+                    removalListener.onRemoval(new RemovalNotification<>(key, value, RemovalReason.INVALIDATED));
                     cacheStatsHolder.incrementEvictions(key.dimensions);
                     break;
                 case EXPLICIT:
-                    removalListener.onRemoval(
-                        new RemovalNotification<>(key, value, RemovalReason.EXPLICIT)
-                    );
+                    removalListener.onRemoval(new RemovalNotification<>(key, value, RemovalReason.EXPLICIT));
                     break;
                 case REPLACED:
-                    removalListener.onRemoval(
-                        new RemovalNotification<>(key, value, RemovalReason.REPLACED)
-                    );
+                    removalListener.onRemoval(new RemovalNotification<>(key, value, RemovalReason.REPLACED));
                     break;
             }
             cacheStatsHolder.decrementItems(key.dimensions);
@@ -200,7 +197,7 @@ public class CaffeineHeapCache<K,V> implements ICache<K,V> {
 
     @Override
     public Iterable<ICacheKey<K>> keys() {
-        ConcurrentMap<ICacheKey<K>,V> map = cache.asMap();
+        ConcurrentMap<ICacheKey<K>, V> map = cache.asMap();
         return map.keySet();
     }
 
@@ -233,8 +230,7 @@ public class CaffeineHeapCache<K,V> implements ICache<K,V> {
             Map<String, Setting<?>> settingList = CaffeineHeapCacheSettings.getSettingListForCacheType(cacheType);
             Settings settings = config.getSettings();
 
-            return new Builder<K, V>()
-                .setDimensionNames(config.getDimensionNames())
+            return new Builder<K, V>().setDimensionNames(config.getDimensionNames())
                 .setWeigher(config.getWeigher())
                 .setRemovalListener(config.getRemovalListener())
                 .setExpireAfterAccess((TimeValue) settingList.get(EXPIRE_AFTER_ACCESS_KEY).get(settings))

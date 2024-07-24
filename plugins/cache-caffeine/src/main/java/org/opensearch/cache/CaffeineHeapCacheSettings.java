@@ -7,6 +7,7 @@
  */
 
 package org.opensearch.cache;
+
 import org.opensearch.cache.store.CaffeineHeapCache;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.settings.Setting;

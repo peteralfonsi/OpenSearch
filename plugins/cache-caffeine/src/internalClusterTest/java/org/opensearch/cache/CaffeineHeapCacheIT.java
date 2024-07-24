@@ -143,10 +143,7 @@ public class CaffeineHeapCacheIT extends OpenSearchIntegTestCase {
 
     public void testInvalidationWithIndicesRequestCache() throws Exception {
         internalCluster().startNode(
-            Settings.builder()
-                .put(defaultSettings())
-                .put(INDICES_CACHE_CLEAN_INTERVAL_SETTING.getKey(), new TimeValue(1))
-                .build()
+            Settings.builder().put(defaultSettings()).put(INDICES_CACHE_CLEAN_INTERVAL_SETTING.getKey(), new TimeValue(1)).build()
         );
         Client client = client();
         assertAcked(
@@ -216,10 +213,7 @@ public class CaffeineHeapCacheIT extends OpenSearchIntegTestCase {
 
     public void testExplicitCacheClearWithIndicesRequestCache() throws Exception {
         internalCluster().startNode(
-            Settings.builder()
-                .put(defaultSettings())
-                .put(INDICES_CACHE_CLEAN_INTERVAL_SETTING.getKey(), new TimeValue(1))
-                .build()
+            Settings.builder().put(defaultSettings()).put(INDICES_CACHE_CLEAN_INTERVAL_SETTING.getKey(), new TimeValue(1)).build()
         );
         Client client = client();
         assertAcked(
