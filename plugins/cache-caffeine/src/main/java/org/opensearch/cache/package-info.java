@@ -6,5 +6,7 @@
  * compatible open source license.
  */
 
-/** Base package for cache plugin */
+/**
+ * Base package for cache plugin
+ */
 package org.opensearch.cache;

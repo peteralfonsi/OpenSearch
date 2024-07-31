@@ -16,6 +16,7 @@ import com.github.benmanes.caffeine.cache.Weigher;
 
 import org.opensearch.OpenSearchException;
 import org.opensearch.cache.CaffeineHeapCacheSettings;
+import org.opensearch.common.annotation.ExperimentalApi;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.ICacheKey;
@@ -47,6 +48,7 @@ import java.util.function.ToLongBiFunction;
 import static org.opensearch.cache.CaffeineHeapCacheSettings.EXPIRE_AFTER_ACCESS_KEY;
 import static org.opensearch.cache.CaffeineHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES_KEY;
 
+@ExperimentalApi
 public class CaffeineHeapCache<K, V> implements ICache<K, V> {
 
     private final Cache<ICacheKey<K>, V> cache;
@@ -223,8 +225,6 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
 
         public static final String NAME = "caffeine_heap";
 
-        public CaffeineHeapCacheFactory() {}
-
         @Override
         public <K, V> ICache<K, V> create(CacheConfig<K, V> config, CacheType cacheType, Map<String, Factory> cacheFactories) {
             Map<String, Setting<?>> settingList = CaffeineHeapCacheSettings.getSettingListForCacheType(cacheType);
@@ -248,6 +248,8 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
     public static class Builder<K, V> extends ICacheBuilder<K, V> {
         private List<String> dimensionNames;
         private Executor executor = ForkJoinPool.commonPool();
+
+        public Builder() {}
 
         public Builder<K, V> setDimensionNames(List<String> dimensionNames) {
             this.dimensionNames = dimensionNames;

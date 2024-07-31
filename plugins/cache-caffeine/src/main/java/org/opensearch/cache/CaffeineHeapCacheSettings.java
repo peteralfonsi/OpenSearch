@@ -24,7 +24,7 @@ public class CaffeineHeapCacheSettings {
     /**
      * Setting to define maximum size for the cache as 1% of heap memory available.
      *
-     * Setting pattern: {cache_type}.caffeine_heap.size
+     * Setting pattern: {cache_type}.caffeine_heap.maximum_size_in_bytes
      */
     public static final Setting.AffixSetting<ByteSizeValue> MAXIMUM_SIZE_IN_BYTES_SETTING = Setting.suffixKeySetting(
         CaffeineHeapCache.CaffeineHeapCacheFactory.NAME + ".maximum_size_in_bytes",
@@ -34,7 +34,7 @@ public class CaffeineHeapCacheSettings {
     /**
      * Setting to define expire after access.
      *
-     * Setting pattern: {cache_type}.caffeine_heap.expire
+     * Setting pattern: {cache_type}.caffeine_heap.expire_after_access
      */
     public static final Setting.AffixSetting<TimeValue> EXPIRE_AFTER_ACCESS_SETTING = Setting.suffixKeySetting(
         CaffeineHeapCache.CaffeineHeapCacheFactory.NAME + ".expire_after_access",
@@ -79,4 +79,5 @@ public class CaffeineHeapCacheSettings {
         return cacheTypeSettings;
     }
 
+    public CaffeineHeapCacheSettings() {}
 }
