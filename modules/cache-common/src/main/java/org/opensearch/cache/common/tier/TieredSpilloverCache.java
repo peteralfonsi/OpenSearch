@@ -95,6 +95,10 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         if (builder.numberOfSegments <= 0) {
             throw new IllegalArgumentException("Number of segments cannot be less than or equal to zero");
         }
+        boolean numberOfSegmentsIsPowerOfTwo = (builder.numberOfSegments & (builder.numberOfSegments - 1)) == 0;
+        if (!numberOfSegmentsIsPowerOfTwo) {
+            throw new IllegalArgumentException("Number of segments must be a power of 2, but was " + builder.numberOfSegments);
+        }
         this.numberOfSegments = builder.numberOfSegments;
         Boolean isDiskCacheEnabled = DISK_CACHE_ENABLED_SETTING_MAP.get(builder.cacheType).get(builder.cacheConfig.getSettings());
         this.dimensionNames = builder.cacheConfig.getDimensionNames();
@@ -568,7 +572,9 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
 
     // Package private for testing.
     TieredSpilloverCacheSegment<K, V> getTieredCacheSegment(ICacheKey<K> key) {
-        int segmentNumber = key.hashCode() & (this.numberOfSegments - 1);
+        int segmentNumber = (key.hashCode() >> 24) & (this.numberOfSegments - 1);
+        // Mask the most significant byte of the hash code with the number of segments, to avoid
+        // re-using the same bits that OpenSearchOnHeapCache uses to pick its segment
         return tieredSpilloverCacheSegments[segmentNumber];
     }
 
