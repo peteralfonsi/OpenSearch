@@ -76,7 +76,6 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
                 .maximumWeight(builder.getMaxWeightInBytes())
                 .expireAfterAccess(builder.getExpireAfterAcess().duration(), builder.getExpireAfterAcess().timeUnit())
                 .weigher(new CaffeineWeigher(this.weigher))
-                .executor(Runnable::run)
                 .build()
         );
     }
