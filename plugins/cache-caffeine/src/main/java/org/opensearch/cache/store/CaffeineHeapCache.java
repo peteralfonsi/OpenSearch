@@ -12,7 +12,6 @@ import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import com.github.benmanes.caffeine.cache.RemovalCause;
 import com.github.benmanes.caffeine.cache.RemovalListener;
-import com.github.benmanes.caffeine.cache.Scheduler;
 import com.github.benmanes.caffeine.cache.Weigher;
 
 import org.opensearch.OpenSearchException;
@@ -78,7 +77,6 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
                 .expireAfterAccess(builder.getExpireAfterAcess().duration(), builder.getExpireAfterAcess().timeUnit())
                 .weigher(new CaffeineWeigher(this.weigher))
                 .executor(Runnable::run)
-                .scheduler(Scheduler.systemScheduler())
                 .build()
         );
     }
