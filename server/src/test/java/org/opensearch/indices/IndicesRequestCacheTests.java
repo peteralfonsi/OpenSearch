@@ -1369,12 +1369,8 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
             s -> {},
             RetentionLeaseSyncer.EMPTY,
             SegmentReplicationCheckpointPublisher.EMPTY,
-            null,
-            null,
-            localNode,
-            null,
-            DiscoveryNodes.builder().add(localNode).build()
-        );
+            null
+        ); // In 2.11 this fn lacks some arguments that were present in 2.15. Assuming it can read the node from the routing
 
         // Verify that the new shard requestStats entries are empty.
         stats = indexShard.requestCache().stats();
