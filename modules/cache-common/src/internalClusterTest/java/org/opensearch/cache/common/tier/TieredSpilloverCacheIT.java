@@ -181,7 +181,7 @@ public class TieredSpilloverCacheIT extends OpenSearchIntegTestCase {
             indexRandom(true, client.prepareIndex("index").setSource("k" + iterator, "hello" + iterator));
         }
         ensureSearchable("index");
-        refreshAndWaitForReplication();
+        refresh();
         // Force merge the index to ensure there can be no background merges during the subsequent searches that would invalidate the cache
         ForceMergeResponse forceMergeResponse = client.admin().indices().prepareForceMerge("index").setFlush(true).get();
         OpenSearchAssertions.assertAllSuccessful(forceMergeResponse);
@@ -307,7 +307,7 @@ public class TieredSpilloverCacheIT extends OpenSearchIntegTestCase {
             indexRandom(true, client.prepareIndex("index").setSource("k" + iterator, "hello" + iterator));
         }
         ensureSearchable("index");
-        refreshAndWaitForReplication();
+        refresh();
         // Force merge the index to ensure there can be no background merges during the subsequent searches that would invalidate the cache
         ForceMergeResponse forceMergeResponse = client.admin().indices().prepareForceMerge("index").setFlush(true).get();
         OpenSearchAssertions.assertAllSuccessful(forceMergeResponse);
@@ -341,7 +341,7 @@ public class TieredSpilloverCacheIT extends OpenSearchIntegTestCase {
         assertEquals(perQuerySizeInCacheInBytes * numberOfIndexedItems, requestCacheStats.getMemorySizeInBytes());
         assertEquals(0, requestCacheStats.getEvictions());
         // Explicit refresh would invalidate cache entries.
-        refreshAndWaitForReplication();
+        refresh();
         assertBusy(() -> {
             // Explicit refresh should clear up cache entries
             assertTrue(getRequestCacheStats(client, "index").getMemorySizeInBytes() == 0);
@@ -391,7 +391,7 @@ public class TieredSpilloverCacheIT extends OpenSearchIntegTestCase {
             indexRandom(true, client.prepareIndex("index").setSource("k" + iterator, "hello" + iterator));
         }
         ensureSearchable("index");
-        refreshAndWaitForReplication();
+        refresh();
         // Force merge the index to ensure there can be no background merges during the subsequent searches that would invalidate the cache
         ForceMergeResponse forceMergeResponse = client.admin().indices().prepareForceMerge("index").setFlush(true).get();
         OpenSearchAssertions.assertAllSuccessful(forceMergeResponse);
@@ -463,7 +463,7 @@ public class TieredSpilloverCacheIT extends OpenSearchIntegTestCase {
             indexRandom(true, client.prepareIndex("index").setSource("k" + iterator, "hello" + iterator));
         }
         ensureSearchable("index");
-        refreshAndWaitForReplication();
+        refresh();
         // Force merge the index to ensure there can be no background merges during the subsequent searches that would invalidate the cache
         ForceMergeResponse forceMergeResponse = client.admin().indices().prepareForceMerge("index").setFlush(true).get();
         OpenSearchAssertions.assertAllSuccessful(forceMergeResponse);
@@ -530,7 +530,7 @@ public class TieredSpilloverCacheIT extends OpenSearchIntegTestCase {
 
         // Step 4: Invalidate entries via refresh.
         // Explicit refresh would invalidate cache entries.
-        refreshAndWaitForReplication();
+        refresh();
         assertBusy(() -> {
             // Explicit refresh should clear up cache entries
             assertTrue(getRequestCacheStats(client, "index").getMemorySizeInBytes() == 0);

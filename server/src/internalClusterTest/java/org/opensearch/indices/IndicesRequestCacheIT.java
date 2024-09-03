@@ -72,6 +72,7 @@ import org.opensearch.search.aggregations.bucket.global.GlobalAggregationBuilder
 import org.opensearch.search.aggregations.bucket.histogram.DateHistogramInterval;
 import org.opensearch.search.aggregations.bucket.histogram.Histogram;
 import org.opensearch.search.aggregations.bucket.histogram.Histogram.Bucket;
+import org.opensearch.test.OpenSearchIntegTestCase;
 import org.opensearch.test.ParameterizedOpenSearchIntegTestCase;
 import org.opensearch.test.hamcrest.OpenSearchAssertions;
 
@@ -684,6 +685,7 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
         }
     }
 
+    // TODO: Move this to its own class with the decorator i guess. Not worth spending a ton of effort to get it cleaned up
     public void testDeleteAndCreateSameIndexShardOnSameNode() throws Exception {
         String node_1 = internalCluster().startNode(Settings.builder().build());
         Client client = client(node_1);
