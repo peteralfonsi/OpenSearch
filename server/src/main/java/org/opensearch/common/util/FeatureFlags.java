@@ -56,6 +56,12 @@ public class FeatureFlags {
     public static final String TELEMETRY = "opensearch.experimental.feature.telemetry.enabled";
 
     /**
+     * Gates the functionality of pluggable cache.
+     * Enables OpenSearch to use pluggable caches with respective store names via setting.
+     */
+    public static final String PLUGGABLE_CACHE = "opensearch.experimental.feature.pluggable.caching.enabled";
+
+    /**
      * Should store the settings from opensearch.yml.
      */
     private static Settings settings;
@@ -100,4 +106,5 @@ public class FeatureFlags {
         false,
         Property.NodeScope
     );
+    public static final Setting<Boolean> PLUGGABLE_CACHE_SETTING = Setting.boolSetting(PLUGGABLE_CACHE, false, Property.NodeScope);
 }

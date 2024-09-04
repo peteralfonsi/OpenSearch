@@ -80,6 +80,9 @@ import org.opensearch.cluster.service.ClusterManagerService;
 import org.opensearch.cluster.service.ClusterManagerTaskThrottler;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.annotation.PublicApi;
+import org.opensearch.common.cache.CacheType;
+import org.opensearch.common.cache.settings.CacheSettings;
+import org.opensearch.common.cache.store.settings.OpenSearchOnHeapCacheSettings;
 import org.opensearch.common.logging.Loggers;
 import org.opensearch.common.network.NetworkModule;
 import org.opensearch.common.network.NetworkService;
@@ -475,6 +478,8 @@ public final class ClusterSettings extends AbstractScopedSettings {
                 IndicesFieldDataCache.INDICES_FIELDDATA_CACHE_SIZE_KEY,
                 IndicesRequestCache.INDICES_CACHE_QUERY_SIZE,
                 IndicesRequestCache.INDICES_CACHE_QUERY_EXPIRE,
+                IndicesRequestCache.INDICES_REQUEST_CACHE_CLEANUP_INTERVAL_SETTING,
+                IndicesRequestCache.INDICES_REQUEST_CACHE_STALENESS_THRESHOLD_SETTING,
                 HunspellService.HUNSPELL_LAZY_LOAD,
                 HunspellService.HUNSPELL_IGNORE_CASE,
                 HunspellService.HUNSPELL_DICTIONARY_OPTIONS,
@@ -697,6 +702,16 @@ public final class ClusterSettings extends AbstractScopedSettings {
             SearchBootstrapSettings.CONCURRENT_SEGMENT_SEARCH_TARGET_MAX_SLICE_COUNT_SETTING
         ),
         List.of(FeatureFlags.TELEMETRY),
-        List.of(TelemetrySettings.TRACER_ENABLED_SETTING, TelemetrySettings.TRACER_SAMPLER_PROBABILITY)
+        List.of(TelemetrySettings.TRACER_ENABLED_SETTING, TelemetrySettings.TRACER_SAMPLER_PROBABILITY),
+        List.of(FeatureFlags.PLUGGABLE_CACHE),
+        List.of(
+            CacheSettings.getConcreteStoreNameSettingForCacheType(CacheType.INDICES_REQUEST_CACHE),
+            OpenSearchOnHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES.getConcreteSettingForNamespace(
+                CacheType.INDICES_REQUEST_CACHE.getSettingPrefix()
+            ),
+            OpenSearchOnHeapCacheSettings.EXPIRE_AFTER_ACCESS_SETTING.getConcreteSettingForNamespace(
+                CacheType.INDICES_REQUEST_CACHE.getSettingPrefix()
+            )
+        )
     );
 }

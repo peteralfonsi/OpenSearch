@@ -63,9 +63,12 @@ import org.opensearch.common.CheckedConsumer;
 import org.opensearch.common.CheckedFunction;
 import org.opensearch.common.CheckedSupplier;
 import org.opensearch.common.Nullable;
+import org.opensearch.common.cache.policy.CachedQueryResult;
+import org.opensearch.common.cache.service.CacheService;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.common.lease.Releasable;
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent;
+import org.opensearch.common.lucene.index.OpenSearchDirectoryReader.DelegatingCacheHelper;
 import org.opensearch.common.settings.IndexScopedSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
@@ -82,9 +85,7 @@ import org.opensearch.common.util.set.Sets;
 import org.opensearch.common.xcontent.LoggingDeprecationHandler;
 import org.opensearch.core.common.breaker.CircuitBreaker;
 import org.opensearch.core.common.bytes.BytesReference;
-import org.opensearch.core.common.io.stream.NamedWriteableAwareStreamInput;
 import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
-import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.core.concurrency.OpenSearchRejectedExecutionException;
@@ -214,10 +215,11 @@ public class IndicesService extends AbstractLifecycleComponent
         IndicesClusterStateService.AllocatedIndices<IndexShard, IndexService>,
         IndexService.ShardStoreDeleter {
     private static final Logger logger = LogManager.getLogger(IndicesService.class);
+    public static final String INDICES_CACHE_CLEANUP_INTERVAL_SETTING_KEY = "indices.cache.cleanup_interval";
 
     public static final String INDICES_SHARDS_CLOSED_TIMEOUT = "indices.shards_closed_timeout";
     public static final Setting<TimeValue> INDICES_CACHE_CLEAN_INTERVAL_SETTING = Setting.positiveTimeSetting(
-        "indices.cache.cleanup_interval",
+        INDICES_CACHE_CLEANUP_INTERVAL_SETTING_KEY,
         TimeValue.timeValueMinutes(1),
         Property.NodeScope
     );
@@ -385,7 +387,8 @@ public class IndicesService extends AbstractLifecycleComponent
         FileCacheCleaner fileCacheCleaner,
         SearchRequestStats searchRequestStats,
         @Nullable RemoteStoreStatsTrackerFactory remoteStoreStatsTrackerFactory,
-        RecoverySettings recoverySettings
+        RecoverySettings recoverySettings,
+        CacheService cacheService
     ) {
         this.settings = settings;
         this.threadPool = threadPool;
@@ -396,7 +399,13 @@ public class IndicesService extends AbstractLifecycleComponent
         this.shardsClosedTimeout = settings.getAsTime(INDICES_SHARDS_CLOSED_TIMEOUT, new TimeValue(1, TimeUnit.DAYS));
         this.analysisRegistry = analysisRegistry;
         this.indexNameExpressionResolver = indexNameExpressionResolver;
-        this.indicesRequestCache = new IndicesRequestCache(settings);
+        this.indicesRequestCache = new IndicesRequestCache(settings, (shardId -> {
+            IndexService indexService = this.indices.get(shardId.getIndex().getUUID());
+            if (indexService == null) {
+                return Optional.empty();
+            }
+            return Optional.of(new IndexShardCacheEntity(indexService.getShardOrNull(shardId.id())));
+        }), cacheService, threadPool, clusterService);
         this.indicesQueryCache = new IndicesQueryCache(settings);
         this.mapperRegistry = mapperRegistry;
         this.namedWriteableRegistry = namedWriteableRegistry;
@@ -425,7 +434,7 @@ public class IndicesService extends AbstractLifecycleComponent
             }
         });
         this.cleanInterval = INDICES_CACHE_CLEAN_INTERVAL_SETTING.get(settings);
-        this.cacheCleaner = new CacheCleaner(indicesFieldDataCache, indicesRequestCache, logger, threadPool, this.cleanInterval);
+        this.cacheCleaner = new CacheCleaner(indicesFieldDataCache, logger, threadPool, this.cleanInterval);
         this.metaStateService = metaStateService;
         this.engineFactoryProviders = engineFactoryProviders;
 
@@ -1569,17 +1578,9 @@ public class IndicesService extends AbstractLifecycleComponent
         private final ThreadPool threadPool;
         private final TimeValue interval;
         private final AtomicBoolean closed = new AtomicBoolean(false);
-        private final IndicesRequestCache requestCache;
 
-        CacheCleaner(
-            IndicesFieldDataCache cache,
-            IndicesRequestCache requestCache,
-            Logger logger,
-            ThreadPool threadPool,
-            TimeValue interval
-        ) {
+        CacheCleaner(IndicesFieldDataCache cache, Logger logger, ThreadPool threadPool, TimeValue interval) {
             this.cache = cache;
-            this.requestCache = requestCache;
             this.logger = logger;
             this.threadPool = threadPool;
             this.interval = interval;
@@ -1601,12 +1602,6 @@ public class IndicesService extends AbstractLifecycleComponent
                     "periodic field data cache cleanup finished in {} milliseconds",
                     TimeValue.nsecToMSec(System.nanoTime() - startTimeNS)
                 );
-            }
-
-            try {
-                this.requestCache.cleanCache();
-            } catch (Exception e) {
-                logger.warn("Exception during periodic request cache cleanup:", e);
             }
             // Reschedule itself to run again if not closed
             if (closed.get() == false) {
@@ -1665,8 +1660,7 @@ public class IndicesService extends AbstractLifecycleComponent
         if (context.getQueryShardContext().isCacheable() == false) {
             return false;
         }
-        return true;
-
+        return context.searcher().getDirectoryReader().getReaderCacheHelper() instanceof DelegatingCacheHelper;
     }
 
     /**
@@ -1681,16 +1675,20 @@ public class IndicesService extends AbstractLifecycleComponent
 
         boolean[] loadedFromCache = new boolean[] { true };
         BytesReference bytesReference = cacheShardLevelResult(context.indexShard(), directoryReader, request.cacheKey(), out -> {
+            long beforeQueryPhase = System.nanoTime();
             queryPhase.execute(context);
-            context.queryResult().writeToNoId(out);
+            // Write relevant info for cache tier policies before the whole QuerySearchResult, so we don't have to read
+            // the whole QSR into memory when we decide whether to allow it into a particular cache tier based on took time/other info
+            CachedQueryResult cachedQueryResult = new CachedQueryResult(context.queryResult(), System.nanoTime() - beforeQueryPhase);
+            cachedQueryResult.writeToNoId(out);
             loadedFromCache[0] = false;
         });
 
         if (loadedFromCache[0]) {
             // restore the cached query result into the context
             final QuerySearchResult result = context.queryResult();
-            StreamInput in = new NamedWriteableAwareStreamInput(bytesReference.streamInput(), namedWriteableRegistry);
-            result.readFromWithId(context.id(), in);
+            // Load the cached QSR into result, discarding values used only in the cache
+            CachedQueryResult.loadQSR(bytesReference, result, context.id(), namedWriteableRegistry);
             result.setSearchShardTarget(context.shardTarget());
         } else if (context.queryResult().searchTimedOut()) {
             // we have to invalidate the cache entry if we cached a query result form a request that timed out.
@@ -1729,7 +1727,6 @@ public class IndicesService extends AbstractLifecycleComponent
         BytesReference cacheKey,
         CheckedConsumer<StreamOutput, IOException> loader
     ) throws Exception {
-        IndexShardCacheEntity cacheEntity = new IndexShardCacheEntity(shard);
         CheckedSupplier<BytesReference, IOException> supplier = () -> {
             /* BytesStreamOutput allows to pass the expected size but by default uses
              * BigArrays.PAGE_SIZE_IN_BYTES which is 16k. A common cached result ie.
@@ -1746,7 +1743,7 @@ public class IndicesService extends AbstractLifecycleComponent
                 return out.bytes();
             }
         };
-        return indicesRequestCache.getOrCompute(cacheEntity, supplier, reader, cacheKey);
+        return indicesRequestCache.getOrCompute(new IndexShardCacheEntity(shard), supplier, reader, cacheKey);
     }
 
     /**
@@ -1754,11 +1751,12 @@ public class IndicesService extends AbstractLifecycleComponent
      *
      * @opensearch.internal
      */
-    static final class IndexShardCacheEntity extends AbstractIndexShardCacheEntity {
+    public static class IndexShardCacheEntity extends AbstractIndexShardCacheEntity {
+
         private static final long BASE_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(IndexShardCacheEntity.class);
         private final IndexShard indexShard;
 
-        protected IndexShardCacheEntity(IndexShard indexShard) {
+        public IndexShardCacheEntity(IndexShard indexShard) {
             this.indexShard = indexShard;
         }
 

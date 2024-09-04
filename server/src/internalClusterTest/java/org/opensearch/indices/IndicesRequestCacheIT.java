@@ -42,7 +42,9 @@ import org.opensearch.client.Client;
 import org.opensearch.cluster.metadata.IndexMetadata;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.time.DateFormatter;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.FeatureFlags;
+import org.opensearch.index.IndexSettings;
 import org.opensearch.index.cache.request.RequestCacheStats;
 import org.opensearch.index.query.QueryBuilders;
 import org.opensearch.search.aggregations.bucket.global.GlobalAggregationBuilder;
@@ -60,6 +62,8 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 
+import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_NUMBER_OF_REPLICAS;
+import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_NUMBER_OF_SHARDS;
 import static org.opensearch.search.SearchService.CLUSTER_CONCURRENT_SEGMENT_SEARCH_SETTING;
 import static org.opensearch.search.aggregations.AggregationBuilders.dateHistogram;
 import static org.opensearch.search.aggregations.AggregationBuilders.dateRange;
@@ -84,31 +88,45 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
 
     @Override
     protected Settings featureFlagSettings() {
-        return Settings.builder().put(super.featureFlagSettings()).put(FeatureFlags.CONCURRENT_SEGMENT_SEARCH, "true").build();
-    }
+        return Settings.builder()
+            .put(super.featureFlagSettings())
+            .put(FeatureFlags.CONCURRENT_SEGMENT_SEARCH, "true")
+            .put(FeatureFlags.PLUGGABLE_CACHE, "true")
+            .build();
+    } // For now hardcode TC feature flag as true. Attempt to backport the changes allowing us to parameterize it
 
     // One of the primary purposes of the query cache is to cache aggs results
     public void testCacheAggs() throws Exception {
         Client client = client();
+        String index = "index";
         assertAcked(
             client.admin()
                 .indices()
-                .prepareCreate("index")
+                .prepareCreate(index)
                 .setMapping("f", "type=date")
-                .setSettings(Settings.builder().put(IndicesRequestCache.INDEX_CACHE_REQUEST_ENABLED_SETTING.getKey(), true))
+                .setSettings(
+                    Settings.builder()
+                        .put(IndicesRequestCache.INDEX_CACHE_REQUEST_ENABLED_SETTING.getKey(), true)
+                        .put(SETTING_NUMBER_OF_SHARDS, 1)
+                        .put(SETTING_NUMBER_OF_REPLICAS, 0)
+                        // Disable index refreshing to avoid cache being invalidated mid-test
+                        .put(IndexSettings.INDEX_REFRESH_INTERVAL_SETTING.getKey(), TimeValue.timeValueMillis(-1))
+                )
                 .get()
         );
         indexRandom(
             true,
-            client.prepareIndex("index").setSource("f", "2014-03-10T00:00:00.000Z"),
-            client.prepareIndex("index").setSource("f", "2014-05-13T00:00:00.000Z")
+            client.prepareIndex(index).setSource("f", "2014-03-10T00:00:00.000Z"),
+            client.prepareIndex(index).setSource("f", "2014-05-13T00:00:00.000Z")
         );
-        ensureSearchable("index");
+        ensureSearchable(index);
+        // Force merge the index to ensure there can be no background merges during the subsequent searches that would invalidate the cache
+        forceMerge(client, index);
 
         // This is not a random example: serialization with time zones writes shared strings
         // which used to not work well with the query cache because of the handles stream output
         // see #9500
-        final SearchResponse r1 = client.prepareSearch("index")
+        final SearchResponse r1 = client.prepareSearch(index)
             .setSize(0)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .addAggregation(
@@ -122,12 +140,12 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
 
         // The cached is actually used
         assertThat(
-            client.admin().indices().prepareStats("index").setRequestCache(true).get().getTotal().getRequestCache().getMemorySizeInBytes(),
+            client.admin().indices().prepareStats(index).setRequestCache(true).get().getTotal().getRequestCache().getMemorySizeInBytes(),
             greaterThan(0L)
         );
 
         for (int i = 0; i < 10; ++i) {
-            final SearchResponse r2 = client.prepareSearch("index")
+            final SearchResponse r2 = client.prepareSearch(index)
                 .setSize(0)
                 .setSearchType(SearchType.QUERY_THEN_FETCH)
                 .addAggregation(
@@ -154,10 +172,11 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
 
     public void testQueryRewrite() throws Exception {
         Client client = client();
+        String index = "index";
         assertAcked(
             client.admin()
                 .indices()
-                .prepareCreate("index")
+                .prepareCreate(index)
                 .setMapping("s", "type=date")
                 .setSettings(
                     Settings.builder()
@@ -165,33 +184,31 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
                         .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 5)
                         .put("index.number_of_routing_shards", 5)
                         .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
+                        // Disable index refreshing to avoid cache being invalidated mid-test
+                        .put(IndexSettings.INDEX_REFRESH_INTERVAL_SETTING.getKey(), TimeValue.timeValueMillis(-1))
                 )
                 .get()
         );
         indexRandom(
             true,
-            client.prepareIndex("index").setId("1").setRouting("1").setSource("s", "2016-03-19"),
-            client.prepareIndex("index").setId("2").setRouting("1").setSource("s", "2016-03-20"),
-            client.prepareIndex("index").setId("3").setRouting("1").setSource("s", "2016-03-21"),
-            client.prepareIndex("index").setId("4").setRouting("2").setSource("s", "2016-03-22"),
-            client.prepareIndex("index").setId("5").setRouting("2").setSource("s", "2016-03-23"),
-            client.prepareIndex("index").setId("6").setRouting("2").setSource("s", "2016-03-24"),
-            client.prepareIndex("index").setId("7").setRouting("3").setSource("s", "2016-03-25"),
-            client.prepareIndex("index").setId("8").setRouting("3").setSource("s", "2016-03-26"),
-            client.prepareIndex("index").setId("9").setRouting("3").setSource("s", "2016-03-27")
+            client.prepareIndex(index).setId("1").setRouting("1").setSource("s", "2016-03-19"),
+            client.prepareIndex(index).setId("2").setRouting("1").setSource("s", "2016-03-20"),
+            client.prepareIndex(index).setId("3").setRouting("1").setSource("s", "2016-03-21"),
+            client.prepareIndex(index).setId("4").setRouting("2").setSource("s", "2016-03-22"),
+            client.prepareIndex(index).setId("5").setRouting("2").setSource("s", "2016-03-23"),
+            client.prepareIndex(index).setId("6").setRouting("2").setSource("s", "2016-03-24"),
+            client.prepareIndex(index).setId("7").setRouting("3").setSource("s", "2016-03-25"),
+            client.prepareIndex(index).setId("8").setRouting("3").setSource("s", "2016-03-26"),
+            client.prepareIndex(index).setId("9").setRouting("3").setSource("s", "2016-03-27")
         );
-        ensureSearchable("index");
-        assertCacheState(client, "index", 0, 0);
-
+        ensureSearchable(index);
+        assertCacheState(client, index, 0, 0);
         // Force merge the index to ensure there can be no background merges during the subsequent searches that would invalidate the cache
-        ForceMergeResponse forceMergeResponse = client.admin().indices().prepareForceMerge("index").setFlush(true).get();
-        OpenSearchAssertions.assertAllSuccessful(forceMergeResponse);
-        refresh();
-        ensureSearchable("index");
+        forceMerge(client, index);
 
-        assertCacheState(client, "index", 0, 0);
+        assertCacheState(client, index, 0, 0);
 
-        final SearchResponse r1 = client.prepareSearch("index")
+        final SearchResponse r1 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(0)
             .setQuery(QueryBuilders.rangeQuery("s").gte("2016-03-19").lte("2016-03-25"))
@@ -200,9 +217,9 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .get();
         OpenSearchAssertions.assertAllSuccessful(r1);
         assertThat(r1.getHits().getTotalHits().value, equalTo(7L));
-        assertCacheState(client, "index", 0, 5);
+        assertCacheState(client, index, 0, 5);
 
-        final SearchResponse r2 = client.prepareSearch("index")
+        final SearchResponse r2 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(0)
             .setQuery(QueryBuilders.rangeQuery("s").gte("2016-03-20").lte("2016-03-26"))
@@ -210,9 +227,9 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .get();
         OpenSearchAssertions.assertAllSuccessful(r2);
         assertThat(r2.getHits().getTotalHits().value, equalTo(7L));
-        assertCacheState(client, "index", 3, 7);
+        assertCacheState(client, index, 3, 7);
 
-        final SearchResponse r3 = client.prepareSearch("index")
+        final SearchResponse r3 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(0)
             .setQuery(QueryBuilders.rangeQuery("s").gte("2016-03-21").lte("2016-03-27"))
@@ -220,114 +237,112 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .get();
         OpenSearchAssertions.assertAllSuccessful(r3);
         assertThat(r3.getHits().getTotalHits().value, equalTo(7L));
-        assertCacheState(client, "index", 6, 9);
+        assertCacheState(client, index, 6, 9);
     }
 
     public void testQueryRewriteMissingValues() throws Exception {
         Client client = client();
+        String index = "index";
         assertAcked(
             client.admin()
                 .indices()
-                .prepareCreate("index")
+                .prepareCreate(index)
                 .setMapping("s", "type=date")
                 .setSettings(
                     Settings.builder()
                         .put(IndicesRequestCache.INDEX_CACHE_REQUEST_ENABLED_SETTING.getKey(), true)
                         .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 1)
                         .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
+                        // Disable index refreshing to avoid cache being invalidated mid-test
+                        .put(IndexSettings.INDEX_REFRESH_INTERVAL_SETTING.getKey(), TimeValue.timeValueMillis(-1))
                 )
                 .get()
         );
         indexRandom(
             true,
-            client.prepareIndex("index").setId("1").setSource("s", "2016-03-19"),
-            client.prepareIndex("index").setId("2").setSource("s", "2016-03-20"),
-            client.prepareIndex("index").setId("3").setSource("s", "2016-03-21"),
-            client.prepareIndex("index").setId("4").setSource("s", "2016-03-22"),
-            client.prepareIndex("index").setId("5").setSource("s", "2016-03-23"),
-            client.prepareIndex("index").setId("6").setSource("s", "2016-03-24"),
-            client.prepareIndex("index").setId("7").setSource("other", "value"),
-            client.prepareIndex("index").setId("8").setSource("s", "2016-03-26"),
-            client.prepareIndex("index").setId("9").setSource("s", "2016-03-27")
+            client.prepareIndex(index).setId("1").setSource("s", "2016-03-19"),
+            client.prepareIndex(index).setId("2").setSource("s", "2016-03-20"),
+            client.prepareIndex(index).setId("3").setSource("s", "2016-03-21"),
+            client.prepareIndex(index).setId("4").setSource("s", "2016-03-22"),
+            client.prepareIndex(index).setId("5").setSource("s", "2016-03-23"),
+            client.prepareIndex(index).setId("6").setSource("s", "2016-03-24"),
+            client.prepareIndex(index).setId("7").setSource("other", "value"),
+            client.prepareIndex(index).setId("8").setSource("s", "2016-03-26"),
+            client.prepareIndex(index).setId("9").setSource("s", "2016-03-27")
         );
-        ensureSearchable("index");
-        assertCacheState(client, "index", 0, 0);
+        ensureSearchable(index);
+        assertCacheState(client, index, 0, 0);
 
         // Force merge the index to ensure there can be no background merges during the subsequent searches that would invalidate the cache
-        ForceMergeResponse forceMergeResponse = client.admin().indices().prepareForceMerge("index").setFlush(true).get();
-        OpenSearchAssertions.assertAllSuccessful(forceMergeResponse);
-        refresh();
-        ensureSearchable("index");
+        forceMerge(client, index);
+        assertCacheState(client, index, 0, 0);
 
-        assertCacheState(client, "index", 0, 0);
-
-        final SearchResponse r1 = client.prepareSearch("index")
+        final SearchResponse r1 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(0)
             .setQuery(QueryBuilders.rangeQuery("s").gte("2016-03-19").lte("2016-03-28"))
             .get();
         OpenSearchAssertions.assertAllSuccessful(r1);
         assertThat(r1.getHits().getTotalHits().value, equalTo(8L));
-        assertCacheState(client, "index", 0, 1);
+        assertCacheState(client, index, 0, 1);
 
-        final SearchResponse r2 = client.prepareSearch("index")
+        final SearchResponse r2 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(0)
             .setQuery(QueryBuilders.rangeQuery("s").gte("2016-03-19").lte("2016-03-28"))
             .get();
         OpenSearchAssertions.assertAllSuccessful(r2);
         assertThat(r2.getHits().getTotalHits().value, equalTo(8L));
-        assertCacheState(client, "index", 1, 1);
+        assertCacheState(client, index, 1, 1);
 
-        final SearchResponse r3 = client.prepareSearch("index")
+        final SearchResponse r3 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(0)
             .setQuery(QueryBuilders.rangeQuery("s").gte("2016-03-19").lte("2016-03-28"))
             .get();
         OpenSearchAssertions.assertAllSuccessful(r3);
         assertThat(r3.getHits().getTotalHits().value, equalTo(8L));
-        assertCacheState(client, "index", 2, 1);
+        assertCacheState(client, index, 2, 1);
     }
 
     public void testQueryRewriteDates() throws Exception {
         Client client = client();
+        String index = "index";
         assertAcked(
             client.admin()
                 .indices()
-                .prepareCreate("index")
+                .prepareCreate(index)
                 .setMapping("d", "type=date")
                 .setSettings(
                     Settings.builder()
                         .put(IndicesRequestCache.INDEX_CACHE_REQUEST_ENABLED_SETTING.getKey(), true)
                         .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 1)
                         .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
+                        // Disable index refreshing to avoid cache being invalidated mid-test
+                        .put(IndexSettings.INDEX_REFRESH_INTERVAL_SETTING.getKey(), TimeValue.timeValueMillis(-1))
                 )
                 .get()
         );
         indexRandom(
             true,
-            client.prepareIndex("index").setId("1").setSource("d", "2014-01-01T00:00:00"),
-            client.prepareIndex("index").setId("2").setSource("d", "2014-02-01T00:00:00"),
-            client.prepareIndex("index").setId("3").setSource("d", "2014-03-01T00:00:00"),
-            client.prepareIndex("index").setId("4").setSource("d", "2014-04-01T00:00:00"),
-            client.prepareIndex("index").setId("5").setSource("d", "2014-05-01T00:00:00"),
-            client.prepareIndex("index").setId("6").setSource("d", "2014-06-01T00:00:00"),
-            client.prepareIndex("index").setId("7").setSource("d", "2014-07-01T00:00:00"),
-            client.prepareIndex("index").setId("8").setSource("d", "2014-08-01T00:00:00"),
-            client.prepareIndex("index").setId("9").setSource("d", "2014-09-01T00:00:00")
+            client.prepareIndex(index).setId("1").setSource("d", "2014-01-01T00:00:00"),
+            client.prepareIndex(index).setId("2").setSource("d", "2014-02-01T00:00:00"),
+            client.prepareIndex(index).setId("3").setSource("d", "2014-03-01T00:00:00"),
+            client.prepareIndex(index).setId("4").setSource("d", "2014-04-01T00:00:00"),
+            client.prepareIndex(index).setId("5").setSource("d", "2014-05-01T00:00:00"),
+            client.prepareIndex(index).setId("6").setSource("d", "2014-06-01T00:00:00"),
+            client.prepareIndex(index).setId("7").setSource("d", "2014-07-01T00:00:00"),
+            client.prepareIndex(index).setId("8").setSource("d", "2014-08-01T00:00:00"),
+            client.prepareIndex(index).setId("9").setSource("d", "2014-09-01T00:00:00")
         );
-        ensureSearchable("index");
-        assertCacheState(client, "index", 0, 0);
+        ensureSearchable(index);
+        assertCacheState(client, index, 0, 0);
 
         // Force merge the index to ensure there can be no background merges during the subsequent searches that would invalidate the cache
-        ForceMergeResponse forceMergeResponse = client.admin().indices().prepareForceMerge("index").setFlush(true).get();
-        OpenSearchAssertions.assertAllSuccessful(forceMergeResponse);
-        refresh();
-        ensureSearchable("index");
+        forceMerge(client, index);
+        assertCacheState(client, index, 0, 0);
 
-        assertCacheState(client, "index", 0, 0);
-
-        final SearchResponse r1 = client.prepareSearch("index")
+        final SearchResponse r1 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(0)
             .setQuery(QueryBuilders.rangeQuery("d").gte("2013-01-01T00:00:00").lte("now"))
@@ -336,9 +351,9 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .get();
         OpenSearchAssertions.assertAllSuccessful(r1);
         assertThat(r1.getHits().getTotalHits().value, equalTo(9L));
-        assertCacheState(client, "index", 0, 1);
+        assertCacheState(client, index, 0, 1);
 
-        final SearchResponse r2 = client.prepareSearch("index")
+        final SearchResponse r2 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(0)
             .setQuery(QueryBuilders.rangeQuery("d").gte("2013-01-01T00:00:00").lte("now"))
@@ -346,9 +361,9 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .get();
         OpenSearchAssertions.assertAllSuccessful(r2);
         assertThat(r2.getHits().getTotalHits().value, equalTo(9L));
-        assertCacheState(client, "index", 1, 1);
+        assertCacheState(client, index, 1, 1);
 
-        final SearchResponse r3 = client.prepareSearch("index")
+        final SearchResponse r3 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(0)
             .setQuery(QueryBuilders.rangeQuery("d").gte("2013-01-01T00:00:00").lte("now"))
@@ -356,7 +371,7 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .get();
         OpenSearchAssertions.assertAllSuccessful(r3);
         assertThat(r3.getHits().getTotalHits().value, equalTo(9L));
-        assertCacheState(client, "index", 2, 1);
+        assertCacheState(client, index, 2, 1);
     }
 
     public void testQueryRewriteDatesWithNow() throws Exception {
@@ -365,6 +380,8 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .put(IndicesRequestCache.INDEX_CACHE_REQUEST_ENABLED_SETTING.getKey(), true)
             .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 1)
             .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
+            // Disable index refreshing to avoid cache being invalidated mid-test
+            .put(IndexSettings.INDEX_REFRESH_INTERVAL_SETTING.getKey(), TimeValue.timeValueMillis(-1))
             .build();
         assertAcked(client.admin().indices().prepareCreate("index-1").setMapping("d", "type=date").setSettings(settings).get());
         assertAcked(client.admin().indices().prepareCreate("index-2").setMapping("d", "type=date").setSettings(settings).get());
@@ -446,54 +463,52 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 2)
             .put("index.number_of_routing_shards", 2)
             .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
+            .put(IndexSettings.INDEX_REFRESH_INTERVAL_SETTING.getKey(), TimeValue.timeValueMillis(-1))
             .build();
-        assertAcked(client.admin().indices().prepareCreate("index").setMapping("s", "type=date").setSettings(settings).get());
+        String index = "index";
+        assertAcked(client.admin().indices().prepareCreate(index).setMapping("s", "type=date").setSettings(settings).get());
         indexRandom(
             true,
-            client.prepareIndex("index").setId("1").setRouting("1").setSource("s", "2016-03-19"),
-            client.prepareIndex("index").setId("2").setRouting("1").setSource("s", "2016-03-20"),
-            client.prepareIndex("index").setId("3").setRouting("1").setSource("s", "2016-03-21"),
-            client.prepareIndex("index").setId("4").setRouting("2").setSource("s", "2016-03-22"),
-            client.prepareIndex("index").setId("5").setRouting("2").setSource("s", "2016-03-23"),
-            client.prepareIndex("index").setId("6").setRouting("2").setSource("s", "2016-03-24"),
-            client.prepareIndex("index").setId("7").setRouting("3").setSource("s", "2016-03-25"),
-            client.prepareIndex("index").setId("8").setRouting("3").setSource("s", "2016-03-26"),
-            client.prepareIndex("index").setId("9").setRouting("3").setSource("s", "2016-03-27")
+            client.prepareIndex(index).setId("1").setRouting("1").setSource("s", "2016-03-19"),
+            client.prepareIndex(index).setId("2").setRouting("1").setSource("s", "2016-03-20"),
+            client.prepareIndex(index).setId("3").setRouting("1").setSource("s", "2016-03-21"),
+            client.prepareIndex(index).setId("4").setRouting("2").setSource("s", "2016-03-22"),
+            client.prepareIndex(index).setId("5").setRouting("2").setSource("s", "2016-03-23"),
+            client.prepareIndex(index).setId("6").setRouting("2").setSource("s", "2016-03-24"),
+            client.prepareIndex(index).setId("7").setRouting("3").setSource("s", "2016-03-25"),
+            client.prepareIndex(index).setId("8").setRouting("3").setSource("s", "2016-03-26"),
+            client.prepareIndex(index).setId("9").setRouting("3").setSource("s", "2016-03-27")
         );
-        ensureSearchable("index");
-        assertCacheState(client, "index", 0, 0);
+        ensureSearchable(index);
+        assertCacheState(client, index, 0, 0);
 
         // Force merge the index to ensure there can be no background merges during the subsequent searches that would invalidate the cache
-        ForceMergeResponse forceMergeResponse = client.admin().indices().prepareForceMerge("index").setFlush(true).get();
-        OpenSearchAssertions.assertAllSuccessful(forceMergeResponse);
-        refresh();
-        ensureSearchable("index");
-
-        assertCacheState(client, "index", 0, 0);
+        forceMerge(client, index);
+        assertCacheState(client, index, 0, 0);
 
         // If size > 0 we should no cache by default
-        final SearchResponse r1 = client.prepareSearch("index")
+        final SearchResponse r1 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(1)
             .setQuery(QueryBuilders.rangeQuery("s").gte("2016-03-19").lte("2016-03-25"))
             .get();
         OpenSearchAssertions.assertAllSuccessful(r1);
         assertThat(r1.getHits().getTotalHits().value, equalTo(7L));
-        assertCacheState(client, "index", 0, 0);
+        assertCacheState(client, index, 0, 0);
 
         // If search type is DFS_QUERY_THEN_FETCH we should not cache
-        final SearchResponse r2 = client.prepareSearch("index")
+        final SearchResponse r2 = client.prepareSearch(index)
             .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
             .setSize(0)
             .setQuery(QueryBuilders.rangeQuery("s").gte("2016-03-20").lte("2016-03-26"))
             .get();
         OpenSearchAssertions.assertAllSuccessful(r2);
         assertThat(r2.getHits().getTotalHits().value, equalTo(7L));
-        assertCacheState(client, "index", 0, 0);
+        assertCacheState(client, index, 0, 0);
 
         // If search type is DFS_QUERY_THEN_FETCH we should not cache even if
         // the cache flag is explicitly set on the request
-        final SearchResponse r3 = client.prepareSearch("index")
+        final SearchResponse r3 = client.prepareSearch(index)
             .setSearchType(SearchType.DFS_QUERY_THEN_FETCH)
             .setSize(0)
             .setRequestCache(true)
@@ -501,10 +516,10 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .get();
         OpenSearchAssertions.assertAllSuccessful(r3);
         assertThat(r3.getHits().getTotalHits().value, equalTo(7L));
-        assertCacheState(client, "index", 0, 0);
+        assertCacheState(client, index, 0, 0);
 
         // If the request has an non-filter aggregation containing now we should not cache
-        final SearchResponse r5 = client.prepareSearch("index")
+        final SearchResponse r5 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(0)
             .setRequestCache(true)
@@ -513,10 +528,10 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .get();
         OpenSearchAssertions.assertAllSuccessful(r5);
         assertThat(r5.getHits().getTotalHits().value, equalTo(7L));
-        assertCacheState(client, "index", 0, 0);
+        assertCacheState(client, index, 0, 0);
 
         // If size > 1 and cache flag is set on the request we should cache
-        final SearchResponse r6 = client.prepareSearch("index")
+        final SearchResponse r6 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(1)
             .setRequestCache(true)
@@ -524,10 +539,10 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .get();
         OpenSearchAssertions.assertAllSuccessful(r6);
         assertThat(r6.getHits().getTotalHits().value, equalTo(7L));
-        assertCacheState(client, "index", 0, 2);
+        assertCacheState(client, index, 0, 2);
 
         // If the request has a filter aggregation containing now we should cache since it gets rewritten
-        final SearchResponse r4 = client.prepareSearch("index")
+        final SearchResponse r4 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(0)
             .setRequestCache(true)
@@ -536,7 +551,7 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .get();
         OpenSearchAssertions.assertAllSuccessful(r4);
         assertThat(r4.getHits().getTotalHits().value, equalTo(7L));
-        assertCacheState(client, "index", 0, 4);
+        assertCacheState(client, index, 0, 4);
     }
 
     public void testCacheWithFilteredAlias() {
@@ -546,76 +561,83 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
             .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 1)
             .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
             .build();
+        String index = "index";
         assertAcked(
             client.admin()
                 .indices()
-                .prepareCreate("index")
+                .prepareCreate(index)
                 .setMapping("created_at", "type=date")
                 .setSettings(settings)
                 .addAlias(new Alias("last_week").filter(QueryBuilders.rangeQuery("created_at").gte("now-7d/d")))
                 .get()
         );
         ZonedDateTime now = ZonedDateTime.now(ZoneOffset.UTC);
-        client.prepareIndex("index").setId("1").setRouting("1").setSource("created_at", DateTimeFormatter.ISO_LOCAL_DATE.format(now)).get();
+        client.prepareIndex(index).setId("1").setRouting("1").setSource("created_at", DateTimeFormatter.ISO_LOCAL_DATE.format(now)).get();
         // Force merge the index to ensure there can be no background merges during the subsequent searches that would invalidate the cache
-        ForceMergeResponse forceMergeResponse = client.admin().indices().prepareForceMerge("index").setFlush(true).get();
+        ForceMergeResponse forceMergeResponse = client.admin().indices().prepareForceMerge(index).setFlush(true).get();
         OpenSearchAssertions.assertAllSuccessful(forceMergeResponse);
         refresh();
+        ensureSearchable(index);
 
-        assertCacheState(client, "index", 0, 0);
+        assertCacheState(client, index, 0, 0);
 
-        SearchResponse r1 = client.prepareSearch("index")
+        SearchResponse r1 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(0)
             .setQuery(QueryBuilders.rangeQuery("created_at").gte("now-7d/d"))
             .get();
         OpenSearchAssertions.assertAllSuccessful(r1);
         assertThat(r1.getHits().getTotalHits().value, equalTo(1L));
-        assertCacheState(client, "index", 0, 1);
+        assertCacheState(client, index, 0, 1);
 
-        r1 = client.prepareSearch("index")
+        r1 = client.prepareSearch(index)
             .setSearchType(SearchType.QUERY_THEN_FETCH)
             .setSize(0)
             .setQuery(QueryBuilders.rangeQuery("created_at").gte("now-7d/d"))
             .get();
         OpenSearchAssertions.assertAllSuccessful(r1);
         assertThat(r1.getHits().getTotalHits().value, equalTo(1L));
-        assertCacheState(client, "index", 1, 1);
+        assertCacheState(client, index, 1, 1);
 
         r1 = client.prepareSearch("last_week").setSearchType(SearchType.QUERY_THEN_FETCH).setSize(0).get();
         OpenSearchAssertions.assertAllSuccessful(r1);
         assertThat(r1.getHits().getTotalHits().value, equalTo(1L));
-        assertCacheState(client, "index", 1, 2);
+        assertCacheState(client, index, 1, 2);
 
         r1 = client.prepareSearch("last_week").setSearchType(SearchType.QUERY_THEN_FETCH).setSize(0).get();
         OpenSearchAssertions.assertAllSuccessful(r1);
         assertThat(r1.getHits().getTotalHits().value, equalTo(1L));
-        assertCacheState(client, "index", 2, 2);
+        assertCacheState(client, index, 2, 2);
     }
 
     public void testProfileDisableCache() throws Exception {
         Client client = client();
+        String index = "index";
         assertAcked(
             client.admin()
                 .indices()
-                .prepareCreate("index")
+                .prepareCreate(index)
                 .setMapping("k", "type=keyword")
                 .setSettings(
                     Settings.builder()
                         .put(IndicesRequestCache.INDEX_CACHE_REQUEST_ENABLED_SETTING.getKey(), true)
                         .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 1)
                         .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
+                        // Disable index refreshing to avoid cache being invalidated mid-test
+                        .put(IndexSettings.INDEX_REFRESH_INTERVAL_SETTING.getKey(), TimeValue.timeValueMillis(-1))
                 )
                 .get()
         );
-        indexRandom(true, client.prepareIndex("index").setSource("k", "hello"));
-        ensureSearchable("index");
+        indexRandom(true, client.prepareIndex(index).setSource("k", "hello"));
+        ensureSearchable(index);
+        // Force merge the index to ensure there can be no background merges during the subsequent searches that would invalidate the cache
+        forceMerge(client, index);
 
         int expectedHits = 0;
         int expectedMisses = 0;
         for (int i = 0; i < 5; i++) {
             boolean profile = i % 2 == 0;
-            SearchResponse resp = client.prepareSearch("index")
+            SearchResponse resp = client.prepareSearch(index)
                 .setRequestCache(true)
                 .setProfile(profile)
                 .setQuery(QueryBuilders.termQuery("k", "hello"))
@@ -630,24 +652,32 @@ public class IndicesRequestCacheIT extends ParameterizedOpenSearchIntegTestCase 
                     expectedHits++;
                 }
             }
-            assertCacheState(client, "index", expectedHits, expectedMisses);
+            assertCacheState(client, index, expectedHits, expectedMisses);
         }
     }
 
+    // Note: testTimedOutQuery was removed, since when backporting to 2.11, the method used to get a
+    // timed-out query didn't work consistently. This test is not critical, removing it should be fine.
+
+    private void forceMerge(Client client, String index) {
+        ForceMergeResponse forceMergeResponse = client.admin().indices().prepareForceMerge(index).setFlush(true).get();
+        OpenSearchAssertions.assertAllSuccessful(forceMergeResponse);
+        refresh(index); // TODO: is this correct?
+        ensureSearchable(index);
+    }
+
     private static void assertCacheState(Client client, String index, long expectedHits, long expectedMisses) {
-        RequestCacheStats requestCacheStats = client.admin()
-            .indices()
-            .prepareStats(index)
-            .setRequestCache(true)
-            .get()
-            .getTotal()
-            .getRequestCache();
+        RequestCacheStats requestCacheStats = getRequestCacheStats(client, index);
         // Check the hit count and miss count together so if they are not
         // correct we can see both values
         assertEquals(
             Arrays.asList(expectedHits, expectedMisses, 0L),
             Arrays.asList(requestCacheStats.getHitCount(), requestCacheStats.getMissCount(), requestCacheStats.getEvictions())
         );
+
     }
 
+    private static RequestCacheStats getRequestCacheStats(Client client, String index) {
+        return client.admin().indices().prepareStats(index).setRequestCache(true).get().getTotal().getRequestCache();
+    }
 }

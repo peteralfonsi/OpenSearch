@@ -35,9 +35,11 @@ package org.opensearch.common.cache;
 import org.opensearch.common.collect.Tuple;
 import org.opensearch.common.util.concurrent.ReleasableLock;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -394,7 +396,12 @@ public class Cache<K, V> {
         if (entry == null) {
             return null;
         } else {
-            promote(entry, now);
+            List<RemovalNotification<K, V>> removalNotifications = promote(entry, now).v2();
+            if (!removalNotifications.isEmpty()) {
+                for (RemovalNotification<K, V> removalNotification : removalNotifications) {
+                    removalListener.onRemoval(removalNotification);
+                }
+            }
             return entry.value;
         }
     }
@@ -422,68 +429,80 @@ public class Cache<K, V> {
             }
         });
         if (value == null) {
-            // we need to synchronize loading of a value for a given key; however, holding the segment lock while
-            // invoking load can lead to deadlock against another thread due to dependent key loading; therefore, we
-            // need a mechanism to ensure that load is invoked at most once, but we are not invoking load while holding
-            // the segment lock; to do this, we atomically put a future in the map that can load the value, and then
-            // get the value from this future on the thread that won the race to place the future into the segment map
-            CacheSegment<K, V> segment = getCacheSegment(key);
-            CompletableFuture<Entry<K, V>> future;
-            CompletableFuture<Entry<K, V>> completableFuture = new CompletableFuture<>();
+            value = compute(key, loader);
+        }
+        return value;
+    }
 
-            try (ReleasableLock ignored = segment.writeLock.acquire()) {
-                future = segment.map.putIfAbsent(key, completableFuture);
-            }
+    private V compute(K key, CacheLoader<K, V> loader) throws ExecutionException {
+        long now = now();
+        // we need to synchronize loading of a value for a given key; however, holding the segment lock while
+        // invoking load can lead to deadlock against another thread due to dependent key loading; therefore, we
+        // need a mechanism to ensure that load is invoked at most once, but we are not invoking load while holding
+        // the segment lock; to do this, we atomically put a future in the map that can load the value, and then
+        // get the value from this future on the thread that won the race to place the future into the segment map
+        CacheSegment<K, V> segment = getCacheSegment(key);
+        CompletableFuture<Entry<K, V>> future;
+        CompletableFuture<Entry<K, V>> completableFuture = new CompletableFuture<>();
 
-            BiFunction<? super Entry<K, V>, Throwable, ? extends V> handler = (ok, ex) -> {
-                if (ok != null) {
-                    try (ReleasableLock ignored = lruLock.acquire()) {
-                        promote(ok, now);
+        try (ReleasableLock ignored = segment.writeLock.acquire()) {
+            future = segment.map.putIfAbsent(key, completableFuture);
+        }
+
+        BiFunction<? super Entry<K, V>, Throwable, ? extends V> handler = (ok, ex) -> {
+            if (ok != null) {
+                List<RemovalNotification<K, V>> removalNotifications = new ArrayList<>();
+                try (ReleasableLock ignored = lruLock.acquire()) {
+                    removalNotifications = promote(ok, now).v2();
+                }
+                if (!removalNotifications.isEmpty()) {
+                    for (RemovalNotification<K, V> removalNotification : removalNotifications) {
+                        removalListener.onRemoval(removalNotification);
                     }
-                    return ok.value;
-                } else {
-                    try (ReleasableLock ignored = segment.writeLock.acquire()) {
-                        CompletableFuture<Entry<K, V>> sanity = segment.map.get(key);
-                        if (sanity != null && sanity.isCompletedExceptionally()) {
-                            segment.map.remove(key);
-                        }
-                    }
-                    return null;
                 }
-            };
-
-            CompletableFuture<V> completableValue;
-            if (future == null) {
-                future = completableFuture;
-                completableValue = future.handle(handler);
-                V loaded;
-                try {
-                    loaded = loader.load(key);
-                } catch (Exception e) {
-                    future.completeExceptionally(e);
-                    throw new ExecutionException(e);
-                }
-                if (loaded == null) {
-                    NullPointerException npe = new NullPointerException("loader returned a null value");
-                    future.completeExceptionally(npe);
-                    throw new ExecutionException(npe);
-                } else {
-                    future.complete(new Entry<>(key, loaded, now));
-                }
+                return ok.value;
             } else {
-                completableValue = future.handle(handler);
-            }
-
-            try {
-                value = completableValue.get();
-                // check to ensure the future hasn't been completed with an exception
-                if (future.isCompletedExceptionally()) {
-                    future.get(); // call get to force the exception to be thrown for other concurrent callers
-                    throw new IllegalStateException("the future was completed exceptionally but no exception was thrown");
+                try (ReleasableLock ignored = segment.writeLock.acquire()) {
+                    CompletableFuture<Entry<K, V>> sanity = segment.map.get(key);
+                    if (sanity != null && sanity.isCompletedExceptionally()) {
+                        segment.map.remove(key);
+                    }
                 }
-            } catch (InterruptedException e) {
-                throw new IllegalStateException(e);
+                return null;
             }
+        };
+
+        CompletableFuture<V> completableValue;
+        if (future == null) {
+            future = completableFuture;
+            completableValue = future.handle(handler);
+            V loaded;
+            try {
+                loaded = loader.load(key);
+            } catch (Exception e) {
+                future.completeExceptionally(e);
+                throw new ExecutionException(e);
+            }
+            if (loaded == null) {
+                NullPointerException npe = new NullPointerException("loader returned a null value");
+                future.completeExceptionally(npe);
+                throw new ExecutionException(npe);
+            } else {
+                future.complete(new Entry<>(key, loaded, now));
+            }
+        } else {
+            completableValue = future.handle(handler);
+        }
+        V value;
+        try {
+            value = completableValue.get();
+            // check to ensure the future hasn't been completed with an exception
+            if (future.isCompletedExceptionally()) {
+                future.get(); // call get to force the exception to be thrown for other concurrent callers
+                throw new IllegalStateException("the future was completed exceptionally but no exception was thrown");
+            }
+        } catch (InterruptedException e) {
+            throw new IllegalStateException(e);
         }
         return value;
     }
@@ -504,16 +523,22 @@ public class Cache<K, V> {
         CacheSegment<K, V> segment = getCacheSegment(key);
         Tuple<Entry<K, V>, Entry<K, V>> tuple = segment.put(key, value, now);
         boolean replaced = false;
+        List<RemovalNotification<K, V>> removalNotifications = new ArrayList<>();
         try (ReleasableLock ignored = lruLock.acquire()) {
             if (tuple.v2() != null && tuple.v2().state == State.EXISTING) {
                 if (unlink(tuple.v2())) {
                     replaced = true;
                 }
             }
-            promote(tuple.v1(), now);
+            removalNotifications = promote(tuple.v1(), now).v2();
         }
         if (replaced) {
-            removalListener.onRemoval(new RemovalNotification<>(tuple.v2().key, tuple.v2().value, RemovalReason.REPLACED));
+            removalNotifications.add(new RemovalNotification<>(tuple.v2().key, tuple.v2().value, RemovalReason.REPLACED));
+        }
+        if (!removalNotifications.isEmpty()) {
+            for (RemovalNotification<K, V> removalNotification : removalNotifications) {
+                removalListener.onRemoval(removalNotification);
+            }
         }
     }
 
@@ -758,8 +783,17 @@ public class Cache<K, V> {
         }
     }
 
-    private boolean promote(Entry<K, V> entry, long now) {
+    /**
+     * Promotes the desired entry to the head of the lru list and tries to see if it needs to evict any entries in
+     * case the cache size is exceeding or the entry got expired.
+     * @param entry Entry to be promoted
+     * @param now the current time
+     * @return Returns a tuple. v1 signifies whether an entry got promoted, v2 signifies the list of removal
+     * notifications that the callers needs to handle.
+     */
+    private Tuple<Boolean, List<RemovalNotification<K, V>>> promote(Entry<K, V> entry, long now) {
         boolean promoted = true;
+        List<RemovalNotification<K, V>> removalNotifications = new ArrayList<>();
         try (ReleasableLock ignored = lruLock.acquire()) {
             switch (entry.state) {
                 case DELETED:
@@ -773,10 +807,21 @@ public class Cache<K, V> {
                     break;
             }
             if (promoted) {
-                evict(now);
+                while (tail != null && shouldPrune(tail, now)) {
+                    Entry<K, V> entryToBeRemoved = tail;
+                    CacheSegment<K, V> segment = getCacheSegment(entryToBeRemoved.key);
+                    if (segment != null) {
+                        segment.remove(entryToBeRemoved.key, entryToBeRemoved.value, f -> {});
+                    }
+                    if (unlink(entryToBeRemoved)) {
+                        removalNotifications.add(
+                            new RemovalNotification<>(entryToBeRemoved.key, entryToBeRemoved.value, RemovalReason.EVICTED)
+                        );
+                    }
+                }
             }
         }
-        return promoted;
+        return new Tuple<>(promoted, removalNotifications);
     }
 
     private void evict(long now) {
@@ -885,6 +930,10 @@ public class Cache<K, V> {
             unlink(entry);
             linkAtHead(entry);
         }
+    }
+
+    public ToLongBiFunction<K, V> getWeigher() {
+        return weigher;
     }
 
     private CacheSegment<K, V> getCacheSegment(K key) {
