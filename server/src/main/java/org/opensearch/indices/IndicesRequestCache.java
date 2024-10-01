@@ -84,6 +84,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -514,6 +517,10 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
         private volatile double stalenessThreshold;
         private final IndicesRequestCacheCleaner cacheCleaner;
 
+        // TODO: Proof of concept, may need to use opensearch threadpools passed in from Node.java instead
+        private static final int numCleanupKeyThreads = 3;
+        //private final ThreadPoolExecutor cleanupKeyRemovalPool;
+
         IndicesRequestCacheCleanupManager(ThreadPool threadpool, TimeValue cleanInterval, double stalenessThreshold) {
             this.stalenessThreshold = stalenessThreshold;
             this.keysToClean = ConcurrentCollections.newConcurrentSet();
@@ -721,6 +728,7 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
             if (canSkipCacheCleanup(stalenessThreshold)) {
                 return;
             }
+            ThreadPoolExecutor removalPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(numCleanupKeyThreads);
             // Contains CleanupKey objects with open shard but invalidated readerCacheKeyId.
             final Set<CleanupKey> cleanupKeysFromOutdatedReaders = new HashSet<>();
             // Contains CleanupKey objects for a full cache cleanup.
@@ -755,18 +763,21 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                 Key delegatingKey = key.key;
                 Tuple<ShardId, Integer> shardIdInfo = new Tuple<>(delegatingKey.shardId, delegatingKey.indexShardHashCode);
                 if (cleanupKeysFromFullClean.contains(shardIdInfo) || cleanupKeysFromClosedShards.contains(shardIdInfo)) {
-                    iterator.remove();
+                    //iterator.remove();
+                    removeKey(removalPool, key);
                 } else {
                     CacheEntity cacheEntity = cacheEntityLookup.apply(delegatingKey.shardId).orElse(null);
                     if (cacheEntity == null) {
                         // If cache entity is null, it means that index or shard got deleted/closed meanwhile.
                         // So we will delete this key.
                         dimensionListsToDrop.add(key.dimensions);
-                        iterator.remove();
+                        //iterator.remove();
+                        removeKey(removalPool, key);
                     } else {
                         CleanupKey cleanupKey = new CleanupKey(cacheEntity, delegatingKey.readerCacheKeyId);
                         if (cleanupKeysFromOutdatedReaders.contains(cleanupKey)) {
-                            iterator.remove();
+                            //iterator.remove();
+                            removeKey(removalPool, key);
                         }
                     }
                 }
@@ -783,7 +794,17 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                 dummyKey.setDropStatsForDimensions(true);
                 cache.invalidate(dummyKey);
             }
+            // How to await the pool being done?
+            // This is only TODO proof of concept
+            removalPool.shutdown();
+            try {
+                removalPool.awaitTermination(1, TimeUnit.MINUTES);
+            } catch (Exception ignored) {}
             cache.refresh();
+        }
+
+        private void removeKey(ThreadPoolExecutor pool, ICacheKey<Key> key) {
+            pool.execute(() -> cache.invalidate(key));
         }
 
         /**
