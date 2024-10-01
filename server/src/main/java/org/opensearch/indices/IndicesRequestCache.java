@@ -518,7 +518,9 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
         private final IndicesRequestCacheCleaner cacheCleaner;
 
         // TODO: Proof of concept, may need to use opensearch threadpools passed in from Node.java instead
-        private static final int numCleanupKeyThreads = 3;
+        private static final int NUM_CLEANUP_KEY_THREADS = 3;
+        private static final int KEYS_TO_DELETE_BATCH_SIZE = 1000; // TODO: change to 1k
+        private Set<ICacheKey<Key>> currentDeletionBatch;
         //private final ThreadPoolExecutor cleanupKeyRemovalPool;
 
         IndicesRequestCacheCleanupManager(ThreadPool threadpool, TimeValue cleanInterval, double stalenessThreshold) {
@@ -728,7 +730,7 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
             if (canSkipCacheCleanup(stalenessThreshold)) {
                 return;
             }
-            ThreadPoolExecutor removalPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(numCleanupKeyThreads);
+            ThreadPoolExecutor removalPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(NUM_CLEANUP_KEY_THREADS);
             // Contains CleanupKey objects with open shard but invalidated readerCacheKeyId.
             final Set<CleanupKey> cleanupKeysFromOutdatedReaders = new HashSet<>();
             // Contains CleanupKey objects for a full cache cleanup.
@@ -757,6 +759,8 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
             }
 
             Set<List<String>> dimensionListsToDrop = new HashSet<>();
+
+            currentDeletionBatch = new HashSet<>();
 
             for (Iterator<ICacheKey<Key>> iterator = cache.keys().iterator(); iterator.hasNext();) {
                 ICacheKey<Key> key = iterator.next();
@@ -788,11 +792,13 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                     dimensionListsToDrop.add(key.dimensions);
                 }
             }
-            for (List<String> closedDimensions : dimensionListsToDrop) {
-                // Invalidate a dummy key containing the dimensions we need to drop stats for
-                ICacheKey<Key> dummyKey = new ICacheKey<>(null, closedDimensions);
-                dummyKey.setDropStatsForDimensions(true);
-                cache.invalidate(dummyKey);
+            // Submit the final partial batch if present
+            if (!currentDeletionBatch.isEmpty()) {
+                removalPool.execute(() -> {
+                    for (ICacheKey<Key> batchKey : currentDeletionBatch) {
+                        cache.invalidate(batchKey);
+                    }
+                });
             }
             // How to await the pool being done?
             // This is only TODO proof of concept
@@ -800,11 +806,28 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
             try {
                 removalPool.awaitTermination(1, TimeUnit.MINUTES);
             } catch (Exception ignored) {}
+
+            for (List<String> closedDimensions : dimensionListsToDrop) {
+                // Invalidate a dummy key containing the dimensions we need to drop stats for
+                ICacheKey<Key> dummyKey = new ICacheKey<>(null, closedDimensions);
+                dummyKey.setDropStatsForDimensions(true);
+                cache.invalidate(dummyKey);
+            }
             cache.refresh();
         }
 
         private void removeKey(ThreadPoolExecutor pool, ICacheKey<Key> key) {
-            pool.execute(() -> cache.invalidate(key));
+            // Shouldn't have to worry about other threads interfering with contents of batch. This should only be called by one thread at a time
+            // so long as cleanupCache isn't running over itself.
+            currentDeletionBatch.add(key);
+            if (currentDeletionBatch.size() >= KEYS_TO_DELETE_BATCH_SIZE)  {
+                pool.execute(() -> {
+                    for (ICacheKey<Key> batchKey : currentDeletionBatch) {
+                        cache.invalidate(batchKey);
+                    }
+                });
+                currentDeletionBatch = new HashSet<>();
+            }
         }
 
         /**
