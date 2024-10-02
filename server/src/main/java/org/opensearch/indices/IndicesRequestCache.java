@@ -62,6 +62,8 @@ import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.RatioValue;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.ConcurrentCollections;
+import org.opensearch.common.util.concurrent.OpenSearchExecutors;
+import org.opensearch.common.util.concurrent.OpenSearchThreadPoolExecutor;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
@@ -70,6 +72,7 @@ import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.index.shard.IndexShard;
+import org.opensearch.node.Node;
 import org.opensearch.threadpool.ThreadPool;
 
 import java.io.Closeable;
@@ -87,11 +90,13 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.ToLongBiFunction;
 
+import static org.opensearch.common.util.concurrent.OpenSearchExecutors.daemonThreadFactory;
 import static org.opensearch.indices.IndicesService.INDICES_CACHE_CLEAN_INTERVAL_SETTING;
 
 /**
@@ -519,17 +524,29 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
 
         // TODO: Proof of concept, may need to use opensearch threadpools passed in from Node.java instead
         private static final int NUM_CLEANUP_KEY_THREADS = 3;
-        private static final int KEYS_TO_DELETE_BATCH_SIZE = 1000; // TODO: change to 1k
+        private static final int KEYS_TO_DELETE_BATCH_SIZE = 1000;
         private Set<ICacheKey<Key>> currentDeletionBatch;
-        //private final ThreadPoolExecutor cleanupKeyRemovalPool;
+
+        private final ThreadPool threadPool;
+
+        //private final OpenSearchThreadPoolExecutor keyDeletionThreadpoolExecutor;
+        public static final String KEY_DELETION_THREAD_NAME = "IndicesRequestCacheCleanup#KeyDeletion";
 
         IndicesRequestCacheCleanupManager(ThreadPool threadpool, TimeValue cleanInterval, double stalenessThreshold) {
             this.stalenessThreshold = stalenessThreshold;
             this.keysToClean = ConcurrentCollections.newConcurrentSet();
             this.cleanupKeyToCountMap = new ConcurrentHashMap<>();
             this.staleKeysCount = new AtomicInteger(0);
+            this.threadPool = threadpool;
             this.cacheCleaner = new IndicesRequestCacheCleaner(this, threadpool, cleanInterval);
             threadpool.schedule(cacheCleaner, cleanInterval, ThreadPool.Names.SAME);
+            /*this.keyDeletionThreadpoolExecutor = OpenSearchExecutors.newFixed(
+                nodeName + "/" + KEY_DELETION_THREAD_NAME,
+                NUM_CLEANUP_KEY_THREADS,
+                -1, // Infinite queue (?)
+                daemonThreadFactory(nodeName, KEY_DELETION_THREAD_NAME),
+                threadpool.getThreadContext()
+            ); // TODO: Shut this down on close?*/
         }
 
         void updateStalenessThreshold(double stalenessThreshold) {
@@ -759,6 +776,11 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
             }
 
             Set<List<String>> dimensionListsToDrop = new HashSet<>();
+            // We need to wait for all batches to complete before returning, but we don't know ahead of time how many
+            // batches there are. We use a phaser to keep track of this by registering each task before starting it,
+            // and having each task deregister on completion.
+            final Phaser phaser = new Phaser();
+            phaser.register();
 
             currentDeletionBatch = new HashSet<>();
 
@@ -768,7 +790,7 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                 Tuple<ShardId, Integer> shardIdInfo = new Tuple<>(delegatingKey.shardId, delegatingKey.indexShardHashCode);
                 if (cleanupKeysFromFullClean.contains(shardIdInfo) || cleanupKeysFromClosedShards.contains(shardIdInfo)) {
                     //iterator.remove();
-                    removeKey(removalPool, key);
+                    removeKey(threadPool, phaser, key);
                 } else {
                     CacheEntity cacheEntity = cacheEntityLookup.apply(delegatingKey.shardId).orElse(null);
                     if (cacheEntity == null) {
@@ -776,12 +798,12 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                         // So we will delete this key.
                         dimensionListsToDrop.add(key.dimensions);
                         //iterator.remove();
-                        removeKey(removalPool, key);
+                        removeKey(threadPool, phaser, key);
                     } else {
                         CleanupKey cleanupKey = new CleanupKey(cacheEntity, delegatingKey.readerCacheKeyId);
                         if (cleanupKeysFromOutdatedReaders.contains(cleanupKey)) {
                             //iterator.remove();
-                            removeKey(removalPool, key);
+                            removeKey(threadPool, phaser, key);
                         }
                     }
                 }
@@ -794,18 +816,15 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
             }
             // Submit the final partial batch if present
             if (!currentDeletionBatch.isEmpty()) {
-                removalPool.execute(() -> {
-                    for (ICacheKey<Key> batchKey : currentDeletionBatch) {
-                        cache.invalidate(batchKey);
-                    }
-                });
+                removeBatch(threadPool, phaser);
             }
+            phaser.arriveAndAwaitAdvance(); // Wait for all batches to signal completion
             // How to await the pool being done?
             // This is only TODO proof of concept
-            removalPool.shutdown();
+            /*removalPool.shutdown();
             try {
                 removalPool.awaitTermination(1, TimeUnit.MINUTES);
-            } catch (Exception ignored) {}
+            } catch (Exception ignored) {}*/
 
             for (List<String> closedDimensions : dimensionListsToDrop) {
                 // Invalidate a dummy key containing the dimensions we need to drop stats for
@@ -814,6 +833,33 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                 cache.invalidate(dummyKey);
             }
             cache.refresh();
+            /*try {
+                Thread.sleep(1000); // TODO: Debug only for tests
+            } catch (Exception ignored) {}*/
+        }
+
+        private void removeKey(ThreadPool pool, Phaser phaser, ICacheKey<Key> key) {
+            // Shouldn't have to worry about other threads interfering with contents of batch. This should only be called by one thread at a time
+            // so long as cleanupCache isn't running over itself.
+            currentDeletionBatch.add(key);
+            if (currentDeletionBatch.size() >= KEYS_TO_DELETE_BATCH_SIZE)  {
+                removeBatch(pool, phaser);
+            }
+        }
+
+        private synchronized void removeBatch(ThreadPool pool, Phaser phaser) {
+            phaser.register();
+            // Create a duplicate of the original batch to avoid issues with multiple threads accessing it at the same time
+            // Then wipe the original batch
+            Set<ICacheKey<Key>> batchCopy = new HashSet<>(currentDeletionBatch);
+            currentDeletionBatch = new HashSet<>();
+            pool.scheduleUnlessShuttingDown(TimeValue.ZERO, ThreadPool.Names.SAME,
+                () -> {
+                for (ICacheKey<Key> batchKey : batchCopy) {
+                    cache.invalidate(batchKey);
+                }
+                phaser.arriveAndDeregister();
+            });
         }
 
         private void removeKey(ThreadPoolExecutor pool, ICacheKey<Key> key) {
