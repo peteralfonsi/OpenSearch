@@ -747,7 +747,6 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
             if (canSkipCacheCleanup(stalenessThreshold)) {
                 return;
             }
-            ThreadPoolExecutor removalPool = (ThreadPoolExecutor) Executors.newFixedThreadPool(NUM_CLEANUP_KEY_THREADS);
             // Contains CleanupKey objects with open shard but invalidated readerCacheKeyId.
             final Set<CleanupKey> cleanupKeysFromOutdatedReaders = new HashSet<>();
             // Contains CleanupKey objects for a full cache cleanup.
@@ -789,7 +788,6 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                 Key delegatingKey = key.key;
                 Tuple<ShardId, Integer> shardIdInfo = new Tuple<>(delegatingKey.shardId, delegatingKey.indexShardHashCode);
                 if (cleanupKeysFromFullClean.contains(shardIdInfo) || cleanupKeysFromClosedShards.contains(shardIdInfo)) {
-                    //iterator.remove();
                     removeKey(threadPool, phaser, key);
                 } else {
                     CacheEntity cacheEntity = cacheEntityLookup.apply(delegatingKey.shardId).orElse(null);
@@ -797,12 +795,10 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                         // If cache entity is null, it means that index or shard got deleted/closed meanwhile.
                         // So we will delete this key.
                         dimensionListsToDrop.add(key.dimensions);
-                        //iterator.remove();
                         removeKey(threadPool, phaser, key);
                     } else {
                         CleanupKey cleanupKey = new CleanupKey(cacheEntity, delegatingKey.readerCacheKeyId);
                         if (cleanupKeysFromOutdatedReaders.contains(cleanupKey)) {
-                            //iterator.remove();
                             removeKey(threadPool, phaser, key);
                         }
                     }
@@ -819,12 +815,6 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                 removeBatch(threadPool, phaser);
             }
             phaser.arriveAndAwaitAdvance(); // Wait for all batches to signal completion
-            // How to await the pool being done?
-            // This is only TODO proof of concept
-            /*removalPool.shutdown();
-            try {
-                removalPool.awaitTermination(1, TimeUnit.MINUTES);
-            } catch (Exception ignored) {}*/
 
             for (List<String> closedDimensions : dimensionListsToDrop) {
                 // Invalidate a dummy key containing the dimensions we need to drop stats for
@@ -833,9 +823,6 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                 cache.invalidate(dummyKey);
             }
             cache.refresh();
-            /*try {
-                Thread.sleep(1000); // TODO: Debug only for tests
-            } catch (Exception ignored) {}*/
         }
 
         private void removeKey(ThreadPool pool, Phaser phaser, ICacheKey<Key> key) {
@@ -860,20 +847,6 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
                 }
                 phaser.arriveAndDeregister();
             });
-        }
-
-        private void removeKey(ThreadPoolExecutor pool, ICacheKey<Key> key) {
-            // Shouldn't have to worry about other threads interfering with contents of batch. This should only be called by one thread at a time
-            // so long as cleanupCache isn't running over itself.
-            currentDeletionBatch.add(key);
-            if (currentDeletionBatch.size() >= KEYS_TO_DELETE_BATCH_SIZE)  {
-                pool.execute(() -> {
-                    for (ICacheKey<Key> batchKey : currentDeletionBatch) {
-                        cache.invalidate(batchKey);
-                    }
-                });
-                currentDeletionBatch = new HashSet<>();
-            }
         }
 
         /**
