@@ -1530,6 +1530,8 @@ public class IndicesRequestCacheTests extends OpenSearchSingleNodeTestCase {
         IOUtils.close(cache);
     }
 
+    // TODO: How can we test early-exit behavior for cache cleanup? How do we make sure the first one runs long enough without being flaky? 
+
     public static String generateString(int length) {
         String characters = "abcdefghijklmnopqrstuvwxyz";
         StringBuilder sb = new StringBuilder(length);

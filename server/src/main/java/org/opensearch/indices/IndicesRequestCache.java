@@ -513,6 +513,7 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
         private final AtomicInteger staleKeysCount;
         private volatile double stalenessThreshold;
         private final IndicesRequestCacheCleaner cacheCleaner;
+        private final AtomicBoolean isCurrentlyCleaning;
 
         IndicesRequestCacheCleanupManager(ThreadPool threadpool, TimeValue cleanInterval, double stalenessThreshold) {
             this.stalenessThreshold = stalenessThreshold;
@@ -520,6 +521,7 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
             this.cleanupKeyToCountMap = new ConcurrentHashMap<>();
             this.staleKeysCount = new AtomicInteger(0);
             this.cacheCleaner = new IndicesRequestCacheCleaner(this, threadpool, cleanInterval);
+            this.isCurrentlyCleaning = new AtomicBoolean(false);
             threadpool.schedule(cacheCleaner, cleanInterval, ThreadPool.Names.SAME);
         }
 
@@ -713,77 +715,93 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
          * Cleans the cache based on the provided staleness threshold.
          * <p>If the percentage of stale keys in the cache is less than this threshold,the cache cleanup process is skipped.
          * @param stalenessThreshold The staleness threshold as a double.
+         * Returns true if cache cleanup happened, false if it was skipped or there were no keys to clean.
          */
-        private synchronized void cleanCache(double stalenessThreshold) {
-            if (logger.isDebugEnabled()) {
-                logger.debug("Cleaning Indices Request Cache with threshold : " + stalenessThreshold);
-            }
-            if (canSkipCacheCleanup(stalenessThreshold)) {
-                return;
-            }
-            // Contains CleanupKey objects with open shard but invalidated readerCacheKeyId.
-            final Set<CleanupKey> cleanupKeysFromOutdatedReaders = new HashSet<>();
-            // Contains CleanupKey objects for a full cache cleanup.
-            final Set<Tuple<ShardId, Integer>> cleanupKeysFromFullClean = new HashSet<>();
-            // Contains CleanupKey objects for a closed shard.
-            final Set<Tuple<ShardId, Integer>> cleanupKeysFromClosedShards = new HashSet<>();
-
-            for (Iterator<CleanupKey> iterator = keysToClean.iterator(); iterator.hasNext();) {
-                CleanupKey cleanupKey = iterator.next();
-                iterator.remove();
-                final IndexShard indexShard = (IndexShard) cleanupKey.entity.getCacheIdentity();
-                if (cleanupKey.readerCacheKeyId == null) {
-                    // null indicates full cleanup
-                    // Add both shardId and indexShardHashCode to uniquely identify an indexShard.
-                    cleanupKeysFromFullClean.add(new Tuple<>(indexShard.shardId(), indexShard.hashCode()));
-                } else if (!cleanupKey.entity.isOpen()) {
-                    // The shard is closed
-                    cleanupKeysFromClosedShards.add(new Tuple<>(indexShard.shardId(), indexShard.hashCode()));
-                } else {
-                    cleanupKeysFromOutdatedReaders.add(cleanupKey);
+        private boolean cleanCache(double stalenessThreshold) {
+            // Atomically get isCurrentlyCleaning's old value and, if it's false, set it to true
+            boolean isCleaning = isCurrentlyCleaning.compareAndExchange(false, true);
+            if (isCleaning) {
+                // Return early if isCurrentlyCleaning was set to true before we checked it
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Skipping scheduled cache clean, as previous cache clean is still running");
                 }
+                return false;
             }
+            try {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Cleaning Indices Request Cache with threshold : " + stalenessThreshold);
+                }
+                if (canSkipCacheCleanup(stalenessThreshold)) {
+                    return false;
+                }
+                // Contains CleanupKey objects with open shard but invalidated readerCacheKeyId.
+                final Set<CleanupKey> cleanupKeysFromOutdatedReaders = new HashSet<>();
+                // Contains CleanupKey objects for a full cache cleanup.
+                final Set<Tuple<ShardId, Integer>> cleanupKeysFromFullClean = new HashSet<>();
+                // Contains CleanupKey objects for a closed shard.
+                final Set<Tuple<ShardId, Integer>> cleanupKeysFromClosedShards = new HashSet<>();
 
-            if (cleanupKeysFromOutdatedReaders.isEmpty() && cleanupKeysFromFullClean.isEmpty() && cleanupKeysFromClosedShards.isEmpty()) {
-                return;
-            }
-
-            Set<List<String>> dimensionListsToDrop = new HashSet<>();
-
-            for (Iterator<ICacheKey<Key>> iterator = cache.keys().iterator(); iterator.hasNext();) {
-                ICacheKey<Key> key = iterator.next();
-                Key delegatingKey = key.key;
-                Tuple<ShardId, Integer> shardIdInfo = new Tuple<>(delegatingKey.shardId, delegatingKey.indexShardHashCode);
-                if (cleanupKeysFromFullClean.contains(shardIdInfo) || cleanupKeysFromClosedShards.contains(shardIdInfo)) {
+                for (Iterator<CleanupKey> iterator = keysToClean.iterator(); iterator.hasNext(); ) {
+                    CleanupKey cleanupKey = iterator.next();
                     iterator.remove();
-                } else {
-                    CacheEntity cacheEntity = cacheEntityLookup.apply(delegatingKey.shardId).orElse(null);
-                    if (cacheEntity == null) {
-                        // If cache entity is null, it means that index or shard got deleted/closed meanwhile.
-                        // So we will delete this key.
-                        dimensionListsToDrop.add(key.dimensions);
-                        iterator.remove();
+                    final IndexShard indexShard = (IndexShard) cleanupKey.entity.getCacheIdentity();
+                    if (cleanupKey.readerCacheKeyId == null) {
+                        // null indicates full cleanup
+                        // Add both shardId and indexShardHashCode to uniquely identify an indexShard.
+                        cleanupKeysFromFullClean.add(new Tuple<>(indexShard.shardId(), indexShard.hashCode()));
+                    } else if (!cleanupKey.entity.isOpen()) {
+                        // The shard is closed
+                        cleanupKeysFromClosedShards.add(new Tuple<>(indexShard.shardId(), indexShard.hashCode()));
                     } else {
-                        CleanupKey cleanupKey = new CleanupKey(cacheEntity, delegatingKey.readerCacheKeyId);
-                        if (cleanupKeysFromOutdatedReaders.contains(cleanupKey)) {
-                            iterator.remove();
-                        }
+                        cleanupKeysFromOutdatedReaders.add(cleanupKey);
                     }
                 }
 
-                if (cleanupKeysFromClosedShards.contains(shardIdInfo)) {
-                    // Since the shard is closed, the cache should drop stats for this shard.
-                    // This should not happen on a full cache cleanup.
-                    dimensionListsToDrop.add(key.dimensions);
+                if (cleanupKeysFromOutdatedReaders.isEmpty() && cleanupKeysFromFullClean.isEmpty() && cleanupKeysFromClosedShards.isEmpty()) {
+                    return false;
                 }
+
+                Set<List<String>> dimensionListsToDrop = new HashSet<>();
+
+                for (Iterator<ICacheKey<Key>> iterator = cache.keys().iterator(); iterator.hasNext(); ) {
+                    ICacheKey<Key> key = iterator.next();
+                    Key delegatingKey = key.key;
+                    Tuple<ShardId, Integer> shardIdInfo = new Tuple<>(delegatingKey.shardId, delegatingKey.indexShardHashCode);
+                    if (cleanupKeysFromFullClean.contains(shardIdInfo) || cleanupKeysFromClosedShards.contains(shardIdInfo)) {
+                        iterator.remove();
+                    } else {
+                        CacheEntity cacheEntity = cacheEntityLookup.apply(delegatingKey.shardId).orElse(null);
+                        if (cacheEntity == null) {
+                            // If cache entity is null, it means that index or shard got deleted/closed meanwhile.
+                            // So we will delete this key.
+                            dimensionListsToDrop.add(key.dimensions);
+                            iterator.remove();
+                        } else {
+                            CleanupKey cleanupKey = new CleanupKey(cacheEntity, delegatingKey.readerCacheKeyId);
+                            if (cleanupKeysFromOutdatedReaders.contains(cleanupKey)) {
+                                iterator.remove();
+                            }
+                        }
+                    }
+
+                    if (cleanupKeysFromClosedShards.contains(shardIdInfo)) {
+                        // Since the shard is closed, the cache should drop stats for this shard.
+                        // This should not happen on a full cache cleanup.
+                        dimensionListsToDrop.add(key.dimensions);
+                    }
+                }
+                for (List<String> closedDimensions : dimensionListsToDrop) {
+                    // Invalidate a dummy key containing the dimensions we need to drop stats for
+                    ICacheKey<Key> dummyKey = new ICacheKey<>(null, closedDimensions);
+                    dummyKey.setDropStatsForDimensions(true);
+                    cache.invalidate(dummyKey);
+                }
+                cache.refresh();
+                return true;
+            } finally {
+                // Ensure we set isCurrentlyCleaning back to false even if we hit some exception during cleanup
+                this.isCurrentlyCleaning.set(false);
             }
-            for (List<String> closedDimensions : dimensionListsToDrop) {
-                // Invalidate a dummy key containing the dimensions we need to drop stats for
-                ICacheKey<Key> dummyKey = new ICacheKey<>(null, closedDimensions);
-                dummyKey.setDropStatsForDimensions(true);
-                cache.invalidate(dummyKey);
-            }
-            cache.refresh();
         }
 
         /**
