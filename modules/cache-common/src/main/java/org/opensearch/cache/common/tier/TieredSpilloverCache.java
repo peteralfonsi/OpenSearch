@@ -85,6 +85,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
     private final int numberOfSegments;
 
     final TieredSpilloverCacheSegment<K, V>[] tieredSpilloverCacheSegments;
+    private final int hashBitMask;
 
     /**
      * This map is used to handle concurrent requests for same key in computeIfAbsent() to ensure we load the value
@@ -125,6 +126,8 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         }
         builder.cacheConfig.getClusterSettings()
             .addSettingsUpdateConsumer(DISK_CACHE_ENABLED_SETTING_MAP.get(builder.cacheType), this::enableDisableDiskCache);
+        this.hashBitMask = (this.numberOfSegments - 1) << 8; // Shift this to avoid intersection with the bits Cache.java uses
+        // TODO: this could cause issues for large segment amounts, but only bother if this actually helps at all
     }
 
     static class TieredSpilloverCacheSegment<K, V> implements ICache<K, V> {
@@ -575,7 +578,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
     }
 
     int getSegmentNumber(ICacheKey<K> key) {
-        return key.hashCode() & (this.numberOfSegments - 1);
+        return (key.hashCode() & this.hashBitMask) >> 8;
     }
 
     int getNumberOfSegments() {
