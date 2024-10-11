@@ -8,17 +8,12 @@
 
 package org.opensearch.common.countminsketch;
 
-import org.opensearch.common.util.concurrent.ReleasableLock;
-
 public class CountMinSketch {
     private final int depth;
     private final int width;
     private final int[][] table;
     private final int decayPeriod;
     private int incrementCounter; // Set to -1 for it to never decay
-    private ReleasableLock decayLock;
-    /*private List<Function<Integer, Integer>> hashFunctions;
-    private final int numHashFunctions;*/
 
     int decayCount;
 
@@ -29,21 +24,6 @@ public class CountMinSketch {
         this.decayPeriod = decayPeriod;
         this.incrementCounter = 0;
         this.decayCount = 0;
-        /*this.hashFunctions = new ArrayList<Function<Integer, Integer>>();
-        hashFunctions.add(this::caffeineHash);
-        //hashFunctions.add(this::hash2);
-        //hashFunctions.add(this::hash3);
-        this.numHashFunctions = hashFunctions.size();*/
-    }
-
-    private int hash1(int x) {
-        // TODO - Integer.hashCode() just returns its own value lol
-        // This doesn't have to be too good, and should be relatively cheap
-        // Taken from https://stackoverflow.com/questions/6082915/a-good-hash-function-to-use-in-interviews-for-integer-numbers-strings
-        x ^= (x << 13);
-        x ^= (x >>> 17);
-        x ^= (x << 5);
-        return x;
     }
 
     private int caffeineHash(int x) {
@@ -55,25 +35,6 @@ public class CountMinSketch {
         x ^= x >>> 15;
         return x;
     }
-
-    private int hash2(int x) {
-        x ^= (x << 13);
-        x ^= (x >>> 7);
-        x ^= (x << 17);
-        return x;
-    }
-
-    private int hash3(int x) {
-        x ^= (x >>> 12);
-        x ^= (x << 25);
-        x ^= (x >>> 27);
-        return x;
-    }
-
-    /*private int hash(int row, int x) {
-        int hashIndex = row % numHashFunctions;
-        return hashFunctions.get(hashIndex).apply(x);
-    }*/
 
     private int getColumn(int row, int x) {
         /*
