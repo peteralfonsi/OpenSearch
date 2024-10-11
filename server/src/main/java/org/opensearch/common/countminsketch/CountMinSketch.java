@@ -8,6 +8,9 @@
 
 package org.opensearch.common.countminsketch;
 
+/**
+ * CountMinSketch implementation.
+ */
 public class CountMinSketch {
     private final int depth;
     private final int width;
@@ -68,7 +71,7 @@ public class CountMinSketch {
         return lowestValue;
     }
 
-    public synchronized void decay() {
+    private synchronized void decay() {
         // Check decay counter again, this protects against double-decaying from multiple threads
         // TODO: I think this + synchronized block means we don't need a lock to prevent estimating/incrementing during decay?
         if (incrementCounter < decayPeriod) {
@@ -82,5 +85,4 @@ public class CountMinSketch {
         incrementCounter = 0;
         decayCount++;
     }
-
 }

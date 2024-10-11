@@ -235,7 +235,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                 builder.cacheType.getSettingPrefix()
             ).get(builder.cacheConfig.getSettings());
             this.sketch = new CountMinSketch(cmsDepth, cmsWidth, cmsDecayPeriod);
-            this.promotionThreshold = TieredSpilloverCacheSettings.TIERED_SPILLOVER_PROMOTION_THREHSOLD.getConcreteSettingForNamespace(
+            this.promotionThreshold = TieredSpilloverCacheSettings.TIERED_SPILLOVER_PROMOTION_THRESHOLD.getConcreteSettingForNamespace(
                 builder.cacheType.getSettingPrefix()
             ).get(builder.cacheConfig.getSettings());
         }

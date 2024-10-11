@@ -149,7 +149,7 @@ public class TieredSpilloverCacheSettings {
     /**
      * Setting defining the threshold at which disk keys are promoted back up to disk.
      */
-    public static final Setting.AffixSetting<Integer> TIERED_SPILLOVER_PROMOTION_THREHSOLD = Setting.suffixKeySetting(
+    public static final Setting.AffixSetting<Integer> TIERED_SPILLOVER_PROMOTION_THRESHOLD = Setting.suffixKeySetting(
         TieredSpilloverCache.TieredSpilloverCacheFactory.TIERED_SPILLOVER_CACHE_NAME + ".promotion.threshold",
         (key) -> Setting.intSetting(key, -1, -1, NodeScope
         )

@@ -2129,7 +2129,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
             ).getKey(),
             decayPeriod
         ).put(
-            TieredSpilloverCacheSettings.TIERED_SPILLOVER_PROMOTION_THREHSOLD.getConcreteSettingForNamespace(
+            TieredSpilloverCacheSettings.TIERED_SPILLOVER_PROMOTION_THRESHOLD.getConcreteSettingForNamespace(
                 CacheType.INDICES_REQUEST_CACHE.getSettingPrefix()
             ).getKey(),
             threshold
