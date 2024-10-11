@@ -23,6 +23,7 @@ import org.opensearch.common.cache.policy.CachedQueryResult;
 import org.opensearch.common.cache.stats.ImmutableCacheStatsHolder;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.collect.Tuple;
+import org.opensearch.common.countminsketch.CountMinSketch;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.unit.TimeValue;
@@ -150,6 +151,11 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
 
         private final TieredSpilloverCacheStatsHolder statsHolder;
 
+        private final CountMinSketch sketch;
+        private final int promotionThreshold; // If this is -1, never promote
+
+        private long numPromotions;
+
         /**
          * This map is used to handle concurrent requests for same key in computeIfAbsent() to ensure we load the value
          * only once.
@@ -218,6 +224,20 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
             cacheListMap.put(diskCache, new TierInfo(isDiskCacheEnabled, TIER_DIMENSION_VALUE_DISK));
             this.caches = Collections.synchronizedMap(cacheListMap);
             this.policies = builder.policies; // Will never be null; builder initializes it to an empty list
+
+            int cmsDepth = TieredSpilloverCacheSettings.TIERED_SPILLOVER_CMS_DEPTH.getConcreteSettingForNamespace(
+                builder.cacheType.getSettingPrefix()
+            ).get(builder.cacheConfig.getSettings());
+            int cmsWidth = TieredSpilloverCacheSettings.TIERED_SPILLOVER_CMS_WIDTH.getConcreteSettingForNamespace(
+                builder.cacheType.getSettingPrefix()
+            ).get(builder.cacheConfig.getSettings());
+            int cmsDecayPeriod = TieredSpilloverCacheSettings.TIERED_SPILLOVER_CMS_DECAY_PERIOD.getConcreteSettingForNamespace(
+                builder.cacheType.getSettingPrefix()
+            ).get(builder.cacheConfig.getSettings());
+            this.sketch = new CountMinSketch(cmsDepth, cmsWidth, cmsDecayPeriod);
+            this.promotionThreshold = TieredSpilloverCacheSettings.TIERED_SPILLOVER_PROMOTION_THREHSOLD.getConcreteSettingForNamespace(
+                builder.cacheType.getSettingPrefix()
+            ).get(builder.cacheConfig.getSettings());
         }
 
         // Package private for testing
@@ -317,9 +337,29 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                     // Miss for the heap tier, hit for the disk tier
                     statsHolder.incrementMisses(heapDimensionValues);
                     statsHolder.incrementHits(diskDimensionValues);
+                    checkPromotion(key, cacheValueTuple.v1());
                 }
             }
             return cacheValueTuple.v1();
+        }
+
+        private void checkPromotion(ICacheKey<K> key, V value) {
+            // Called on disk hit, to handle incrementing the frequency estimate and promote to disk tier if above threshold.
+            if (promotionThreshold < 0) {
+                return;
+            }
+            int x = key.hashCode();
+            sketch.increment(x);
+            int estimate = sketch.estimate(x);
+            if (estimate >= promotionThreshold) {
+                try (ReleasableLock ignore = writeLock.acquire()) {
+                    diskCache.invalidate(key);
+                    onHeapCache.put(key, value);
+                    numPromotions++;
+                } catch (Exception e) {
+                    logger.warn("Exception occurred during promotion", e);
+                }
+            }
         }
 
         private V compute(ICacheKey<K> key, LoadAwareCacheLoader<ICacheKey<K>, V> loader, CompletableFuture<Tuple<ICacheKey<K>, V>> future)
@@ -692,6 +732,15 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
             diskCacheEntries += tieredSpilloverCacheSegments[iter].diskCache.count();
         }
         return diskCacheEntries;
+    }
+
+    // Package private for testing.
+    long numPromotions() {
+        long numPromotions = 0;
+        for (int iter = 0; iter < this.numberOfSegments; iter++) {
+            numPromotions += tieredSpilloverCacheSegments[iter].numPromotions;
+        }
+        return numPromotions;
     }
 
     /**

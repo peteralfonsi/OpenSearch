@@ -2112,6 +2112,111 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         assertTrue(VALID_SEGMENT_COUNT_VALUES.contains(tieredSpilloverCache.getNumberOfSegments()));
     }
 
+    private void addPromotionSettings(Settings.Builder builder, int depth, int width, int decayPeriod, int threshold) {
+        builder.put(
+            TieredSpilloverCacheSettings.TIERED_SPILLOVER_CMS_WIDTH.getConcreteSettingForNamespace(
+                CacheType.INDICES_REQUEST_CACHE.getSettingPrefix()
+            ).getKey(),
+            width
+        ).put(
+            TieredSpilloverCacheSettings.TIERED_SPILLOVER_CMS_DEPTH.getConcreteSettingForNamespace(
+                CacheType.INDICES_REQUEST_CACHE.getSettingPrefix()
+            ).getKey(),
+            depth
+        ).put(
+            TieredSpilloverCacheSettings.TIERED_SPILLOVER_CMS_DECAY_PERIOD.getConcreteSettingForNamespace(
+                CacheType.INDICES_REQUEST_CACHE.getSettingPrefix()
+            ).getKey(),
+            decayPeriod
+        ).put(
+            TieredSpilloverCacheSettings.TIERED_SPILLOVER_PROMOTION_THREHSOLD.getConcreteSettingForNamespace(
+                CacheType.INDICES_REQUEST_CACHE.getSettingPrefix()
+            ).getKey(),
+            threshold
+        );
+    }
+
+    public void testSimplePromotion() throws Exception {
+        int onHeapCacheSize = 1;
+        int diskCacheSize = 100;
+        int totalSize = onHeapCacheSize + diskCacheSize;
+        int keyValueSize = 50;
+        int promotionThreshold = 3;
+        MockCacheRemovalListener<String, String> removalListener = new MockCacheRemovalListener<>();
+        ICache.Factory onHeapCacheFactory = new OpenSearchOnHeapCache.OpenSearchOnHeapCacheFactory();
+
+        Settings.Builder builder = Settings.builder()
+            .put(
+                CacheSettings.getConcreteStoreNameSettingForCacheType(CacheType.INDICES_REQUEST_CACHE).getKey(),
+                TieredSpilloverCache.TieredSpilloverCacheFactory.TIERED_SPILLOVER_CACHE_NAME
+            )
+            .put(FeatureFlags.PLUGGABLE_CACHE, "true")
+            .put(
+                TieredSpilloverCacheSettings.TIERED_SPILLOVER_ONHEAP_STORE_SIZE.getConcreteSettingForNamespace(
+                    CacheType.INDICES_REQUEST_CACHE.getSettingPrefix()
+                ).getKey(),
+                onHeapCacheSize * keyValueSize + "b"
+            )
+            .put(TIERED_SPILLOVER_SEGMENTS.getConcreteSettingForNamespace(CacheType.INDICES_REQUEST_CACHE.getSettingPrefix()).getKey(), 1)
+            ;
+
+        addPromotionSettings(builder, 5, 1024, -1, promotionThreshold);
+        Settings settings = builder.build();
+
+        CacheConfig<String, String> cacheConfig = new CacheConfig.Builder<String, String>().setKeyType(String.class)
+            .setKeyType(String.class)
+            .setWeigher((k, v) -> keyValueSize)
+            .setRemovalListener(removalListener)
+            .setKeySerializer(new StringSerializer())
+            .setValueSerializer(new StringSerializer())
+            .setDimensionNames(dimensionNames)
+            .setSettings(settings)
+            .setStoragePath(getStoragePath(settings))
+            .setClusterSettings(clusterSettings)
+            .build();
+
+        ICache.Factory mockDiskCacheFactory = new MockDiskCache.MockDiskCacheFactory(0, diskCacheSize, false, keyValueSize);
+
+        TieredSpilloverCache<String, String> tieredSpilloverCache = new TieredSpilloverCache.Builder<String, String>()
+            .setOnHeapCacheFactory(onHeapCacheFactory)
+            .setDiskCacheFactory(mockDiskCacheFactory)
+            .setCacheConfig(cacheConfig)
+            .setRemovalListener(removalListener)
+            .setCacheType(CacheType.INDICES_REQUEST_CACHE)
+            .setNumberOfSegments(1)
+            .setOnHeapCacheSizeInBytes(onHeapCacheSize * keyValueSize)
+            .setDiskCacheSize(diskCacheSize)
+            .build();
+
+        // Put 2 values in the cache so the first one enters the disk tier.
+        int numOfItems1 = randomIntBetween(onHeapCacheSize + 1, totalSize);
+        ICacheKey<String> keyToPromote = getICacheKey(UUID.randomUUID().toString());
+        ICacheKey<String> heapKey = getICacheKey(UUID.randomUUID().toString());
+        LoadAwareCacheLoader<ICacheKey<String>, String> tieredCacheLoader = getLoadAwareCacheLoader();
+
+        tieredSpilloverCache.computeIfAbsent(keyToPromote, tieredCacheLoader);
+        tieredSpilloverCache.computeIfAbsent(heapKey, tieredCacheLoader);
+        assertEquals(1, tieredSpilloverCache.onHeapCacheCount());
+        assertEquals(1, tieredSpilloverCache.diskCacheCount());
+
+        // Now we hit the disk key promotionThreshold times. We expect it to be promoted to the heap tier,
+        // which will evict the original key into the disk tier.
+
+        for (int i = 0; i < promotionThreshold; i++) {
+            tieredSpilloverCache.computeIfAbsent(keyToPromote, tieredCacheLoader);
+        }
+        assertEquals(1, tieredSpilloverCache.numPromotions());
+        // We should have numPromotions disk hits and 0 heap hits. We only have 1 segment so we can check that way.
+        assertEquals(promotionThreshold, getHitsForTier(tieredSpilloverCache, TIER_DIMENSION_VALUE_DISK));
+        assertEquals(0, getHitsForTier(tieredSpilloverCache, TIER_DIMENSION_VALUE_ON_HEAP));
+        // If we hit the key again it should be on the heap.
+        tieredSpilloverCache.computeIfAbsent(keyToPromote, tieredCacheLoader);
+        assertEquals(1, getHitsForTier(tieredSpilloverCache, TIER_DIMENSION_VALUE_ON_HEAP));
+        // Finally confirm there's 1 key in each tier.
+        assertEquals(1, tieredSpilloverCache.onHeapCacheCount());
+        assertEquals(1, tieredSpilloverCache.diskCacheCount());
+    }
+
     private List<String> getMockDimensions() {
         List<String> dims = new ArrayList<>();
         for (String dimensionName : dimensionNames) {

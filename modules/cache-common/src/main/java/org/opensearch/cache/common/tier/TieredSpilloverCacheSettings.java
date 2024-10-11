@@ -116,6 +116,45 @@ public class TieredSpilloverCacheSettings {
         )
     );
 
+    // TODO: Settings around promotion of keys from disk to heap tier.
+    //  Most of these won't be exposed in the end, but are here for ease of testing.
+
+    /**
+     * Setting defining the width of the count min sketch in the TSC.
+     */
+    public static final Setting.AffixSetting<Integer> TIERED_SPILLOVER_CMS_WIDTH = Setting.suffixKeySetting(
+        TieredSpilloverCache.TieredSpilloverCacheFactory.TIERED_SPILLOVER_CACHE_NAME + ".promotion.cms.width",
+        (key) -> Setting.intSetting(key, 1024, 128, NodeScope
+        )
+    );
+
+    /**
+     * Setting defining the depth of the count min sketch in the TSC.
+     */
+    public static final Setting.AffixSetting<Integer> TIERED_SPILLOVER_CMS_DEPTH = Setting.suffixKeySetting(
+        TieredSpilloverCache.TieredSpilloverCacheFactory.TIERED_SPILLOVER_CACHE_NAME + ".promotion.cms.depth",
+        (key) -> Setting.intSetting(key, 8, 3, NodeScope
+        )
+    );
+
+    /**
+     * Setting defining the width of the count min sketch in the TSC.
+     */
+    public static final Setting.AffixSetting<Integer> TIERED_SPILLOVER_CMS_DECAY_PERIOD = Setting.suffixKeySetting(
+        TieredSpilloverCache.TieredSpilloverCacheFactory.TIERED_SPILLOVER_CACHE_NAME + ".promotion.cms.decay_period",
+        (key) -> Setting.intSetting(key, 5000, -1, NodeScope
+        )
+    ); // Min value is -1 for disabled decay (useful in testing)
+
+    /**
+     * Setting defining the threshold at which disk keys are promoted back up to disk.
+     */
+    public static final Setting.AffixSetting<Integer> TIERED_SPILLOVER_PROMOTION_THREHSOLD = Setting.suffixKeySetting(
+        TieredSpilloverCache.TieredSpilloverCacheFactory.TIERED_SPILLOVER_CACHE_NAME + ".promotion.threshold",
+        (key) -> Setting.intSetting(key, -1, -1, NodeScope
+        )
+    ); // Default value is -1 for disabled behavior.
+
     /**
      * Stores took time policy settings for various cache types as these are dynamic so that can be registered and
      * retrieved accordingly.
