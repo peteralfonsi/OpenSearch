@@ -350,7 +350,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
             }
             int x = key.hashCode();
             sketch.increment(x);
-            int estimate = sketch.estimate(x);
+            long estimate = sketch.estimate(x);
             if (estimate >= promotionThreshold) {
                 try (ReleasableLock ignore = writeLock.acquire()) {
                     diskCache.invalidate(key);
@@ -691,7 +691,9 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
 
     @Override
     public ImmutableCacheStatsHolder stats(String[] levels) {
-        return statsHolder.getImmutableCacheStatsHolder(levels);
+        ImmutableCacheStatsHolder holder = statsHolder.getImmutableCacheStatsHolder(levels);
+        holder.numPromotions = numPromotions(); // TODO: Hack to test number of promotions, will remove after testing
+        return holder;
     }
 
     // Package private for testing.

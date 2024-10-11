@@ -49,6 +49,9 @@ public class ImmutableCacheStatsHolder implements Writeable, ToXContent {
     private static final String SERIALIZATION_BEGIN_NODE = "_";
     private static final String SERIALIZATION_DONE = "end";
 
+    public long numPromotions; // TODO: For testing only, will be removed
+    public static String PROMOTIONS_FIELD = "promotions";
+
     ImmutableCacheStatsHolder(
         DefaultCacheStatsHolder.Node originalStatsRoot,
         String[] levels,
@@ -61,9 +64,11 @@ public class ImmutableCacheStatsHolder implements Writeable, ToXContent {
         this.storeName = storeName;
         this.statsRoot = aggregateByLevels(originalStatsRoot, originalDimensionNames);
         makeNodeUnmodifiable(statsRoot);
+        this.numPromotions = 0;
     }
 
     public ImmutableCacheStatsHolder(StreamInput in) throws IOException {
+        this.numPromotions = in.readLong();
         this.dimensionNames = List.of(in.readStringArray());
         this.storeName = in.readString();
         this.statsRoot = deserializeTree(in);
@@ -71,6 +76,7 @@ public class ImmutableCacheStatsHolder implements Writeable, ToXContent {
     }
 
     public void writeTo(StreamOutput out) throws IOException {
+        out.writeLong(numPromotions);
         out.writeStringArray(dimensionNames.toArray(new String[0]));
         out.writeString(storeName);
         writeNode(statsRoot, out);
@@ -243,6 +249,7 @@ public class ImmutableCacheStatsHolder implements Writeable, ToXContent {
     public XContentBuilder toXContent(XContentBuilder builder, Params params) throws IOException {
         // Always show total stats, regardless of levels
         getTotalStats().toXContent(builder, params);
+        builder.field(PROMOTIONS_FIELD, numPromotions);
 
         List<String> filteredLevels = filterLevels(getLevels(params), dimensionNames);
         assert filteredLevels.equals(dimensionNames);

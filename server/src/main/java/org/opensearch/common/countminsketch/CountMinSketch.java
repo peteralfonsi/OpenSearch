@@ -11,7 +11,7 @@ package org.opensearch.common.countminsketch;
 public class CountMinSketch {
     private final int depth;
     private final int width;
-    private final int[][] table;
+    private final long[][] table;
     private final int decayPeriod;
     private int incrementCounter; // Set to -1 for it to never decay
 
@@ -20,7 +20,7 @@ public class CountMinSketch {
     public CountMinSketch(int depth, int width, int decayPeriod) {
         this.depth = depth;
         this.width = width;
-        this.table = new int[depth][width];
+        this.table = new long[depth][width];
         this.decayPeriod = decayPeriod;
         this.incrementCounter = 0;
         this.decayCount = 0;
@@ -57,10 +57,10 @@ public class CountMinSketch {
         }
     }
 
-    public int estimate(int x) {
-        int lowestValue = Integer.MAX_VALUE;
+    public long estimate(int x) {
+        long lowestValue = Long.MAX_VALUE;
         for (int row = 0; row < depth; row++) {
-            int newValue = table[row][getColumn(row, x)];
+            long newValue = table[row][getColumn(row, x)];
             if (newValue < lowestValue) {
                 lowestValue = newValue;
             }

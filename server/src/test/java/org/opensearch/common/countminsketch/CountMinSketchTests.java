@@ -45,7 +45,7 @@ public class CountMinSketchTests extends OpenSearchTestCase {
         int numWithError = 0;
         double totError = 0.0;
         for (int i = 0; i < numKeys; i++) {
-            int estimate = cms.estimate(i);
+            long estimate = cms.estimate(i);
             assertTrue(estimate >= trueFrequencies[i]);
             if (estimate > trueFrequencies[i]) {
                 numWithError++;
