@@ -234,6 +234,9 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
             int cmsDecayPeriod = TieredSpilloverCacheSettings.TIERED_SPILLOVER_CMS_DECAY_PERIOD.getConcreteSettingForNamespace(
                 builder.cacheType.getSettingPrefix()
             ).get(builder.cacheConfig.getSettings());
+            // Each segment has fewer hits so decays happen less often, effectively increasing frequency estimates for more segments.
+            // Adjust for this by reducing the decay period.
+            cmsDecayPeriod /= numberOfSegments;
             this.sketch = new CountMinSketch(cmsDepth, cmsWidth, cmsDecayPeriod);
             this.promotionThreshold = TieredSpilloverCacheSettings.TIERED_SPILLOVER_PROMOTION_THRESHOLD.getConcreteSettingForNamespace(
                 builder.cacheType.getSettingPrefix()
@@ -359,6 +362,7 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                 } catch (Exception e) {
                     logger.warn("Exception occurred during promotion", e);
                 }
+                updateStatsOnPut(TIER_DIMENSION_VALUE_ON_HEAP, key, value);
             }
         }
 
