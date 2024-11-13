@@ -128,6 +128,10 @@ public class MockDiskCache<K, V> implements ICache<K, V> {
 
     }
 
+    long getMaxSize() {
+        return maxSize;
+    }
+
     public static class MockDiskCacheFactory implements Factory {
 
         public static final String NAME = "mockDiskCache";
@@ -159,7 +163,7 @@ public class MockDiskCache<K, V> implements ICache<K, V> {
                 .setStatsTrackingEnabled(config.getStatsTrackingEnabled());
 
             // For mock disk cache, size refers to number of entries for simplicity.
-            if (config.getMaxSizeInBytes() > 0) {
+            if (config.getMaxSizeInBytes() > 0 && config.getConfigSizeOverridesSettingSize()) {
                 builder.setMaxSize(Math.toIntExact(config.getMaxSizeInBytes()));
             } else {
                 builder.setMaxSize(maxSize);

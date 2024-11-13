@@ -76,6 +76,13 @@ public class CacheConfig<K, V> {
 
     private final String cacheAlias;
 
+    /**
+     * If true, the size in this config will override the size setting for the cache implementation, for example
+     * indices.requests.cache.opensearch_onheap.size. Defaults to false.
+     */
+
+    private final boolean configSizeOverridesSettingSize;
+
     private CacheConfig(Builder<K, V> builder) {
         this.keyType = builder.keyType;
         this.valueType = builder.valueType;
@@ -93,6 +100,7 @@ public class CacheConfig<K, V> {
         this.storagePath = builder.storagePath;
         this.segmentCount = builder.segmentCount;
         this.cacheAlias = builder.cacheAlias;
+        this.configSizeOverridesSettingSize = builder.configSizeOverridesSettingSize;
     }
 
     public Class<K> getKeyType() {
@@ -159,6 +167,10 @@ public class CacheConfig<K, V> {
         return cacheAlias;
     }
 
+    public boolean getConfigSizeOverridesSettingSize() {
+        return configSizeOverridesSettingSize;
+    }
+
     /**
      * Builder class to build Cache config related parameters.
      * @param <K> Type of key.
@@ -187,6 +199,8 @@ public class CacheConfig<K, V> {
         private String storagePath;
         private int segmentCount;
         private String cacheAlias;
+
+        private boolean configSizeOverridesSettingSize = false;
 
         public Builder() {}
 
@@ -267,6 +281,11 @@ public class CacheConfig<K, V> {
 
         public Builder<K, V> setCacheAlias(String cacheAlias) {
             this.cacheAlias = cacheAlias;
+            return this;
+        }
+
+        public Builder<K, V> setConfigSizeOverridesSettingSize(boolean configSizeOverridesSettingSize) {
+            this.configSizeOverridesSettingSize = configSizeOverridesSettingSize;
             return this;
         }
 

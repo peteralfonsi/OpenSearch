@@ -188,10 +188,12 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                     .setSegmentCount(1) // We don't need to make underlying caches multi-segmented
                     .setStatsTrackingEnabled(false)
                     .setCacheAlias("tiered_on_heap#" + segmentNumber)
+                    // If the implementation-specific size setting is incorrectly present, we should override that value with
+                    // the correct value per segment calculated from TIERED_SPILLOVER_ONHEAP_STORE_SIZE
+                    .setConfigSizeOverridesSettingSize(true)
                     .build(),
                 builder.cacheType,
                 builder.cacheFactories
-
             );
             this.diskCache = builder.diskCacheFactory.create(
                 new CacheConfig.Builder<K, V>().setRemovalListener(onDiskRemovalListener)
@@ -207,6 +209,9 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
                     .setMaxSizeInBytes(diskCacheSizeInBytes)
                     .setStoragePath(builder.cacheConfig.getStoragePath() + "/" + segmentNumber)
                     .setCacheAlias("tiered_disk_cache#" + segmentNumber)
+                    // If the implementation-specific size setting is incorrectly present, we should override that value with
+                    // the correct value per segment calculated from TIERED_SPILLOVER_DISK_STORE_SIZE
+                    .setConfigSizeOverridesSettingSize(true)
                     .build(),
                 builder.cacheType,
                 builder.cacheFactories

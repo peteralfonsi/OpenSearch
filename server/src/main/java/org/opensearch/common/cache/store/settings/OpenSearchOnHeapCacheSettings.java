@@ -26,6 +26,8 @@ public class OpenSearchOnHeapCacheSettings {
 
     /**
      * Setting to define maximum size for the cache as a percentage of heap memory available.
+     * This setting overrides the size passed into the CacheConfig, if one is present.
+     * If this cache is used as a tier in a TieredSpilloverCache, this setting is ignored.
      *
      * Setting pattern: {cache_type}.opensearch_onheap.size
      */

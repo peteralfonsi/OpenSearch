@@ -80,8 +80,8 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
         this.weigher = builder.getWeigher();
     }
 
-    // package private for testing
-    long getMaximumWeight() {
+    // public for testing
+    public long getMaximumWeight() {
         return this.maximumWeight;
     }
 
@@ -190,14 +190,19 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
             Setting<String> cacheSettingForCacheType = CacheSettings.CACHE_TYPE_STORE_NAME.getConcreteSettingForNamespace(
                 cacheType.getSettingPrefix()
             );
-            long maxSizeInBytes = ((ByteSizeValue) settingList.get(MAXIMUM_SIZE_IN_BYTES_KEY).get(settings)).getBytes();
+            long maxSizeFromSetting = ((ByteSizeValue) settingList.get(MAXIMUM_SIZE_IN_BYTES_KEY).get(settings)).getBytes();
+            long maxSizeFromConfig = config.getMaxSizeInBytes();
 
-            if (config.getMaxSizeInBytes() > 0) { // If this is passed from upstream(like tieredCache), then use this
-                // instead.
-                builder.setMaximumWeightInBytes(config.getMaxSizeInBytes());
+            if (config.getMaxSizeInBytes() > 0 && config.getConfigSizeOverridesSettingSize()) {
+                /*
+                Use the cache config value if the config specifies we should override the setting value.
+                This can be passed down from the TieredSpilloverCache when creating individual segments.
+                 */
+                builder.setMaximumWeightInBytes(maxSizeFromConfig);
             } else {
-                builder.setMaximumWeightInBytes(maxSizeInBytes);
+                builder.setMaximumWeightInBytes(maxSizeFromSetting);
             }
+
             if (config.getSegmentCount() > 0) {
                 builder.setNumberOfSegments(config.getSegmentCount());
             } else {

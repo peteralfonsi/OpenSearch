@@ -15,6 +15,7 @@ import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.settings.CacheSettings;
 import org.opensearch.common.cache.stats.ImmutableCacheStats;
 import org.opensearch.common.cache.stats.ImmutableCacheStatsHolder;
 import org.opensearch.common.cache.store.config.CacheConfig;
@@ -105,35 +106,75 @@ public class OpenSearchOnHeapCacheTests extends OpenSearchTestCase {
         }
     }
 
-    public void testWithCacheConfigSettings() {
-        MockRemovalListener<String, String> listener = new MockRemovalListener<>();
-        int maxKeys = between(10, 50);
-        ICache.Factory onHeapCacheFactory = new OpenSearchOnHeapCache.OpenSearchOnHeapCacheFactory();
-        Settings settings = Settings.builder()
-            .put(
-                OpenSearchOnHeapCacheSettings.getSettingListForCacheType(CacheType.INDICES_REQUEST_CACHE)
-                    .get(MAXIMUM_SIZE_IN_BYTES_KEY)
-                    .getKey(),
-                1000 + "b" // Setting some random value which shouldn't be honored.
-            )
+    public void testWithCacheConfigSettings_WhenPluggableCachingOff() {
+        // The "pluggable caching off" case can happen when the PLUGGABLE_CACHE setting is false, or if the store name is blank.
+        // The cache should get its size from the config in both cases.
+        Settings.Builder settingsBuilder = Settings.builder().put(FeatureFlags.PLUGGABLE_CACHE, false);
+        long maxSizeFromSetting = between(1000, 2000);
+        long maxSizeFromConfig = between(3000, 4000);
+        OpenSearchOnHeapCache<String, String> onHeapCache = setupMaxSizeTest(settingsBuilder, maxSizeFromSetting, maxSizeFromConfig, false);
+        assertEquals(maxSizeFromConfig, onHeapCache.getMaximumWeight());
+
+        Settings.Builder storeNameBlankSettingsBuilder = Settings.builder().put(FeatureFlags.PLUGGABLE_CACHE, true);
+        onHeapCache = setupMaxSizeTest(storeNameBlankSettingsBuilder, maxSizeFromSetting, maxSizeFromConfig, false);
+        assertEquals(maxSizeFromConfig, onHeapCache.getMaximumWeight());
+    }
+
+    public void testWithCacheConfigSettings_WhenPluggableCachingOn() {
+        // When pluggable caching is on, the cache should get its size from the setting.
+        Settings.Builder settingsBuilder = Settings.builder()
             .put(FeatureFlags.PLUGGABLE_CACHE, true)
-            .build();
+            .put(
+                CacheSettings.getConcreteStoreNameSettingForCacheType(CacheType.INDICES_REQUEST_CACHE).getKey(),
+                OpenSearchOnHeapCache.OpenSearchOnHeapCacheFactory.NAME
+            );
+        long maxSizeFromSetting = between(1000, 2000);
+        long maxSizeFromConfig = between(3000, 4000);
+        OpenSearchOnHeapCache<String, String> onHeapCache = setupMaxSizeTest(settingsBuilder, maxSizeFromSetting, maxSizeFromConfig, false);
+        assertEquals(maxSizeFromSetting, onHeapCache.getMaximumWeight());
+    }
+
+    public void testWithCacheConfigSettings_WhenPluggableCachingOn_AndConfigOverridesSetting() {
+        // When pluggable caching is on and the config is set to override the setting, the cache should get its size from the config.
+        Settings.Builder settingsBuilder = Settings.builder()
+            .put(FeatureFlags.PLUGGABLE_CACHE, true)
+            .put(
+                CacheSettings.getConcreteStoreNameSettingForCacheType(CacheType.INDICES_REQUEST_CACHE).getKey(),
+                OpenSearchOnHeapCache.OpenSearchOnHeapCacheFactory.NAME
+            );
+        long maxSizeFromSetting = between(1000, 2000);
+        long maxSizeFromConfig = between(3000, 4000);
+        OpenSearchOnHeapCache<String, String> onHeapCache = setupMaxSizeTest(settingsBuilder, maxSizeFromSetting, maxSizeFromConfig, true);
+        assertEquals(maxSizeFromConfig, onHeapCache.getMaximumWeight());
+    }
+
+    private OpenSearchOnHeapCache<String, String> setupMaxSizeTest(
+        Settings.Builder settingsBuilder,
+        long maxSizeFromSetting,
+        long maxSizeFromConfig,
+        boolean configSizeOverridesSettingSize
+    ) {
+        MockRemovalListener<String, String> listener = new MockRemovalListener<>();
+        settingsBuilder.put(
+            OpenSearchOnHeapCacheSettings.getSettingListForCacheType(CacheType.INDICES_REQUEST_CACHE)
+                .get(MAXIMUM_SIZE_IN_BYTES_KEY)
+                .getKey(),
+            maxSizeFromSetting + "b"
+        );
 
         CacheConfig<String, String> cacheConfig = new CacheConfig.Builder<String, String>().setKeyType(String.class)
             .setValueType(String.class)
             .setWeigher((k, v) -> keyValueSize)
             .setRemovalListener(listener)
-            .setSettings(settings)
+            .setSettings(settingsBuilder.build())
             .setDimensionNames(dimensionNames)
-            .setMaxSizeInBytes(maxKeys * keyValueSize) // this should get honored
+            .setMaxSizeInBytes(maxSizeFromConfig)
+            .setConfigSizeOverridesSettingSize(configSizeOverridesSettingSize)
             .setStatsTrackingEnabled(true)
             .build();
-        OpenSearchOnHeapCache<String, String> onHeapCache = (OpenSearchOnHeapCache<String, String>) onHeapCacheFactory.create(
-            cacheConfig,
-            CacheType.INDICES_REQUEST_CACHE,
-            null
-        );
-        assertEquals(maxKeys * keyValueSize, onHeapCache.getMaximumWeight());
+
+        ICache.Factory onHeapCacheFactory = new OpenSearchOnHeapCache.OpenSearchOnHeapCacheFactory();
+        return (OpenSearchOnHeapCache<String, String>) onHeapCacheFactory.create(cacheConfig, CacheType.INDICES_REQUEST_CACHE, null);
     }
 
     private void assertZeroStats(ImmutableCacheStatsHolder stats) {

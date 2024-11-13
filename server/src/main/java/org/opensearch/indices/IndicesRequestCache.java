@@ -124,6 +124,12 @@ public final class IndicesRequestCache implements RemovalListener<ICacheKey<Indi
         Property.Dynamic,
         Property.IndexScope
     );
+
+    /**
+     * If pluggable caching is off, this setting determines the cache size.
+     * If pluggable caching is on, this setting is the fallback value, but if an implementation-specific size setting like
+     * indices.requests.cache.opensearch_onheap.size is set, that setting will be used instead.
+     */
     public static final Setting<ByteSizeValue> INDICES_CACHE_QUERY_SIZE = Setting.memorySizeSetting(
         "indices.requests.cache.size",
         "1%",

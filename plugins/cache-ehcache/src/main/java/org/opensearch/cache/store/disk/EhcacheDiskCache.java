@@ -680,6 +680,11 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         return valueSerializer.deserialize(binary.value);
     }
 
+    // Pkg-private for testing.
+    long getMaxWeightInBytes() {
+        return maxWeightInBytes;
+    }
+
     /**
      * Factory to create an ehcache disk cache.
      */
@@ -739,12 +744,12 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
                 .setRemovalListener(config.getRemovalListener())
                 .setExpireAfterAccess((TimeValue) settingList.get(DISK_CACHE_EXPIRE_AFTER_ACCESS_KEY).get(settings))
                 .setSettings(settings);
-            long maxSizeInBytes = (Long) settingList.get(DISK_MAX_SIZE_IN_BYTES_KEY).get(settings);
-            // If config value is set, use this instead.
-            if (config.getMaxSizeInBytes() > 0) {
+            long maxSizeFromSetting = (Long) settingList.get(DISK_MAX_SIZE_IN_BYTES_KEY).get(settings);
+            // If config value is set and it should override the setting value, use it instead.
+            if (config.getMaxSizeInBytes() > 0 && config.getConfigSizeOverridesSettingSize()) {
                 builder.setMaximumWeightInBytes(config.getMaxSizeInBytes());
             } else {
-                builder.setMaximumWeightInBytes(maxSizeInBytes);
+                builder.setMaximumWeightInBytes(maxSizeFromSetting);
             }
             int segmentCount = (Integer) EhcacheDiskCacheSettings.getSettingListForCacheType(cacheType).get(DISK_SEGMENT_KEY).get(settings);
             if (config.getSegmentCount() > 0) {
