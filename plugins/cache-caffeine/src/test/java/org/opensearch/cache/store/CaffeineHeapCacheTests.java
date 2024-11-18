@@ -30,6 +30,7 @@ import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.ToLongBiFunction;
 
 public class CaffeineHeapCacheTests extends OpenSearchTestCase {
@@ -42,7 +43,6 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
         ToLongBiFunction<ICacheKey<String>, String> weigher = getMockWeigher(false);
         MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
         ICache<String, String> caffeineTest = new CaffeineHeapCache.Builder<String, String>().setDimensionNames(List.of(dimensionName))
-            .setExecutor(Runnable::run) // Specify direct (same thread) executor for testing purposes.
             .setExpireAfterAccess(TimeValue.MAX_VALUE)
             .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
             .setWeigher(weigher)
@@ -61,6 +61,7 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
             String value = caffeineTest.get(getICacheKey(entry.getKey()));
             assertEquals(entry.getValue(), value);
         }
+        waitForStats(caffeineTest);
         assertEquals(randomKeys, caffeineTest.stats().getTotalItems());
         assertEquals(randomKeys, caffeineTest.stats().getTotalHits());
         assertEquals(randomKeys, caffeineTest.count());
@@ -70,14 +71,15 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
         for (int i = 0; i < expectedNumberOfMisses; i++) {
             caffeineTest.get(getICacheKey(UUID.randomUUID().toString()));
         }
+        waitForStats(caffeineTest);
         assertEquals(expectedNumberOfMisses, caffeineTest.stats().getTotalMisses());
+        caffeineTest.close();
     }
 
     public void testConcurrentGet() throws Exception {
         ToLongBiFunction<ICacheKey<String>, String> weigher = getMockWeigher(false);
         MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
         ICache<String, String> caffeineTest = new CaffeineHeapCache.Builder<String, String>().setDimensionNames(List.of(dimensionName))
-            .setExecutor(Runnable::run)
             .setExpireAfterAccess(TimeValue.MAX_VALUE)
             .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
             .setWeigher(weigher)
@@ -107,14 +109,15 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
         }
         phaser.arriveAndAwaitAdvance(); // Will trigger parallel gets above.
         countDownLatch.await(); // Wait for all threads to finish
+        waitForStats(caffeineTest);
         assertEquals(randomKeys, caffeineTest.stats().getTotalHits());
+        caffeineTest.close();
     }
 
     public void testConcurrentPut() throws Exception {
         ToLongBiFunction<ICacheKey<String>, String> weigher = getMockWeigher(false);
         MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
         ICache<String, String> caffeineTest = new CaffeineHeapCache.Builder<String, String>().setDimensionNames(List.of(dimensionName))
-            .setExecutor(Runnable::run)
             .setExpireAfterAccess(TimeValue.MAX_VALUE)
             .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
             .setWeigher(weigher)
@@ -144,8 +147,10 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
             String value = caffeineTest.get(entry.getKey());
             assertEquals(entry.getValue(), value);
         }
+        waitForStats(caffeineTest);
         assertEquals(randomKeys, caffeineTest.count());
         assertEquals(randomKeys, caffeineTest.stats().getTotalItems());
+        caffeineTest.close();
     }
 
     // Modified from EhCacheDiskCacheTests.java
@@ -153,7 +158,6 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
         ToLongBiFunction<ICacheKey<String>, String> weigher = getMockWeigher(false);
         MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
         ICache<String, String> caffeineTest = new CaffeineHeapCache.Builder<String, String>().setDimensionNames(List.of(dimensionName))
-            .setExecutor(Runnable::run)
             .setExpireAfterAccess(TimeValue.MAX_VALUE)
             .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
             .setWeigher(weigher)
@@ -205,6 +209,7 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
             }
         }
         assertEquals(1, numberOfTimesValueLoaded);
+        waitForStats(caffeineTest);
         assertEquals(1, caffeineTest.stats().getTotalMisses());
         assertEquals(1, caffeineTest.stats().getTotalItems());
         assertEquals(numberOfRequest - 1, caffeineTest.stats().getTotalHits());
@@ -216,7 +221,6 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
         ToLongBiFunction<ICacheKey<String>, String> weigher = getMockWeigher(false);
         MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
         ICache<String, String> caffeineTest = new CaffeineHeapCache.Builder<String, String>().setDimensionNames(List.of(dimensionName))
-            .setExecutor(Runnable::run)
             .setExpireAfterAccess(TimeValue.MAX_VALUE)
             .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
             .setWeigher(weigher)
@@ -235,8 +239,11 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
             // Verify that value is null for a removed entry.
             assertNull(caffeineTest.get(entry.getKey()));
         }
+        waitForStats(caffeineTest);
+        // TODO: this one seems actually wrong...
         assertEquals(0, caffeineTest.count());
         assertEquals(0, caffeineTest.stats().getTotalSizeInBytes());
+        caffeineTest.close();
     }
 
     // Modified from OpenSearchOnHeapCache.java
@@ -245,7 +252,6 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
         MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
         List<String> dimensionNames = List.of("dim1", "dim2");
         ICache<String, String> caffeineTest = new CaffeineHeapCache.Builder<String, String>().setDimensionNames(dimensionNames)
-            .setExecutor(Runnable::run)
             .setExpireAfterAccess(TimeValue.MAX_VALUE)
             .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
             .setWeigher(weigher)
@@ -277,13 +283,13 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
                 assertNotNull(snapshot);
             }
         }
+        caffeineTest.close();
     }
 
     public void testInvalidateConcurrently() throws Exception {
         ToLongBiFunction<ICacheKey<String>, String> weigher = getMockWeigher(false);
         MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
         ICache<String, String> caffeineTest = new CaffeineHeapCache.Builder<String, String>().setDimensionNames(List.of(dimensionName))
-            .setExecutor(Runnable::run)
             .setExpireAfterAccess(TimeValue.MAX_VALUE)
             .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
             .setWeigher(weigher)
@@ -321,8 +327,10 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
         for (ICacheKey<String> removedKey : removedKeyList) {
             assertNull(caffeineTest.get(removedKey));
         }
+        waitForStats(caffeineTest);
         assertEquals(keyValueMap.size() - removedKeyList.size(), caffeineTest.count());
         assertEquals((keyValueMap.size() - removedKeyList.size()) * 10, caffeineTest.stats().getTotalSizeInBytes());
+        caffeineTest.close();
     }
 
     public void testEvictions() throws Exception {
@@ -330,7 +338,6 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
         ToLongBiFunction<ICacheKey<String>, String> weigher = getMockWeigher(false);
         MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
         ICache<String, String> caffeineTest = new CaffeineHeapCache.Builder<String, String>().setDimensionNames(getMockDimensions())
-            .setExecutor(Runnable::run)
             .setExpireAfterAccess(TimeValue.MAX_VALUE)
             .setMaximumWeightInBytes(MAX_CACHE_SIZE)
             .setWeigher(weigher)
@@ -340,9 +347,11 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
         for (int i = 0; i < randomKeys; i++) {
             caffeineTest.put(getICacheKey(UUID.randomUUID().toString()), UUID.randomUUID().toString());
         }
+        waitForStats(caffeineTest);
         assertEquals(randomKeys - (MAX_CACHE_SIZE / MOCK_WEIGHT), caffeineTest.stats().getTotalEvictions());
         assertEquals(randomKeys - (MAX_CACHE_SIZE / MOCK_WEIGHT), removalListener.evictionMetric.count());
         assertEquals(MAX_CACHE_SIZE, caffeineTest.stats().getTotalSizeInBytes());
+        caffeineTest.close();
     }
 
     public void testConcurrentEvictions() throws Exception {
@@ -350,7 +359,6 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
         ToLongBiFunction<ICacheKey<String>, String> weigher = getMockWeigher(false);
         MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
         ICache<String, String> caffeineTest = new CaffeineHeapCache.Builder<String, String>().setDimensionNames(List.of(dimensionName))
-            .setExecutor(Runnable::run)
             .setExpireAfterAccess(TimeValue.MAX_VALUE)
             .setMaximumWeightInBytes(MAX_CACHE_SIZE)
             .setWeigher(weigher)
@@ -379,16 +387,17 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
 
         ((CaffeineHeapCache<String, String>) caffeineTest).cleanUp(); // Manually perform maintenance cycle, which includes removing
                                                                       // expired entries.
+        waitForStats(caffeineTest);
         assertEquals(randomKeys - (MAX_CACHE_SIZE / MOCK_WEIGHT), caffeineTest.stats().getTotalEvictions());
         assertEquals(randomKeys - (MAX_CACHE_SIZE / MOCK_WEIGHT), removalListener.evictionMetric.count());
         assertEquals(MAX_CACHE_SIZE, caffeineTest.stats().getTotalSizeInBytes());
+        caffeineTest.close();
     }
 
     public void testReplace() throws Exception {
         ToLongBiFunction<ICacheKey<String>, String> weigher = getMockWeigher(true);
         MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
         ICache<String, String> caffeineTest = new CaffeineHeapCache.Builder<String, String>().setDimensionNames(List.of(dimensionName))
-            .setExecutor(Runnable::run)
             .setExpireAfterAccess(TimeValue.MAX_VALUE)
             .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
             .setWeigher(weigher)
@@ -406,6 +415,7 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
 
         // Replace old values with new, differently-sized values. Ensure that size changes accordingly.
         for (Map.Entry<ICacheKey<String>, String> entry : keyValueMap.entrySet()) {
+            //waitForStats(caffeineTest);
             long current_size = caffeineTest.stats().getTotalItems();
             long current_size_in_bytes = caffeineTest.stats().getTotalSizeInBytes();
             String old_value = entry.getValue();
@@ -413,16 +423,17 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
             String new_value = Integer.toString(randomIntBetween(1, 10));
             caffeineTest.put(key, new_value);
             keyValueMap.put(key, new_value);
+            waitForStats(caffeineTest); // TODO: this can be very slow
             assertEquals(current_size, caffeineTest.stats().getTotalItems());
             assertEquals(current_size_in_bytes - Integer.parseInt(old_value) + Integer.parseInt(new_value), caffeineTest.stats().getTotalSizeInBytes());
         }
+        caffeineTest.close();
     }
 
     public void testIteratorRemove() throws Exception {
         ToLongBiFunction<ICacheKey<String>, String> weigher = getMockWeigher(false);
         MockRemovalListener<String, String> removalListener = new MockRemovalListener<>();
         ICache<String, String> caffeineTest = new CaffeineHeapCache.Builder<String, String>().setDimensionNames(List.of(dimensionName))
-            .setExecutor(Runnable::run)
             .setExpireAfterAccess(TimeValue.MAX_VALUE)
             .setMaximumWeightInBytes(CACHE_SIZE_IN_BYTES)
             .setWeigher(weigher)
@@ -446,9 +457,13 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
             caffeineTestIterator.remove();
             assertNull(caffeineTest.get(next));
         }
+        ((CaffeineHeapCache<String, String>) caffeineTest).cleanUp();
+        //Thread.sleep(1000);
+        waitForStats(caffeineTest);
         assertEquals(0, caffeineTest.count());
         assertEquals(0, caffeineTest.stats().getTotalSizeInBytes());
         assertEquals(0, caffeineTest.stats().getTotalEvictions()); // This shouldn't increment number of evictions.
+        caffeineTest.close();
     }
 
     private List<String> getMockDimensions() {
@@ -476,6 +491,18 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
 
         // Used for testing replace.
         return (iCacheKey, value) -> { return Long.parseLong(value); };
+    }
+
+    void waitForStats(ICache<String, String> caffeineCache) {
+        ((CaffeineHeapCache<String, String>) caffeineCache).cleanUp();
+        ThreadPoolExecutor executor = ((CaffeineHeapCache<String, String>) caffeineCache).getExecutor();
+        // TODO: Gross hack - not good!
+        while (executor.getActiveCount() != 0 || !executor.getQueue().isEmpty()){
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+            }
+        }
     }
 
     static class MockRemovalListener<K, V> implements RemovalListener<ICacheKey<K>, V> {

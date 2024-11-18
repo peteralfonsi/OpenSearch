@@ -43,7 +43,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.Function;
 import java.util.function.ToLongBiFunction;
 
@@ -54,6 +57,7 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
     private final CacheStatsHolder cacheStatsHolder;
     private final ToLongBiFunction<ICacheKey<K>, V> weigher;
     private final CaffeineRemovalListener caffeineRemovalListener;
+    private final ExecutorService executor;
 
     private CaffeineHeapCache(Builder<K, V> builder) {
         List<String> dimensionNames = Objects.requireNonNull(builder.dimensionNames, "Dimension names can't be null");
@@ -69,13 +73,15 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
             Objects.requireNonNull(builder.getRemovalListener(), "Removal listener can't be null")
         );
 
+        this.executor = Executors.newFixedThreadPool(3);
+
         cache = AccessController.doPrivileged(
             (PrivilegedAction<Cache<ICacheKey<K>, V>>) () -> Caffeine.newBuilder()
                 .removalListener(this.caffeineRemovalListener)
                 .maximumWeight(builder.getMaxWeightInBytes())
                 .expireAfterAccess(builder.getExpireAfterAcess().duration(), builder.getExpireAfterAcess().timeUnit())
+                .executor(executor)
                 .weigher(new CaffeineWeigher())
-                .executor(Runnable::run)
                 .build()
         );
     }
@@ -199,6 +205,7 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
 
     @Override
     public long count() {
+        cleanUp();
         return cacheStatsHolder.count();
     }
 
@@ -209,11 +216,14 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
 
     @Override
     public ImmutableCacheStatsHolder stats(String[] levels) {
+        cleanUp();
         return cacheStatsHolder.getImmutableCacheStatsHolder(levels);
     }
 
     @Override
-    public void close() {}
+    public void close() {
+        this.executor.shutdown();
+    }
 
     public static class CaffeineHeapCacheFactory implements ICache.Factory {
 
@@ -280,6 +290,12 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
      * Used for testing.
      */
     void cleanUp() {
+        // TODO: this seems to be async - how to wait for it to be done?
         cache.cleanUp();
+    }
+
+    // For testing.
+    ThreadPoolExecutor getExecutor() {
+        return (ThreadPoolExecutor) executor;
     }
 }
