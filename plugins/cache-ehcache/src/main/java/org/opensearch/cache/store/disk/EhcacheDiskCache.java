@@ -101,8 +101,8 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
     private static final Logger logger = LogManager.getLogger(EhcacheDiskCache.class);
 
     // Unique id associated with this cache.
-    final static String UNIQUE_ID = UUID.randomUUID().toString();
-    final static String THREAD_POOL_ALIAS_PREFIX = "ehcachePool";
+    private final static String UNIQUE_ID = UUID.randomUUID().toString();
+    private final static String THREAD_POOL_ALIAS_PREFIX = "ehcachePool";
     final static int MINIMUM_MAX_SIZE_IN_BYTES = 1024 * 100; // 100KB
     final static String CACHE_DATA_CLEANUP_DURING_INITIALIZATION_EXCEPTION = "Failed to delete ehcache disk cache under "
         + "path: %s during initialization. Please clean this up manually and restart the process";
@@ -113,7 +113,10 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
     // Disk cache. Using ByteArrayWrapper to compare two byte[] by values rather than the default reference checks
     @SuppressWarnings({ "rawtypes" }) // We have to use the raw type as there's no way to pass the "generic class" to ehcache
     private final Cache<ICacheKey, ByteArrayWrapper> cache;
-    private final long maxWeightInBytes;
+    /**
+     * Max weight for disk tier.
+     */
+    protected final long maxWeightInBytes;
     private final String storagePath;
     private final Class<K> keyType;
     private final Class<V> valueType;
@@ -194,8 +197,22 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         return this.cacheManager;
     }
 
+    /**
+     * Specify resource pools.
+     * @return
+     */
+    protected ResourcePoolsBuilder getResourcePoolsBuilder() {
+        return ResourcePoolsBuilder.newResourcePoolsBuilder().disk(maxWeightInBytes, MemoryUnit.B);
+    }
+
+    /**
+     * Build a cache.
+     * @param expireAfterAccess
+     * @param builder
+     * @return
+     */
     @SuppressWarnings({ "rawtypes" })
-    private Cache<ICacheKey, ByteArrayWrapper> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {
+    protected Cache<ICacheKey, ByteArrayWrapper> buildCache(Duration expireAfterAccess, Builder<K, V> builder) {
         // Creating the cache requires permissions specified in plugin-security.policy
         return AccessController.doPrivileged((PrivilegedAction<Cache<ICacheKey, ByteArrayWrapper>>) () -> {
             try {
@@ -210,7 +227,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
                     CacheConfigurationBuilder.newCacheConfigurationBuilder(
                         ICacheKey.class,
                         ByteArrayWrapper.class,
-                        ResourcePoolsBuilder.newResourcePoolsBuilder().disk(maxWeightInBytes, MemoryUnit.B)
+                        getResourcePoolsBuilder()
                     ).withExpiry(new ExpiryPolicy<>() {
                         @Override
                         public Duration getExpiryForCreation(ICacheKey key, ByteArrayWrapper value) {
@@ -664,7 +681,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
      * @param value the value
      * @return the serialized value
      */
-    private ByteArrayWrapper serializeValue(V value) {
+    protected ByteArrayWrapper serializeValue(V value) {
         return new ByteArrayWrapper(valueSerializer.serialize(value));
     }
 
@@ -673,7 +690,7 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
      * @param binary the serialized value
      * @return the deserialized value
      */
-    private V deserializeValue(ByteArrayWrapper binary) {
+    protected V deserializeValue(ByteArrayWrapper binary) {
         if (binary == null) {
             return null;
         }
@@ -695,9 +712,17 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
          */
         public EhcacheDiskCacheFactory() {}
 
-        @Override
+        /**
+         * Setup the builder.
+         * @param config
+         * @param cacheType
+         * @param cacheFactories
+         * @return
+         * @param <K>
+         * @param <V>
+         */
         @SuppressWarnings({ "unchecked" }) // Required to ensure the serializers output byte[]
-        public <K, V> ICache<K, V> create(CacheConfig<K, V> config, CacheType cacheType, Map<String, Factory> cacheFactories) {
+        protected <K, V> Builder<K, V> setupBuilder(CacheConfig<K, V> config, CacheType cacheType, Map<String, Factory> cacheFactories) {
             Map<String, Setting<?>> settingList = EhcacheDiskCacheSettings.getSettingListForCacheType(cacheType);
             Settings settings = config.getSettings();
 
@@ -752,7 +777,13 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
             } else {
                 builder.setNumberOfSegments(segmentCount);
             }
-            return builder.build();
+            return builder;
+        }
+
+        @Override
+        @SuppressWarnings({ "unchecked" }) // Required to ensure the serializers output byte[]
+        public <K, V> ICache<K, V> create(CacheConfig<K, V> config, CacheType cacheType, Map<String, Factory> cacheFactories) {
+            return setupBuilder(config, cacheType, cacheFactories).build();
         }
 
         @Override
@@ -768,22 +799,23 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
      */
     public static class Builder<K, V> extends ICacheBuilder<K, V> {
 
-        private CacheType cacheType;
-        private String storagePath;
+        // todo: should be protected, but dont want to do javadocs rn
+        CacheType cacheType;
+        String storagePath;
 
-        private String threadPoolAlias;
+        String threadPoolAlias;
 
-        private String diskCacheAlias;
+        String diskCacheAlias;
 
         // Provides capability to make ehCache event listener to run in sync mode. Used for testing too.
-        private boolean isEventListenerModeSync;
+        boolean isEventListenerModeSync;
 
-        private Class<K> keyType;
+        Class<K> keyType;
 
-        private Class<V> valueType;
-        private List<String> dimensionNames;
-        private Serializer<K, byte[]> keySerializer;
-        private Serializer<V, byte[]> valueSerializer;
+        Class<V> valueType;
+        List<String> dimensionNames;
+        Serializer<K, byte[]> keySerializer;
+        Serializer<V, byte[]> valueSerializer;
 
         /**
          * Default constructor. Added to fix javadocs.

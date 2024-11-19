@@ -189,7 +189,7 @@ public class EhcacheDiskCacheSettings {
      * Used to form concrete setting for cache types and return desired map
      * @return map of cacheType and associated settings.
      */
-    private static final Map<CacheType, Map<String, Setting<?>>> getCacheTypeMap() {
+    protected static Map<CacheType, Map<String, Setting<?>>> getCacheTypeMap() {
         Map<CacheType, Map<String, Setting<?>>> cacheTypeMap = new HashMap<>();
         for (CacheType cacheType : CacheType.values()) {
             Map<String, Setting<?>> settingMap = new HashMap<>();

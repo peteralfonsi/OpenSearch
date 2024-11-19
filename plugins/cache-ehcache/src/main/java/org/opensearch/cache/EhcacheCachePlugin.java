@@ -9,6 +9,7 @@
 package org.opensearch.cache;
 
 import org.opensearch.cache.store.disk.EhcacheDiskCache;
+import org.opensearch.cache.store.disk.EhcacheTieredCache;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.settings.Setting;
@@ -35,13 +36,21 @@ public class EhcacheCachePlugin extends Plugin implements CachePlugin {
 
     @Override
     public Map<String, ICache.Factory> getCacheFactoryMap() {
-        return Map.of(EhcacheDiskCache.EhcacheDiskCacheFactory.EHCACHE_DISK_CACHE_NAME, new EhcacheDiskCache.EhcacheDiskCacheFactory());
+        return Map.of(
+            EhcacheDiskCache.EhcacheDiskCacheFactory.EHCACHE_DISK_CACHE_NAME, new EhcacheDiskCache.EhcacheDiskCacheFactory(),
+            EhcacheTieredCache.EhcacheTieredCacheFactory.EHCACHE_TIERED_CACHE_NAME, new EhcacheTieredCache.EhcacheTieredCacheFactory()
+            );
     }
 
     @Override
     public List<Setting<?>> getSettings() {
         List<Setting<?>> settingList = new ArrayList<>();
-        for (Map.Entry<CacheType, Map<String, Setting<?>>> entry : CACHE_TYPE_MAP.entrySet()) {
+        for (Map.Entry<CacheType, Map<String, Setting<?>>> entry : EhcacheDiskCacheSettings.CACHE_TYPE_MAP.entrySet()) {
+            for (Map.Entry<String, Setting<?>> entry1 : entry.getValue().entrySet()) {
+                settingList.add(entry1.getValue());
+            }
+        }
+        for (Map.Entry<CacheType, Map<String, Setting<?>>> entry : EhcacheTieredCacheSettings.CACHE_TYPE_MAP.entrySet()) {
             for (Map.Entry<String, Setting<?>> entry1 : entry.getValue().entrySet()) {
                 settingList.add(entry1.getValue());
             }
