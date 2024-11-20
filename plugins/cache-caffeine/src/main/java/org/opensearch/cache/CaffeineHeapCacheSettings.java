@@ -41,14 +41,28 @@ public class CaffeineHeapCacheSettings {
         (key) -> Setting.positiveTimeSetting(key, TimeValue.MAX_VALUE, Setting.Property.NodeScope)
     );
 
+    /**
+     * Setting defining number of threads in caffeine cleanup threadpool.
+     *
+     * Setting pattern: {cache_type}.caffeine_heap.cleanup_threads
+     */
+    public static final Setting.AffixSetting<Integer> CLEANUP_THREADS_SETTING = Setting.suffixKeySetting(
+        CaffeineHeapCache.CaffeineHeapCacheFactory.NAME + ".cleanup_threads",
+        (key) -> Setting.intSetting(key, 3, 1, Setting.Property.NodeScope)
+    );
+
     public static final String MAXIMUM_SIZE_IN_BYTES_KEY = "maximum_size_in_bytes";
     public static final String EXPIRE_AFTER_ACCESS_KEY = "expire_after_access";
+
+    public static final String CLEANUP_THREADS_KEY = "cleanup_threads";
 
     private static final Map<String, Setting.AffixSetting<?>> KEY_SETTING_MAP = Map.of(
         MAXIMUM_SIZE_IN_BYTES_KEY,
         MAXIMUM_SIZE_IN_BYTES_SETTING,
         EXPIRE_AFTER_ACCESS_KEY,
-        EXPIRE_AFTER_ACCESS_SETTING
+        EXPIRE_AFTER_ACCESS_SETTING,
+        CLEANUP_THREADS_KEY,
+        CLEANUP_THREADS_SETTING
     );
 
     public static final Map<CacheType, Map<String, Setting<?>>> CACHE_TYPE_MAP = getCacheTypeMap();

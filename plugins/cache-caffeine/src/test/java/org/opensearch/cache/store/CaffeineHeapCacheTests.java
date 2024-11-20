@@ -415,7 +415,7 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
 
         // Replace old values with new, differently-sized values. Ensure that size changes accordingly.
         for (Map.Entry<ICacheKey<String>, String> entry : keyValueMap.entrySet()) {
-            //waitForStats(caffeineTest);
+            // waitForStats(caffeineTest);
             long current_size = caffeineTest.stats().getTotalItems();
             long current_size_in_bytes = caffeineTest.stats().getTotalSizeInBytes();
             String old_value = entry.getValue();
@@ -425,7 +425,10 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
             keyValueMap.put(key, new_value);
             waitForStats(caffeineTest); // TODO: this can be very slow
             assertEquals(current_size, caffeineTest.stats().getTotalItems());
-            assertEquals(current_size_in_bytes - Integer.parseInt(old_value) + Integer.parseInt(new_value), caffeineTest.stats().getTotalSizeInBytes());
+            assertEquals(
+                current_size_in_bytes - Integer.parseInt(old_value) + Integer.parseInt(new_value),
+                caffeineTest.stats().getTotalSizeInBytes()
+            );
         }
         caffeineTest.close();
     }
@@ -458,7 +461,7 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
             assertNull(caffeineTest.get(next));
         }
         ((CaffeineHeapCache<String, String>) caffeineTest).cleanUp();
-        //Thread.sleep(1000);
+        // Thread.sleep(1000);
         waitForStats(caffeineTest);
         assertEquals(0, caffeineTest.count());
         assertEquals(0, caffeineTest.stats().getTotalSizeInBytes());
@@ -497,11 +500,10 @@ public class CaffeineHeapCacheTests extends OpenSearchTestCase {
         ((CaffeineHeapCache<String, String>) caffeineCache).cleanUp();
         ThreadPoolExecutor executor = ((CaffeineHeapCache<String, String>) caffeineCache).getExecutor();
         // TODO: Gross hack - not good!
-        while (executor.getActiveCount() != 0 || !executor.getQueue().isEmpty()){
+        while (executor.getActiveCount() != 0 || !executor.getQueue().isEmpty()) {
             try {
                 Thread.sleep(500);
-            } catch (InterruptedException e) {
-            }
+            } catch (InterruptedException e) {}
         }
     }
 

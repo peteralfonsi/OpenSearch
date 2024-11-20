@@ -23,7 +23,6 @@ import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.LoadAwareCacheLoader;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
-import org.opensearch.common.cache.settings.CacheSettings;
 import org.opensearch.common.cache.stats.CacheStatsHolder;
 import org.opensearch.common.cache.stats.DefaultCacheStatsHolder;
 import org.opensearch.common.cache.stats.ImmutableCacheStatsHolder;
@@ -42,10 +41,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.Function;
 import java.util.function.ToLongBiFunction;
@@ -72,8 +69,7 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
         this.caffeineRemovalListener = new CaffeineRemovalListener(
             Objects.requireNonNull(builder.getRemovalListener(), "Removal listener can't be null")
         );
-
-        this.executor = Executors.newFixedThreadPool(3);
+        this.executor = Executors.newFixedThreadPool(builder.numCleanupThreads);
 
         cache = AccessController.doPrivileged(
             (PrivilegedAction<Cache<ICacheKey<K>, V>>) () -> Caffeine.newBuilder()
@@ -234,9 +230,14 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
             Map<String, Setting<?>> settingList = CaffeineHeapCacheSettings.getSettingListForCacheType(cacheType);
             Settings settings = config.getSettings();
             boolean statsTrackingEnabled = statsTrackingEnabled(config.getSettings(), config.getStatsTrackingEnabled());
-            ICacheBuilder<K, V> builder = new CaffeineHeapCache.Builder<K, V>().setDimensionNames(config.getDimensionNames())
+            ICacheBuilder<K, V> builder = new CaffeineHeapCache.Builder<K, V>().setNumCleanupThreads(
+                (int) settingList.get(CaffeineHeapCacheSettings.CLEANUP_THREADS_KEY).get(settings)
+            )
+                .setDimensionNames(config.getDimensionNames())
                 .setStatsTrackingEnabled(statsTrackingEnabled)
-                .setMaximumWeightInBytes(((ByteSizeValue) settingList.get(CaffeineHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES_KEY).get(settings)).getBytes())
+                .setMaximumWeightInBytes(
+                    ((ByteSizeValue) settingList.get(CaffeineHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES_KEY).get(settings)).getBytes()
+                )
                 .setExpireAfterAccess(((TimeValue) settingList.get(CaffeineHeapCacheSettings.EXPIRE_AFTER_ACCESS_KEY).get(settings)))
                 .setWeigher(config.getWeigher())
                 .setRemovalListener(config.getRemovalListener());
@@ -262,7 +263,7 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
 
     public static class Builder<K, V> extends ICacheBuilder<K, V> {
         private List<String> dimensionNames;
-        private Executor executor = ForkJoinPool.commonPool();
+        private int numCleanupThreads;
 
         public Builder() {}
 
@@ -271,13 +272,9 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
             return this;
         }
 
-        public Builder<K, V> setExecutor(Executor executor) {
-            this.executor = executor;
+        public Builder<K, V> setNumCleanupThreads(int numCleanupThreads) {
+            this.numCleanupThreads = numCleanupThreads;
             return this;
-        }
-
-        public Executor getExecutor() {
-            return executor;
         }
 
         public CaffeineHeapCache<K, V> build() {
