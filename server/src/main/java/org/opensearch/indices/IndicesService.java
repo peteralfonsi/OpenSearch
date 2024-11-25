@@ -338,7 +338,7 @@ public class IndicesService extends AbstractLifecycleComponent
     private final IndexingMemoryController indexingMemoryController;
     private final TimeValue cleanInterval;
     final IndicesRequestCache indicesRequestCache; // pkg-private for testing
-    private final IndicesQueryCache indicesQueryCache;
+    private final OpenSearchQueryCache indicesQueryCache;
     private final MetaStateService metaStateService;
     private final Collection<Function<IndexSettings, Optional<EngineFactory>>> engineFactoryProviders;
     private final Map<String, IndexStorePlugin.DirectoryFactory> directoryFactories;
@@ -928,7 +928,7 @@ public class IndicesService extends AbstractLifecycleComponent
     private synchronized IndexService createIndexService(
         IndexService.IndexCreationContext indexCreationContext,
         IndexMetadata indexMetadata,
-        IndicesQueryCache indicesQueryCache,
+        OpenSearchQueryCache indicesQueryCache,
         IndicesFieldDataCache indicesFieldDataCache,
         List<IndexEventListener> builtInListeners,
         IndexingOperationListener... indexingOperationListeners
@@ -1178,7 +1178,7 @@ public class IndicesService extends AbstractLifecycleComponent
         return circuitBreakerService;
     }
 
-    public IndicesQueryCache getIndicesQueryCache() {
+    public OpenSearchQueryCache getIndicesQueryCache() {
         return indicesQueryCache;
     }
 

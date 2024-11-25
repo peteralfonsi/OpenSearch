@@ -38,6 +38,7 @@ import org.opensearch.OpenSearchException;
 import org.opensearch.index.AbstractIndexComponent;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.indices.IndicesQueryCache;
+import org.opensearch.indices.OpenSearchQueryCache;
 
 /**
  * The index-level query cache. This class mostly delegates to the node-level
@@ -47,9 +48,9 @@ import org.opensearch.indices.IndicesQueryCache;
  */
 public class IndexQueryCache extends AbstractIndexComponent implements QueryCache {
 
-    final IndicesQueryCache indicesQueryCache;
+    final OpenSearchQueryCache indicesQueryCache;
 
-    public IndexQueryCache(IndexSettings indexSettings, IndicesQueryCache indicesQueryCache) {
+    public IndexQueryCache(IndexSettings indexSettings, OpenSearchQueryCache indicesQueryCache) {
         super(indexSettings);
         this.indicesQueryCache = indicesQueryCache;
     }

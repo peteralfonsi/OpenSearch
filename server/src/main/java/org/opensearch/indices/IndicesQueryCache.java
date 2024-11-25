@@ -69,7 +69,7 @@ import java.util.function.Predicate;
  * @opensearch.api
  */
 @PublicApi(since = "1.0.0")
-public class IndicesQueryCache implements QueryCache, Closeable {
+public class IndicesQueryCache implements QueryCache, OpenSearchQueryCache {
 
     private static final Logger logger = LogManager.getLogger(IndicesQueryCache.class);
 

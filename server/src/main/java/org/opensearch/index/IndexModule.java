@@ -82,6 +82,7 @@ import org.opensearch.index.store.remote.directory.RemoteSnapshotDirectoryFactor
 import org.opensearch.index.store.remote.filecache.FileCache;
 import org.opensearch.index.translog.TranslogFactory;
 import org.opensearch.indices.IndicesQueryCache;
+import org.opensearch.indices.OpenSearchQueryCache;
 import org.opensearch.indices.RemoteStoreSettings;
 import org.opensearch.indices.fielddata.cache.IndicesFieldDataCache;
 import org.opensearch.indices.mapper.MapperRegistry;
@@ -238,7 +239,7 @@ public final class IndexModule {
     private final Set<IndexEventListener> indexEventListeners = new HashSet<>();
     private final Map<String, TriFunction<Settings, Version, ScriptService, Similarity>> similarities = new HashMap<>();
     private final Map<String, IndexStorePlugin.DirectoryFactory> directoryFactories;
-    private final SetOnce<BiFunction<IndexSettings, IndicesQueryCache, QueryCache>> forceQueryCacheProvider = new SetOnce<>();
+    private final SetOnce<BiFunction<IndexSettings, OpenSearchQueryCache, QueryCache>> forceQueryCacheProvider = new SetOnce<>();
     private final List<SearchOperationListener> searchOperationListeners = new ArrayList<>();
     private final List<IndexingOperationListener> indexOperationListeners = new ArrayList<>();
     private final IndexNameExpressionResolver expressionResolver;
@@ -668,7 +669,7 @@ public final class IndexModule {
         ScriptService scriptService,
         ClusterService clusterService,
         Client client,
-        IndicesQueryCache indicesQueryCache,
+        OpenSearchQueryCache indicesQueryCache,
         MapperRegistry mapperRegistry,
         IndicesFieldDataCache indicesFieldDataCache,
         NamedWriteableRegistry namedWriteableRegistry,
@@ -692,7 +693,7 @@ public final class IndexModule {
         boolean success = false;
         try {
             if (indexSettings.getValue(INDEX_QUERY_CACHE_ENABLED_SETTING)) {
-                BiFunction<IndexSettings, IndicesQueryCache, QueryCache> queryCacheProvider = forceQueryCacheProvider.get();
+                BiFunction<IndexSettings, OpenSearchQueryCache, QueryCache> queryCacheProvider = forceQueryCacheProvider.get();
                 if (queryCacheProvider == null) {
                     queryCache = new IndexQueryCache(indexSettings, indicesQueryCache);
                 } else {
@@ -832,7 +833,7 @@ public final class IndexModule {
      *
      * @see #INDEX_QUERY_CACHE_ENABLED_SETTING
      */
-    public void forceQueryCacheProvider(BiFunction<IndexSettings, IndicesQueryCache, QueryCache> queryCacheProvider) {
+    public void forceQueryCacheProvider(BiFunction<IndexSettings, OpenSearchQueryCache, QueryCache> queryCacheProvider) {
         ensureNotFrozen();
         this.forceQueryCacheProvider.set(queryCacheProvider);
     }

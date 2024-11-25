@@ -59,6 +59,7 @@ import org.opensearch.index.store.StoreStats;
 import org.opensearch.index.translog.TranslogStats;
 import org.opensearch.index.warmer.WarmerStats;
 import org.opensearch.indices.IndicesQueryCache;
+import org.opensearch.indices.OpenSearchQueryCache;
 import org.opensearch.search.suggest.completion.CompletionStats;
 
 import java.io.IOException;
@@ -185,7 +186,7 @@ public class CommonStats implements Writeable, ToXContentFragment {
         }
     }
 
-    public CommonStats(IndicesQueryCache indicesQueryCache, IndexShard indexShard, CommonStatsFlags flags) {
+    public CommonStats(OpenSearchQueryCache indicesQueryCache, IndexShard indexShard, CommonStatsFlags flags) {
         CommonStatsFlags.Flag[] setFlags = flags.getFlags();
         for (CommonStatsFlags.Flag flag : setFlags) {
             try {

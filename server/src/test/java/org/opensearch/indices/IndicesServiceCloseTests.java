@@ -274,7 +274,7 @@ public class IndicesServiceCloseTests extends OpenSearchTestCase {
 
         assertEquals(2, indicesService.indicesRefCount.refCount());
 
-        IndicesQueryCache cache = indicesService.getIndicesQueryCache();
+        OpenSearchQueryCache cache = indicesService.getIndicesQueryCache();
 
         IndexService indexService = indicesService.iterator().next();
         IndexShard shard = indexService.getShard(0);
@@ -317,7 +317,7 @@ public class IndicesServiceCloseTests extends OpenSearchTestCase {
 
         assertEquals(2, indicesService.indicesRefCount.refCount());
 
-        IndicesQueryCache cache = indicesService.getIndicesQueryCache();
+        OpenSearchQueryCache cache = indicesService.getIndicesQueryCache();
 
         IndexService indexService = indicesService.iterator().next();
         IndexShard shard = indexService.getShard(0);
