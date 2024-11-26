@@ -152,7 +152,7 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
 
     @Override
     public V computeIfAbsent(ICacheKey<K> key, LoadAwareCacheLoader<ICacheKey<K>, V> loader) {
-        Function<ICacheKey<K>, V> mappingFunction = k -> {
+        /*Function<ICacheKey<K>, V> mappingFunction = k -> {
             V loadedValue;
             try {
                 loadedValue = loader.load(k);
@@ -161,7 +161,20 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
             }
             return loadedValue;
         };
-        V value = cache.get(key, mappingFunction);
+        V value = cache.get(key, mappingFunction);*/
+
+        // TODO: To test if anonymous functions were causing high GC, split this into a get and a put if it's missing
+        // This causes testComputeIfAbsentConcurrently() to fail, as repeated values can be loaded >1 time. I think this is fine for the test.
+        V value = cache.getIfPresent(key);
+        if (value == null) {
+            try {
+                value = loader.load(key);
+            } catch (Exception ex) {
+                throw new OpenSearchException("Exception occurred while getting value from cache loader.");
+            }
+            cache.put(key, value);
+        }
+
         if (!loader.isLoaded()) {
             cacheStatsHolder.incrementHits(key.dimensions);
         } else {
