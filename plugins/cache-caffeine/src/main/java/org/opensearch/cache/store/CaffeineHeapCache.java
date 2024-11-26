@@ -73,7 +73,8 @@ public class CaffeineHeapCache<K, V> implements ICache<K, V> {
             (PrivilegedAction<Cache<ICacheKey<K>, V>>) () -> Caffeine.newBuilder()
                 .removalListener(this.caffeineRemovalListener)
                 .maximumWeight(builder.getMaxWeightInBytes())
-                .expireAfterAccess(builder.getExpireAfterAcess().duration(), builder.getExpireAfterAcess().timeUnit())
+                // TODO: For this test, don't feed in any expireAfterAccess value. If it shows gain, can change to only set non-max-long values
+                //.expireAfterAccess(builder.getExpireAfterAcess().duration(), builder.getExpireAfterAcess().timeUnit())
                 .weigher(new CaffeineWeigher())
                 .executor(Runnable::run)
                 .build()
