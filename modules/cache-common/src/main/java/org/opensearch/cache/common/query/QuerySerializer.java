@@ -8,13 +8,19 @@
 
 package org.opensearch.cache.common.query;
 
+import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.search.PointRangeQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.util.BytesRef;
+import org.opensearch.OpenSearchException;
 import org.opensearch.common.cache.serializer.Serializer;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.core.common.bytes.BytesReference;
+import org.opensearch.core.common.io.stream.BytesStreamInput;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.util.Arrays;
 import java.util.Map;
 
 public class QuerySerializer implements Serializer<Query, byte[]> {
@@ -23,32 +29,97 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
     static final byte INVALID_QUERY_BYTE = 0x00; // Used for all queries that aren't serializable
     static final byte POINT_RANGE_QUERY_BYTE = 0x01;
 
+
+    // TODO: Used as part of gross hack to determine which impl of PointRangeQuery comes in.
+    static final Query longPointRangeQuery = LongPoint.newRangeQuery("", 0, 1);
+
     @Override
     public byte[] serialize(Query object) {
+        if (object == null) return null;
         byte classByte = getClassByte(object);
+        BytesStreamOutput os;
         try {
-            BytesStreamOutput os = new BytesStreamOutput();
+            os = new BytesStreamOutput();
             os.writeByte(classByte);
             switch (classByte) {
                 case POINT_RANGE_QUERY_BYTE:
-
-
+                    serializePointRangeQuery(os, object);
+                /*default:
+                    throw new UnsupportedOperationException("Invalid class byte");*/
             }
-        } catch (IOException e){ 
-
-
-
+        } catch (IOException e) {
+            throw new OpenSearchException("Error serializing query: ", e);
+        }
         return BytesReference.toBytes(os.bytes());
     }
 
     @Override
     public Query deserialize(byte[] bytes) {
+        if (bytes == null) return null;
+        try {
+            BytesStreamInput is = new BytesStreamInput(bytes, 0, bytes.length);
+            byte classByte = is.readByte();
+            switch (classByte) {
+                case POINT_RANGE_QUERY_BYTE:
+                    return deserializePointRangeQuery(is);
+                /*default:
+                    throw new UnsupportedOperationException("Invalid class byte");*/
+            }
+        } catch (IOException e) {
+            throw new OpenSearchException("Error deserializing query: ", e);
+        }
         return null;
     }
 
     @Override
     public boolean equals(Query object, byte[] bytes) {
-        return false;
+        return Arrays.equals(serialize(object), bytes);
+    }
+
+    private void serializePointRangeQuery(BytesStreamOutput os, Query query) throws IOException {
+        PointRangeQuery prQuery = (PointRangeQuery) query;
+        // Determine if it's LongPoint's implementation
+        if (!isLongPointRangeQuery(prQuery)) {
+            throw new UnsupportedOperationException("can only serialize LongPoint's implementation of PointRangeQuery");
+        }
+        os.writeString(prQuery.getField());
+
+        byte[] lowerPoint = prQuery.getLowerPoint();
+        os.writeVInt(lowerPoint.length);
+        os.writeBytes(lowerPoint);
+
+        byte[] upperPoint = prQuery.getUpperPoint();
+        os.writeVInt(upperPoint.length);
+        os.writeBytes(upperPoint);
+        // TODO: for PointRangeQuery these are byte[] but for LongPoint's impl they're long[]
+        // It looks like LongPoint calls pack() (public) before shoving it into bytes. So I need to do the reverse of pack() on the way out...
+    }
+
+    private Query deserializePointRangeQuery(BytesStreamInput is) throws IOException {
+        // TODO: Currently ONLY reads LongPoint's implementation of PointRangeQuery
+        String field = is.readString();
+
+        int lowerPointLength = is.readVInt();
+        byte[] lowerPoint = new byte[lowerPointLength];
+        is.readBytes(lowerPoint, 0, lowerPointLength);
+        long[] lowerPointLong = new long[lowerPoint.length/8];
+        LongPoint.unpack(new BytesRef(lowerPoint), 0, lowerPointLong);
+
+        int upperPointLength = is.readVInt();
+        byte[] upperPoint = new byte[upperPointLength];
+        is.readBytes(upperPoint, 0, upperPointLength);
+        long[] upperPointLong = new long[upperPoint.length/8];
+        LongPoint.unpack(new BytesRef(upperPoint), 0, upperPointLong);
+
+        return LongPoint.newRangeQuery(field, lowerPointLong, upperPointLong);
+
+    }
+
+    private boolean isLongPointRangeQuery(PointRangeQuery query) {
+        // TODO: A gross hack - but ok for the PoC
+        // TODO: also - does it work??
+        return query.getClass() == longPointRangeQuery.getClass();
+
     }
 
     public boolean isAllowed(Query query) {

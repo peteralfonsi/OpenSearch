@@ -39,10 +39,6 @@ public class TieredQueryCacheSerializerTests extends OpenSearchTestCase {
         }
     }
 
-    public void testQuerySerializer() throws Exception {
-        // TODO
-    }
-
     public void testCompositeKeySerializer() throws Exception {
         // TODO
     }
