@@ -115,9 +115,6 @@ import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
 
     This should all move into the cache-common module.
 
-    I think for the PoC only keys that are serializable can even live in the heap tier. Maybe can tweak this later with changes to TSC?
-    Maybe even just adding a new disk tier policy to TSC would suffice. I think it would.
-
 
     Assumption: There's no "staleness" to handle in any way beyond however LRUQC decides to evict/remove items.
 
@@ -785,29 +782,7 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
         }
     }
 
-    static class QuerySerializer implements Serializer<Query, byte[]> {
-        // TODO - will have to basically do one query type at a time. Not TermQuery ever lol.
 
-        @Override
-        public byte[] serialize(Query object) {
-            return new byte[0];
-        }
-
-        @Override
-        public Query deserialize(byte[] bytes) {
-            return null;
-        }
-
-        @Override
-        public boolean equals(Query object, byte[] bytes) {
-            return false;
-        }
-
-        public boolean isAllowed(Query query) {
-            // TODO - report yes for serializable, no for not serializable. Feed this into a policy into the TSC to control disk tier access.
-            return true;
-        }
-    }
 
     // TODO: I kind of suspect the de/serialization of DocIdSet is gonna be slow, and it may be so slow it doesn't make sense to do it at all.
 
