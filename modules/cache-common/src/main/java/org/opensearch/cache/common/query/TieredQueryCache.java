@@ -43,6 +43,7 @@ import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
+import org.opensearch.common.cache.policy.CachedQueryResult;
 import org.opensearch.common.cache.serializer.Serializer;
 import org.opensearch.common.cache.service.CacheService;
 import org.opensearch.common.cache.stats.ImmutableCacheStats;
@@ -167,16 +168,8 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
                 .setKeyType(CompositeKey.class)
                 .setRemovalListener(removalListener)
                 .setDimensionNames(List.of(SHARD_ID_DIMENSION_NAME))
-                .setSegmentCount(1) // TODO: REMOVE!! For testing only
-                /*.setCachedResultParser((bytesReference) -> {
-                    try {
-                        return CachedQueryResult.getPolicyValues(bytesReference);
-                    } catch (IOException e) {
-                        // Set took time to -1, which will always be rejected by the policy.
-                        return new CachedQueryResult.PolicyValues(-1);
-                    }
-                })*/ // TODO - i forgor that this is unfortunately hardcoded to always return CachedQueryResult.
-                // But for the proof of concept we can hack around that by just adding what we need? Or do we actually need anything?
+                // TODO: I dont know what to do with this. This shouldn't be hardcoded like that...
+                .setCachedResultParser((cacheAndCount) -> new CachedQueryResult.PolicyValues(1))
                 .setKeySerializer(keySerializer)
                 .setValueSerializer(new CacheAndCountSerializer())
                 .setClusterSettings(clusterService.getClusterSettings())
@@ -200,7 +193,6 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
         if (leafCache == null) {
             String shardIdName = getShardIdName(readerKey);
             outerCacheMissCounts.computeIfAbsent(shardIdName, (k) -> new LongAdder()).add(1);
-            // onMiss(readerKey, query);
             return null;
         }
         // Singleton stuff would go here if I decide it's needed
@@ -325,6 +317,11 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
 
     private String getShardIdName(Object readerCoreKey) {
         return shardKeyMap.getShardId(readerCoreKey).toString();
+    }
+
+    // pkg-private for testing
+    ICache<CompositeKey, CacheAndCount> getInnerCache() {
+        return innerCache;
     }
 
     private class TieredCachingWrapperWeight extends ConstantScoreWeight {

@@ -25,6 +25,7 @@ import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.collect.Tuple;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.settings.SettingsException;
 import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.concurrent.ReleasableLock;
 
@@ -249,7 +250,8 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         @Override
         public void put(ICacheKey<K> key, V value) {
             // First check in case the key is already present in either of tiers.
-            Tuple<V, String> cacheValueTuple = getValueFromTieredCache(true).apply(key);
+            // TODO: I don't think this should capture stats - changed to false.
+            Tuple<V, String> cacheValueTuple = getValueFromTieredCache(false).apply(key);
             if (cacheValueTuple == null) {
                 // In case it is not present in any tier, put it inside onHeap cache by default.
                 try (ReleasableLock ignore = writeLock.acquire()) {
@@ -828,16 +830,21 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
             long diskCacheSize = TIERED_SPILLOVER_DISK_STORE_SIZE.getConcreteSettingForNamespace(cacheType.getSettingPrefix())
                 .get(settings);
 
-            return new Builder<K, V>().setDiskCacheFactory(diskCacheFactory)
+            Builder<K, V> builder = new Builder<K, V>().setDiskCacheFactory(diskCacheFactory)
                 .setOnHeapCacheFactory(onHeapCacheFactory)
                 .setRemovalListener(config.getRemovalListener())
                 .setCacheConfig(config)
                 .setCacheType(cacheType)
                 .setNumberOfSegments(numberOfSegments)
-                .addPolicy(new TookTimePolicy<V>(diskPolicyThreshold, cachedResultParser, config.getClusterSettings(), cacheType))
                 .setOnHeapCacheSizeInBytes(onHeapCacheSize)
-                .setDiskCacheSize(diskCacheSize)
-                .build();
+                .setDiskCacheSize(diskCacheSize);
+
+            try {
+                builder.addPolicy(new TookTimePolicy<V>(diskPolicyThreshold, cachedResultParser, config.getClusterSettings(), cacheType));
+            } catch (SettingsException ignored) {
+                // TODO: if not registered (for query cache), skip the took time threshold policy.
+            }
+            return builder.build();
         }
 
         @Override

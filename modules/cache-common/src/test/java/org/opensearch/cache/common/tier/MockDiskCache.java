@@ -23,6 +23,7 @@ import org.opensearch.common.cache.stats.NoopCacheStatsHolder;
 import org.opensearch.common.cache.store.builders.ICacheBuilder;
 import org.opensearch.common.cache.store.config.CacheConfig;
 
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
