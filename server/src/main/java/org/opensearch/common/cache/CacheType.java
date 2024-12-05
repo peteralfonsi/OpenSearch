@@ -21,7 +21,7 @@ import java.util.Set;
 @ExperimentalApi
 public enum CacheType {
     INDICES_REQUEST_CACHE("indices.requests.cache", "request_cache"),
-    QUERY_CACHE("indices.query.cache", "query_cache");
+    INDICES_QUERY_CACHE("indices.query.cache", "query_cache");
 
     private final String settingPrefix;
     private final String value; // The value displayed for this cache type in stats API responses

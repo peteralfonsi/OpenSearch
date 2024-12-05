@@ -19,16 +19,14 @@ import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.BytesStreamInput;
 
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.util.Arrays;
-import java.util.Map;
 
 public class QuerySerializer implements Serializer<Query, byte[]> {
     // TODO - will have to basically do one query type at a time. Not TermQuery ever lol.
 
     static final byte INVALID_QUERY_BYTE = 0x00; // Used for all queries that aren't serializable
     static final byte POINT_RANGE_QUERY_BYTE = 0x01;
-
+    static final byte DUMMY_QUERY_BYTE = 0x02;
 
     // TODO: Used as part of gross hack to determine which impl of PointRangeQuery comes in.
     static final Query longPointRangeQuery = LongPoint.newRangeQuery("", 0, 1);
@@ -44,7 +42,9 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
             switch (classByte) {
                 case POINT_RANGE_QUERY_BYTE:
                     serializePointRangeQuery(os, object);
-                /*default:
+                case DUMMY_QUERY_BYTE:
+                    serializeDummyQuery(os, object);
+                    /*default:
                     throw new UnsupportedOperationException("Invalid class byte");*/
             }
         } catch (IOException e) {
@@ -62,6 +62,8 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
             switch (classByte) {
                 case POINT_RANGE_QUERY_BYTE:
                     return deserializePointRangeQuery(is);
+                case DUMMY_QUERY_BYTE:
+                    return deserializeDummyQuery(is);
                 /*default:
                     throw new UnsupportedOperationException("Invalid class byte");*/
             }
@@ -92,7 +94,8 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
         os.writeVInt(upperPoint.length);
         os.writeBytes(upperPoint);
         // TODO: for PointRangeQuery these are byte[] but for LongPoint's impl they're long[]
-        // It looks like LongPoint calls pack() (public) before shoving it into bytes. So I need to do the reverse of pack() on the way out...
+        // It looks like LongPoint calls pack() (public) before shoving it into bytes. So I need to do the reverse of pack() on the way
+        // out...
     }
 
     private Query deserializePointRangeQuery(BytesStreamInput is) throws IOException {
@@ -102,33 +105,41 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
         int lowerPointLength = is.readVInt();
         byte[] lowerPoint = new byte[lowerPointLength];
         is.readBytes(lowerPoint, 0, lowerPointLength);
-        long[] lowerPointLong = new long[lowerPoint.length/8];
+        long[] lowerPointLong = new long[lowerPoint.length / 8];
         LongPoint.unpack(new BytesRef(lowerPoint), 0, lowerPointLong);
 
         int upperPointLength = is.readVInt();
         byte[] upperPoint = new byte[upperPointLength];
         is.readBytes(upperPoint, 0, upperPointLength);
-        long[] upperPointLong = new long[upperPoint.length/8];
+        long[] upperPointLong = new long[upperPoint.length / 8];
         LongPoint.unpack(new BytesRef(upperPoint), 0, upperPointLong);
 
         return LongPoint.newRangeQuery(field, lowerPointLong, upperPointLong);
+    }
 
+    private void serializeDummyQuery(BytesStreamOutput os, Query query) throws IOException {
+        os.writeInt(((DummyQuery) query).getId());
+    }
+
+    private Query deserializeDummyQuery(BytesStreamInput is) throws IOException {
+        return new DummyQuery(is.readInt());
     }
 
     private boolean isLongPointRangeQuery(PointRangeQuery query) {
         // TODO: A gross hack - but ok for the PoC
         // TODO: also - does it work??
         return query.getClass() == longPointRangeQuery.getClass();
-
     }
 
     public boolean isAllowed(Query query) {
-        // TODO - report true for serializable, false for not serializable. Feed this into a policy into the TSC to control disk tier access.
+        // TODO - report true for serializable, false for not serializable. Feed this into a policy into the TSC to control disk tier
+        // access.
         return getClassByte(query) != INVALID_QUERY_BYTE;
     }
 
     byte getClassByte(Query query) {
         if (query instanceof PointRangeQuery) return POINT_RANGE_QUERY_BYTE;
+        if (query instanceof DummyQuery) return DUMMY_QUERY_BYTE;
         return INVALID_QUERY_BYTE;
     }
 }

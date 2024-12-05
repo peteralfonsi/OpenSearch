@@ -45,8 +45,11 @@ import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.serializer.Serializer;
 import org.opensearch.common.cache.service.CacheService;
+import org.opensearch.common.cache.stats.ImmutableCacheStats;
+import org.opensearch.common.cache.stats.ImmutableCacheStatsHolder;
 import org.opensearch.common.cache.store.config.CacheConfig;
 import org.opensearch.common.io.stream.BytesStreamOutput;
+import org.opensearch.common.lucene.ShardCoreKeyMap;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.BytesStreamInput;
@@ -58,10 +61,8 @@ import org.opensearch.indices.OpenSearchQueryCache;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -70,7 +71,6 @@ import java.util.function.Predicate;
 import java.util.function.ToLongBiFunction;
 
 import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
-
 
 // TODO: This is a proof of concept only! This is not an elegant or clean (or even really functional) implementation.
 
@@ -124,11 +124,9 @@ import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
      */
 public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
 
-    private final ICache<CompositeKey, CacheAndCount> innerCache; // This should typically be a TieredSpilloverCache but theoretically can be anything - for testing purposes
+    private final ICache<CompositeKey, CacheAndCount> innerCache; // This should typically be a TieredSpilloverCache but theoretically can
+                                                                  // be anything - for testing purposes
     private final Map<IndexReader.CacheKey, LeafCache> outerCache;
-
-    //private final LongAdder hitCount;
-    private final LongAdder outerCacheMissCount; // TODO: this should prob be some map from shard (or w/e TSC dimension is) to LongAdder
 
     private AtomicInteger nextLeafCacheId; // Increment this and feed to each LeafCache on creation as unique id.
 
@@ -139,43 +137,37 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
 
     private final RemovalListener<ICacheKey<CompositeKey>, CacheAndCount> removalListener;
 
+    private final ShardCoreKeyMap shardKeyMap = new ShardCoreKeyMap();
+    private final Map<String, LongAdder> outerCacheMissCounts;
+
     private static final Logger logger = LogManager.getLogger(TieredQueryCache.class);
+
+    public static final String SHARD_ID_DIMENSION_NAME = "shards";
 
     // Is there any need for locks? The underlying TSC is threadsafe. I think the need for locks in original was due to LeafCache impl.
 
+    public TieredQueryCache(CacheService cacheService, Settings settings, ClusterService clusterService, NodeEnvironment nodeEnvironment) {
 
-    public TieredQueryCache(long heapSizeBytes,
-                            long diskSizeBytes,
-                            long maxRamBytesUsed,
-                            Predicate<LeafReaderContext> leavesToCache,
-                            float skipCacheFactor,
-                            CacheService cacheService,
-                            Settings settings,
-                            ClusterService clusterService,
-                            NodeEnvironment nodeEnvironment
-                            ) {
-        this.maxRamBytesUsed = maxRamBytesUsed;
-        this.leavesToCache = leavesToCache;
-        if (skipCacheFactor >= 1 == false) { // NaN >= 1 evaluates false
-            throw new IllegalArgumentException(
-                "skipCacheFactor must be no less than 1, get " + skipCacheFactor);
-        }
-        this.skipCacheFactor = skipCacheFactor;
+        // Following IQC, hardcode leavesToCache and skipFactor
+        this.leavesToCache = context -> true;
+        this.skipCacheFactor = 1f;
 
         this.keySerializer = new CompositeKeySerializer(new QuerySerializer());
-        this.outerCacheMissCount = new LongAdder();
-
+        this.outerCacheMissCounts = new ConcurrentHashMap<>();
         this.outerCache = new ConcurrentHashMap<>(); // Does the concurrent-ness have a perf impact? Not sure.
-
-        ToLongBiFunction<ICacheKey<CompositeKey>, CacheAndCount> weigher = (k, v) -> k.ramBytesUsed(k.key.ramBytesUsed()) + v.ramBytesUsed();
+        ToLongBiFunction<ICacheKey<CompositeKey>, CacheAndCount> weigher = (k, v) -> k.ramBytesUsed(k.key.ramBytesUsed()) + v
+            .ramBytesUsed();
         this.removalListener = new TSCRemovalListener();
+        this.nextLeafCacheId = new AtomicInteger();
+
         this.innerCache = cacheService.createCache(
             new CacheConfig.Builder<CompositeKey, CacheAndCount>().setSettings(settings)
                 .setWeigher(weigher)
                 .setValueType(CacheAndCount.class)
                 .setKeyType(CompositeKey.class)
                 .setRemovalListener(removalListener)
-                //.setDimensionNames(List.of(INDEX_DIMENSION_NAME, SHARD_ID_DIMENSION_NAME)) // TODO
+                .setDimensionNames(List.of(SHARD_ID_DIMENSION_NAME))
+                .setSegmentCount(1) // TODO: REMOVE!! For testing only
                 /*.setCachedResultParser((bytesReference) -> {
                     try {
                         return CachedQueryResult.getPolicyValues(bytesReference);
@@ -190,12 +182,11 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
                 .setClusterSettings(clusterService.getClusterSettings())
                 .setStoragePath(nodeEnvironment.nodePaths()[0].path.toString() + "/query_cache")
                 .build(),
-            CacheType.QUERY_CACHE
+            CacheType.INDICES_QUERY_CACHE
         );
+        this.maxRamBytesUsed = 1_000_000; // TODO: i think this just controls the max size going in rn. Didnt want to deal w the settings rn
         // In theory it may be useful to test this with non-TSC internal caches for regression purposes.
         // For example, if we just do an OpenSearchOnHeapCache of the same size, how much worse does it perform?
-
-
     }
 
     protected CacheAndCount get(Query query, IndexReader.CacheHelper cacheHelper) {
@@ -207,35 +198,37 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
         final LeafCache leafCache = outerCache.get(readerKey);
 
         if (leafCache == null) {
-            onMiss(readerKey, query);
+            String shardIdName = getShardIdName(readerKey);
+            outerCacheMissCounts.computeIfAbsent(shardIdName, (k) -> new LongAdder()).add(1);
+            // onMiss(readerKey, query);
             return null;
         }
         // Singleton stuff would go here if I decide it's needed
-        final CacheAndCount cached = leafCache.get(query);
-        if (cached == null) {
-            onMiss(readerKey, query);
-        } else {
-            onHit(readerKey, query); // TODO: Currently does nothing.
-        }
+        String shardIdName = getShardIdName(cacheHelper.getKey());
+        final CacheAndCount cached = leafCache.get(query, shardIdName);
         return cached;
-    }
-
-    // TODO: Duplicated these from LRUQC for now. Skipping other callbacks as TSC can mostly handle stats.
-    protected void onHit(Object readerCoreKey, Query query) {
-        //hitCount.add(1);
-        // TODO: dont think this is needed as TSC can track hits.
-    }
-    protected void onMiss(Object readerCoreKey, Query query) {
-        assert query != null;
-        outerCacheMissCount.add(1);
-        // TODO: this only tracks the misses due to nonexistent leaf cache, as TSC can track others.
     }
 
     // TODO: Dont forget - the LRUQC has some logic about what even should enter the cache. Make sure to duplicate this.
 
     @Override
     public QueryCacheStats getStats(ShardId shard) {
-        return null;
+        ImmutableCacheStatsHolder innerStats = innerCache.stats(new String[] { SHARD_ID_DIMENSION_NAME });
+        ImmutableCacheStats shardInnerStats = innerStats.getStatsForDimensionValues(List.of(shard.toString()));
+        long outerMisses = outerCacheMissCounts.computeIfAbsent(shard.toString(), (k) -> new LongAdder()).longValue();
+        if (shardInnerStats == null) {
+            return new QueryCacheStats(0, 0, outerMisses, 0, 0);
+        }
+
+        return new QueryCacheStats(
+            shardInnerStats.getSizeInBytes(),
+            shardInnerStats.getHits(),
+            shardInnerStats.getMisses() + outerMisses,
+            shardInnerStats.getItems() + shardInnerStats.getEvictions(),
+            shardInnerStats.getItems()
+        ); // TODO: Not clear on what cache count is meant to be... I *think* it's the number of keys that have ever entered the cache,
+           // including those now evicted? It doesn't *look* like it's doing anything smart about double-entries so I think it's just count
+           // + evictions.
     }
 
     @Override
@@ -264,7 +257,8 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
     }
 
     private void putIfAbsent(Query query, CacheAndCount cached, IndexReader.CacheHelper cacheHelper) {
-        // TODO: This is a lot simpler than the LRUQC one - for now I'm not fully handling stats, and I dont have to deal with the singleton LRU stuff
+        // TODO: This is a lot simpler than the LRUQC one - for now I'm not fully handling stats, and I dont have to deal with the singleton
+        // LRU stuff
         final IndexReader.CacheKey key = cacheHelper.getKey();
         LeafCache leafCache = outerCache.get(key);
         if (leafCache == null) {
@@ -273,7 +267,7 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
             final LeafCache previous = outerCache.put(key, leafCache);
             assert previous == null;
         }
-        leafCache.putIfAbsent(query, cached);
+        leafCache.putIfAbsent(query, cached, getShardIdName(cacheHelper.getKey()));
         // We also dont handle eviction; the TSC does.
     }
 
@@ -295,43 +289,42 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
     private static CacheAndCount cacheIntoBitSet(BulkScorer scorer, int maxDoc) throws IOException {
         final FixedBitSet bitSet = new FixedBitSet(maxDoc);
         int[] count = new int[1];
-        scorer.score(
-            new LeafCollector() {
+        scorer.score(new LeafCollector() {
 
-                @Override
-                public void setScorer(Scorable scorer) throws IOException {}
+            @Override
+            public void setScorer(Scorable scorer) throws IOException {}
 
-                @Override
-                public void collect(int doc) throws IOException {
-                    count[0]++;
-                    bitSet.set(doc);
-                }
-            },
-            null);
+            @Override
+            public void collect(int doc) throws IOException {
+                count[0]++;
+                bitSet.set(doc);
+            }
+        }, null);
         return new CacheAndCount(new BitDocIdSet(bitSet, count[0]), count[0], maxDoc);
     }
 
-    private static CacheAndCount cacheIntoRoaringDocIdSet(BulkScorer scorer, int maxDoc)
-        throws IOException {
+    private static CacheAndCount cacheIntoRoaringDocIdSet(BulkScorer scorer, int maxDoc) throws IOException {
         RoaringDocIdSet.Builder builder = new RoaringDocIdSet.Builder(maxDoc);
-        scorer.score(
-            new LeafCollector() {
+        scorer.score(new LeafCollector() {
 
-                @Override
-                public void setScorer(Scorable scorer) throws IOException {}
+            @Override
+            public void setScorer(Scorable scorer) throws IOException {}
 
-                @Override
-                public void collect(int doc) throws IOException {
-                    builder.add(doc);
-                }
-            },
-            null);
+            @Override
+            public void collect(int doc) throws IOException {
+                builder.add(doc);
+            }
+        }, null);
         RoaringDocIdSet cache = builder.build();
         return new CacheAndCount(cache, cache.cardinality(), maxDoc);
     }
 
     Predicate<CompositeKey> createTSCPolicy(CompositeKeySerializer serializer) {
         return serializer::isAllowed;
+    }
+
+    private String getShardIdName(Object readerCoreKey) {
+        return shardKeyMap.getShardId(readerCoreKey).toString();
     }
 
     private class TieredCachingWrapperWeight extends ConstantScoreWeight {
@@ -348,11 +341,6 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
             this.policy = policy;
             used = new AtomicBoolean(false);
         }
-
-        // TODO: all other logic, which can be mostly duplicated from LRUQC.
-
-        // This logic needs us to implement following in TQC:
-        // maxRamBytesUsed, cacheImpl, leavesToCache, skipCacheFactor, putIfAbsent, and possibly readLock tho that might not be needed.
 
         @Override
         public Matches matches(LeafReaderContext context, int doc) throws IOException {
@@ -382,13 +370,13 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
 
         /** Check whether this segment is eligible for caching, regardless of the query. */
         private boolean shouldCache(LeafReaderContext context) throws IOException {
-            return cacheEntryHasReasonableWorstCaseSize(
-                ReaderUtil.getTopLevelContext(context).reader().maxDoc())
+            return cacheEntryHasReasonableWorstCaseSize(ReaderUtil.getTopLevelContext(context).reader().maxDoc())
                 && leavesToCache.test(context);
         }
 
         @Override
         public ScorerSupplier scorerSupplier(LeafReaderContext context) throws IOException {
+            shardKeyMap.add(context.reader());
             if (used.compareAndSet(false, true)) {
                 policy.onUse(getQuery());
             }
@@ -442,8 +430,7 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
                             }
 
                             Scorer scorer = supplier.get(Long.MAX_VALUE);
-                            CacheAndCount cached =
-                                cacheImpl(new DefaultBulkScorer(scorer), context.reader().maxDoc());
+                            CacheAndCount cached = cacheImpl(new DefaultBulkScorer(scorer), context.reader().maxDoc());
                             putIfAbsent(in.getQuery(), cached, cacheHelper);
                             DocIdSetIterator disi = cached.iterator();
                             if (disi == null) {
@@ -452,8 +439,7 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
                                 disi = DocIdSetIterator.empty();
                             }
 
-                            return new ConstantScoreScorer(
-                                TieredCachingWrapperWeight.this, 0f, ScoreMode.COMPLETE_NO_SCORES, disi);
+                            return new ConstantScoreScorer(TieredCachingWrapperWeight.this, 0f, ScoreMode.COMPLETE_NO_SCORES, disi);
                         }
 
                         @Override
@@ -478,8 +464,7 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
             return new ScorerSupplier() {
                 @Override
                 public Scorer get(long LeadCost) throws IOException {
-                    return new ConstantScoreScorer(
-                        TieredCachingWrapperWeight.this, 0f, ScoreMode.COMPLETE_NO_SCORES, disi);
+                    return new ConstantScoreScorer(TieredCachingWrapperWeight.this, 0f, ScoreMode.COMPLETE_NO_SCORES, disi);
                 }
 
                 @Override
@@ -491,6 +476,7 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
 
         @Override
         public Scorer scorer(LeafReaderContext context) throws IOException {
+            shardKeyMap.add(context.reader());
             ScorerSupplier scorerSupplier = scorerSupplier(context);
             if (scorerSupplier == null) {
                 return null;
@@ -500,6 +486,7 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
 
         @Override
         public int count(LeafReaderContext context) throws IOException {
+            shardKeyMap.add(context.reader());
             // Our cache won't have an accurate count if there are deletions
             if (context.reader().hasDeletions()) {
                 return in.count(context);
@@ -554,6 +541,7 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
 
         @Override
         public BulkScorer bulkScorer(LeafReaderContext context) throws IOException {
+            shardKeyMap.add(context.reader());
             if (used.compareAndSet(false, true)) {
                 policy.onUse(getQuery());
             }
@@ -606,10 +594,9 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
                 return null;
             }
 
-            return new DefaultBulkScorer(
-                new ConstantScoreScorer(this, 0f, ScoreMode.COMPLETE_NO_SCORES, disi));
+            return new DefaultBulkScorer(new ConstantScoreScorer(this, 0f, ScoreMode.COMPLETE_NO_SCORES, disi));
         }
-        }
+    }
 
     static class CompositeKey implements Accountable {
         final int leafCacheId;
@@ -631,6 +618,11 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
         }
 
         @Override
+        public int hashCode() {
+            return leafCacheId + 31 * query.hashCode();
+        }
+
+        @Override
         public long ramBytesUsed() {
             return 0; // TODO: It looks like in LRUQC, LeafCache only counts DocIdSet towards its total usage.
         }
@@ -646,18 +638,17 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
             this.actualCache = actualCache;
         }
 
-        CacheAndCount get(Query query) {
-            return actualCache.get(getFinalKey(query)); // TODO: should this be computeIfAbsent?
+        CacheAndCount get(Query query, String shardIdName) {
+            return actualCache.get(getFinalKey(query, shardIdName)); // TODO: should this be computeIfAbsent?
         }
 
-        void putIfAbsent(Query query, CacheAndCount cached) {
-            actualCache.put(getFinalKey(query), cached);
+        void putIfAbsent(Query query, CacheAndCount cached, String shardIdName) {
+            actualCache.put(getFinalKey(query, shardIdName), cached);
         }
 
-        ICacheKey<CompositeKey> getFinalKey(Query query) {
+        ICacheKey<CompositeKey> getFinalKey(Query query, String shardIdName) {
             CompositeKey key = new CompositeKey(id, query);
-            return new ICacheKey<>(key, null); // TODO: dimensions?? Will the TSC even track stats - dont think so for now?
-            // I think the TSC dimension should ultimately be from the shard. TBD if feasible.
+            return new ICacheKey<>(key, List.of(shardIdName));
         }
     }
 
@@ -665,8 +656,7 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
     protected static class CacheAndCount implements Accountable {
         protected static final CacheAndCount EMPTY = new CacheAndCount(DocIdSet.EMPTY, 0, 0);
 
-        private static final long BASE_RAM_BYTES_USED =
-            RamUsageEstimator.shallowSizeOfInstance(CacheAndCount.class);
+        private static final long BASE_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(CacheAndCount.class);
         private final DocIdSet cache;
         private final int count;
         private final int maxDoc; // TODO: this value is needed for serialization here, but wasn't needed in LRUQC.
@@ -717,6 +707,11 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
                 throw new OpenSearchException("Error iterating through doc id set: ", e);
             }
             return thisDocIds.equals(otherDocIds);
+        }
+
+        @Override
+        public int hashCode() {
+            return count + 31 * (maxDoc + 31 * cache.hashCode());
         }
     }
 
@@ -782,9 +777,8 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
         }
     }
 
-
-
-    // TODO: I kind of suspect the de/serialization of DocIdSet is gonna be slow, and it may be so slow it doesn't make sense to do it at all.
+    // TODO: I kind of suspect the de/serialization of DocIdSet is gonna be slow, and it may be so slow it doesn't make sense to do it at
+    // all.
 
     static class CacheAndCountSerializer implements Serializer<CacheAndCount, byte[]> {
         // Theres like ... 8 different impls of DocIdSet. But I think we only use 2 possible ones in the cache. Hopefully can just do that.
@@ -892,4 +886,3 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
         }
     }
 }
-

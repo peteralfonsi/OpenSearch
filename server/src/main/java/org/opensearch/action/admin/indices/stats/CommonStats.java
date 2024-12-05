@@ -58,7 +58,6 @@ import org.opensearch.index.shard.IndexingStats;
 import org.opensearch.index.store.StoreStats;
 import org.opensearch.index.translog.TranslogStats;
 import org.opensearch.index.warmer.WarmerStats;
-import org.opensearch.indices.IndicesQueryCache;
 import org.opensearch.indices.OpenSearchQueryCache;
 import org.opensearch.search.suggest.completion.CompletionStats;
 

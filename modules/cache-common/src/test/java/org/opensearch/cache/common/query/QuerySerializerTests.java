@@ -16,8 +16,8 @@ import org.opensearch.test.OpenSearchTestCase;
 public class QuerySerializerTests extends OpenSearchTestCase {
     public void testLongPointRangeQuery() throws Exception {
         String field = "date";
-        long[] lowerPoint = new long[]{0, 5, 199, 28238};
-        long[] upperPoint = new long[]{1, 688, 200, 30000};
+        long[] lowerPoint = new long[] { 0, 5, 199, 28238 };
+        long[] upperPoint = new long[] { 1, 688, 200, 30000 };
 
         Query original = LongPoint.newRangeQuery(field, lowerPoint, upperPoint);
         QuerySerializer serializer = new QuerySerializer();
@@ -29,11 +29,23 @@ public class QuerySerializerTests extends OpenSearchTestCase {
 
     public void testOtherPointRangeQueriesFail() throws Exception {
         String field = "date";
-        double[] lowerPoint = new double[]{0, 5, 199, 28238};
-        double[] upperPoint = new double[]{1, 688, 200, 30000};
+        double[] lowerPoint = new double[] { 0, 5, 199, 28238 };
+        double[] upperPoint = new double[] { 1, 688, 200, 30000 };
 
         Query original = DoublePoint.newRangeQuery(field, lowerPoint, upperPoint);
         QuerySerializer serializer = new QuerySerializer();
         assertThrows(UnsupportedOperationException.class, () -> serializer.serialize(original));
+    }
+
+    public void testDummyQuery() throws Exception {
+        int id = 7;
+        Query original = new DummyQuery(id);
+        QuerySerializer serializer = new QuerySerializer();
+        byte[] ser = serializer.serialize(original);
+        Query deser = serializer.deserialize(ser);
+        assertTrue(serializer.equals(original, ser));
+        assertEquals(original, deser);
+        assertNotEquals(new DummyQuery(id - 1), original);
+        assertNotEquals(new DummyQuery(id - 1), deser);
     }
 }

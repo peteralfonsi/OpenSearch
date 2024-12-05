@@ -15,11 +15,8 @@ import org.apache.lucene.util.FixedBitSet;
 import org.apache.lucene.util.RoaringDocIdSet;
 import org.opensearch.test.OpenSearchTestCase;
 
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-
-import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
 
 // Tests for the serializers in TieredQueryCache.
 public class TieredQueryCacheSerializerTests extends OpenSearchTestCase {
@@ -29,7 +26,7 @@ public class TieredQueryCacheSerializerTests extends OpenSearchTestCase {
         int maxDoc = Collections.max(docs) + 250;
         int count = 17;
         // Check for both BigDocIdSet and RoaringDocIdSet
-        for (DocIdSet set : new DocIdSet[]{getBitDocIdSet(docs), getRoaringDocIdSet(docs, maxDoc)}) {
+        for (DocIdSet set : new DocIdSet[] { getBitDocIdSet(docs), getRoaringDocIdSet(docs, maxDoc) }) {
             TieredQueryCache.CacheAndCount original = new TieredQueryCache.CacheAndCount(set, count, maxDoc);
             TieredQueryCache.CacheAndCountSerializer ser = new TieredQueryCache.CacheAndCountSerializer();
             byte[] serialized = ser.serialize(original);
@@ -44,7 +41,7 @@ public class TieredQueryCacheSerializerTests extends OpenSearchTestCase {
     }
 
     private BitDocIdSet getBitDocIdSet(List<Integer> docs) {
-        BitSet bitset = new FixedBitSet(Collections.max(docs)+1);
+        BitSet bitset = new FixedBitSet(Collections.max(docs) + 1);
         for (int doc : docs) {
             bitset.set(doc);
         }
