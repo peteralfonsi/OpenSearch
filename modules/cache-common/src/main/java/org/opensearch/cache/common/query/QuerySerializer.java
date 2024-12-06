@@ -42,10 +42,12 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
             switch (classByte) {
                 case POINT_RANGE_QUERY_BYTE:
                     serializePointRangeQuery(os, object);
+                    break;
                 case DUMMY_QUERY_BYTE:
                     serializeDummyQuery(os, object);
-                    /*default:
-                    throw new UnsupportedOperationException("Invalid class byte");*/
+                    break;
+                /*default:
+                throw new UnsupportedOperationException("Invalid class byte");*/
             }
         } catch (IOException e) {
             throw new OpenSearchException("Error serializing query: ", e);

@@ -58,6 +58,7 @@ import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.index.cache.query.QueryCacheStats;
 import org.opensearch.indices.OpenSearchQueryCache;
+import org.opensearch.search.aggregations.bucket.composite.CompositeKey;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -252,13 +253,7 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
         // TODO: This is a lot simpler than the LRUQC one - for now I'm not fully handling stats, and I dont have to deal with the singleton
         // LRU stuff
         final IndexReader.CacheKey key = cacheHelper.getKey();
-        LeafCache leafCache = outerCache.get(key);
-        if (leafCache == null) {
-            int nextId = nextLeafCacheId.incrementAndGet();
-            leafCache = new LeafCache(nextId, innerCache);
-            final LeafCache previous = outerCache.put(key, leafCache);
-            assert previous == null;
-        }
+        LeafCache leafCache = outerCache.computeIfAbsent(key, (k) -> new LeafCache(nextLeafCacheId.incrementAndGet(), innerCache));
         leafCache.putIfAbsent(query, cached, getShardIdName(cacheHelper.getKey()));
         // We also dont handle eviction; the TSC does.
     }
