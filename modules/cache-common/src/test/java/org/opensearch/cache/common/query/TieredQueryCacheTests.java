@@ -9,6 +9,8 @@
 package org.opensearch.cache.common.query;
 
 import org.apache.lucene.document.Document;
+import org.apache.lucene.document.Field;
+import org.apache.lucene.document.LongField;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexWriter;
@@ -22,6 +24,7 @@ import org.opensearch.cache.common.tier.TieredSpilloverCachePlugin;
 import org.opensearch.cache.common.tier.TieredSpilloverCacheSettings;
 import org.opensearch.cache.common.tier.TieredSpilloverCacheTests;
 import org.opensearch.cluster.service.ClusterService;
+import org.opensearch.common.Randomness;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.module.CacheModule;
@@ -47,6 +50,7 @@ import org.junit.After;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 
 import static org.opensearch.cache.common.query.TieredQueryCache.SHARD_ID_DIMENSION_NAME;
 import static org.opensearch.cache.common.tier.TieredSpilloverCacheSettings.DISK_CACHE_ENABLED_SETTING_MAP;
@@ -282,8 +286,51 @@ public class TieredQueryCacheTests extends OpenSearchSingleNodeTestCase {
         IOUtils.close(r1, dir1, r2, dir2);
     }
 
+    private void addRandomDocs(int numDocs, IndexWriter w, Random rand, int numDims, long lowerBound, long upperBound) throws IOException {
+        for (int i = 0; i < numDocs; i++) {
+            Document d = new Document();
+            long[] values = new long[numDims];
+            for (int j = 0; j < numDims; j++) {
+                values[j] = (long) rand.nextInt((int) upperBound);
+            }
+            d.add(new LongPoint(field, values));
+            w.addDocument(d);
+        }
+    }
+
     public void testBasicsWithLongPointRangeQuery() throws Exception {
-        // TODO
+        threadPool = getThreadPool();
+        Directory dir = newDirectory();
+        IndexWriter w = new IndexWriter(dir, newIndexWriterConfig());
+        // TODO: Adding a bunch of random docs in a >1D space appears to mean Lucene can't search it sublinearly (>1D AND we have Relation.CELL_CROSSES_QUERY).
+        // This means we DO actually use the query cache - sublinear queries are not cached for performance reasons since caching is O(N).
+        // But, idk if this will be consistent. Need to learn more about how it decides where the BKD tree cells have their boundaries.
+        addRandomDocs(1000, w, Randomness.get(), 2, 0, 100);
+        DirectoryReader r = DirectoryReader.open(w);
+        w.close();
+        ShardId shard = new ShardId("index", "_na_", 0);
+        r = OpenSearchDirectoryReader.wrap(r, shard);
+        IndexSearcher s = new IndexSearcher(r);
+        s.setQueryCachingPolicy(alwaysCachePolicy());
+
+        TieredQueryCache cache = getQueryCache(getTSCSettings(1000));
+        s.setQueryCache(cache);
+
+        QueryCacheStats stats = cache.getStats(shard);
+        assertEquals(0L, stats.getCacheSize());
+        assertEquals(0L, stats.getCacheCount());
+        assertEquals(0L, stats.getHitCount());
+        assertEquals(0L, stats.getMissCount());
+        assertEquals(0L, stats.getMemorySizeInBytes());
+
+        assertEquals(1, s.count(getRangeQuery(0, 2)));
+
+        stats = cache.getStats(shard);
+        assertEquals(1L, stats.getCacheSize());
+        assertEquals(1L, stats.getCacheCount());
+        assertEquals(0L, stats.getHitCount());
+        assertEquals(2L, stats.getMissCount());
+        assertTrue(stats.getMemorySizeInBytes() > 0L && stats.getMemorySizeInBytes() < Long.MAX_VALUE);
     }
 
     private Settings getTSCSettings(int heapBytes) {
@@ -334,7 +381,7 @@ public class TieredQueryCacheTests extends OpenSearchSingleNodeTestCase {
     }
 
     private Query getRangeQuery(long low, long high) {
-        return LongPoint.newRangeQuery(field, new long[] { low }, new long[] { high });
+        return LongPoint.newRangeQuery(field, new long[] { low, low+2 }, new long[] { high, high+2 });
     }
 
     private static QueryCachingPolicy alwaysCachePolicy() {
