@@ -35,6 +35,7 @@ import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.index.cache.query.QueryCacheStats;
+import org.opensearch.indices.IndicesQueryCache;
 import org.opensearch.node.Node;
 import org.opensearch.plugins.CachePlugin;
 import org.opensearch.plugins.Plugin;
@@ -123,7 +124,6 @@ public class TieredQueryCacheTests extends OpenSearchSingleNodeTestCase {
     public void testBasics_WithTSC_WithSmallHeapSize() throws Exception {
         // TODO: Check all the logic works when TSC is innerCache and can only fit a few keys into its heap tier (aka test the serializers
         // work.)
-
         threadPool = getThreadPool();
         Directory dir = newDirectory();
         IndexWriter w = new IndexWriter(dir, newIndexWriterConfig());
@@ -198,6 +198,88 @@ public class TieredQueryCacheTests extends OpenSearchSingleNodeTestCase {
         assertEquals(1L, stats.getHitCount());
         assertEquals(2 * numEntries, stats.getMissCount());
         assertTrue(stats.getMemorySizeInBytes() > 0L && stats.getMemorySizeInBytes() < Long.MAX_VALUE);
+    }
+
+    // Modified from IndicesQueryCacheTests
+    // Removed logic around closing shards as thats not yet implemented
+    public void testTwoShards() throws IOException {
+        threadPool = getThreadPool();
+        Directory dir1 = newDirectory();
+        IndexWriter w1 = new IndexWriter(dir1, newIndexWriterConfig());
+        w1.addDocument(new Document());
+        DirectoryReader r1 = DirectoryReader.open(w1);
+        w1.close();
+        ShardId shard1 = new ShardId("index", "_na_", 0);
+        r1 = OpenSearchDirectoryReader.wrap(r1, shard1);
+        IndexSearcher s1 = new IndexSearcher(r1);
+        s1.setQueryCachingPolicy(alwaysCachePolicy());
+
+        Directory dir2 = newDirectory();
+        IndexWriter w2 = new IndexWriter(dir2, newIndexWriterConfig());
+        w2.addDocument(new Document());
+        DirectoryReader r2 = DirectoryReader.open(w2);
+        w2.close();
+        ShardId shard2 = new ShardId("index", "_na_", 1);
+        r2 = OpenSearchDirectoryReader.wrap(r2, shard2);
+        IndexSearcher s2 = new IndexSearcher(r2);
+        s2.setQueryCachingPolicy(alwaysCachePolicy());
+
+        TieredQueryCache cache = getQueryCache(getTSCSettings(1000));
+        s1.setQueryCache(cache);
+        s2.setQueryCache(cache);
+
+        assertEquals(1, s1.count(new DummyQuery(0)));
+
+        QueryCacheStats stats1 = cache.getStats(shard1);
+        assertEquals(1L, stats1.getCacheSize());
+        assertEquals(1L, stats1.getCacheCount());
+        assertEquals(0L, stats1.getHitCount());
+        assertEquals(2L, stats1.getMissCount());
+        assertTrue(stats1.getMemorySizeInBytes() >= 0L && stats1.getMemorySizeInBytes() < Long.MAX_VALUE);
+
+        QueryCacheStats stats2 = cache.getStats(shard2);
+        assertEquals(0L, stats2.getCacheSize());
+        assertEquals(0L, stats2.getCacheCount());
+        assertEquals(0L, stats2.getHitCount());
+        assertEquals(0L, stats2.getMissCount());
+        assertTrue(stats2.getMemorySizeInBytes() >= 0L && stats2.getMemorySizeInBytes() < Long.MAX_VALUE);
+
+        assertEquals(1, s2.count(new DummyQuery(0)));
+
+        stats1 = cache.getStats(shard1);
+        assertEquals(1L, stats1.getCacheSize());
+        assertEquals(1L, stats1.getCacheCount());
+        assertEquals(0L, stats1.getHitCount());
+        assertEquals(2L, stats1.getMissCount());
+        assertTrue(stats1.getMemorySizeInBytes() >= 0L && stats1.getMemorySizeInBytes() < Long.MAX_VALUE);
+
+        stats2 = cache.getStats(shard2);
+        assertEquals(1L, stats2.getCacheSize());
+        assertEquals(1L, stats2.getCacheCount());
+        assertEquals(0L, stats2.getHitCount());
+        assertEquals(2L, stats2.getMissCount());
+        assertTrue(stats2.getMemorySizeInBytes() >= 0L && stats2.getMemorySizeInBytes() < Long.MAX_VALUE);
+
+        for (int i = 0; i < 20; ++i) {
+            assertEquals(1, s2.count(new DummyQuery(i)));
+        }
+
+        stats1 = cache.getStats(shard1);
+        //assertEquals(0L, stats1.getCacheSize()); // evicted
+        assertEquals(1L, stats1.getCacheCount());
+        assertEquals(0L, stats1.getHitCount());
+        assertEquals(2L, stats1.getMissCount());
+        assertTrue(stats1.getMemorySizeInBytes() >= 0L && stats1.getMemorySizeInBytes() < Long.MAX_VALUE);
+
+        stats2 = cache.getStats(shard2);
+        //assertEquals(10L, stats2.getCacheSize());
+        assertEquals(20L, stats2.getCacheCount());
+        assertEquals(1L, stats2.getHitCount());
+        assertEquals(40L, stats2.getMissCount());
+        assertTrue(stats2.getMemorySizeInBytes() >= 0L && stats2.getMemorySizeInBytes() < Long.MAX_VALUE);
+
+        cache.close(); // this triggers some assertions
+        IOUtils.close(r1, dir1, r2, dir2);
     }
 
     public void testBasicsWithLongPointRangeQuery() throws Exception {
