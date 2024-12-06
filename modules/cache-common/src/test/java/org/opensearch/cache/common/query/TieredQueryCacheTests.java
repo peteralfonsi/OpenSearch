@@ -23,13 +23,11 @@ import org.opensearch.cache.common.tier.TieredSpilloverCacheSettings;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
-import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.module.CacheModule;
 import org.opensearch.common.cache.settings.CacheSettings;
 import org.opensearch.common.cache.store.OpenSearchOnHeapCache;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
 import org.opensearch.common.settings.Settings;
-import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.FeatureFlags;
 import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.core.index.shard.ShardId;
@@ -44,13 +42,10 @@ import org.opensearch.threadpool.ThreadPool;
 import org.junit.After;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 import static org.opensearch.cache.common.tier.TieredSpilloverCacheSettings.DISK_CACHE_ENABLED_SETTING_MAP;
-import static org.opensearch.cache.common.tier.TieredSpilloverCacheSettings.TIERED_SPILLOVER_SEGMENTS;
 
 public class TieredQueryCacheTests extends OpenSearchSingleNodeTestCase {
 
@@ -162,9 +157,7 @@ public class TieredQueryCacheTests extends OpenSearchSingleNodeTestCase {
         assertEquals(1L, stats.getCacheSize());
         assertEquals(1L, stats.getCacheCount());
         assertEquals(0L, stats.getHitCount());
-        assertEquals(2L, stats.getMissCount()); // TODO: Why is there 2x misses per s.count()?
-        // TODO: returning 3 not 2. 1 from TSC and 2 from outer misses. Doesnt seem to be a TSC stats holder problem.
-        // In original, there were 2 from outer misses (this is as we expect - confirmed it all looks right at end) and 0 from inner misses.
+        assertEquals(2L, stats.getMissCount());
         assertTrue(stats.getMemorySizeInBytes() > 0L && stats.getMemorySizeInBytes() < Long.MAX_VALUE);
 
         int numEntries = 3;
@@ -184,8 +177,7 @@ public class TieredQueryCacheTests extends OpenSearchSingleNodeTestCase {
 
         stats = cache.getStats(shard);
         // assertEquals(10L, stats.getCacheSize());
-        // Stats are ram=2226, hits=0, miss=82, count=21, size=21. Hits are wrong and probably misses are too.
-        assertEquals(numEntries, stats.getCacheCount()); // This is 21. Probably incorrect. Indicates it's double-adding?
+        assertEquals(numEntries, stats.getCacheCount());
         assertEquals(1L, stats.getHitCount());
         assertEquals(2 * numEntries, stats.getMissCount());
         assertTrue(stats.getMemorySizeInBytes() > 0L && stats.getMemorySizeInBytes() < Long.MAX_VALUE);
@@ -227,16 +219,12 @@ public class TieredQueryCacheTests extends OpenSearchSingleNodeTestCase {
             )
             .put(FeatureFlags.PLUGGABLE_CACHE, "true")
             .build();
-
     }
 
     private TieredQueryCache getQueryCache(Settings settings) throws IOException {
         try (NodeEnvironment env = newNodeEnvironment(settings)) {
             ClusterService clusterService = ClusterServiceUtils.createClusterService(threadPool);
             clusterService.getClusterSettings().registerSetting(DISK_CACHE_ENABLED_SETTING_MAP.get(CacheType.INDICES_QUERY_CACHE));
-            /*clusterService.getClusterSettings().put(
-                Settings.builder().put(DISK_CACHE_ENABLED_SETTING_MAP.get(CacheType.INDICES_QUERY_CACHE).getKey(), true).build()
-            );*/ // TODO: This isn't actually applying anything to the clusterService...
             return new TieredQueryCache(
                 new CacheModule(List.of(new TieredSpilloverCachePlugin(settings), new MockDiskCachePlugin()), settings).getCacheService(),
                 settings,

@@ -44,7 +44,14 @@ public class MockDiskCache<K, V> implements ICache<K, V> {
     private final Serializer<ICacheKey<K>, byte[]> keySerializer;
     private final Serializer<V, byte[]> valueSerializer;
 
-    public MockDiskCache(int maxSize, long delay, RemovalListener<ICacheKey<K>, V> removalListener, boolean statsTrackingEnabled, Serializer<K, byte[]> keySerializer, Serializer<V, byte[]> valueSerializer) {
+    public MockDiskCache(
+        int maxSize,
+        long delay,
+        RemovalListener<ICacheKey<K>, V> removalListener,
+        boolean statsTrackingEnabled,
+        Serializer<K, byte[]> keySerializer,
+        Serializer<V, byte[]> valueSerializer
+    ) {
         this.maxSize = maxSize;
         this.delay = delay;
         this.removalListener = removalListener;
@@ -95,7 +102,9 @@ public class MockDiskCache<K, V> implements ICache<K, V> {
     public void invalidate(ICacheKey<K> key) {
         V value = deserializeValue(this.cache.remove(serializeKey(key)));
         if (value != null) {
-            removalListener.onRemoval(new RemovalNotification<>(key, deserializeValue(cache.get(serializeKey(key))), RemovalReason.INVALIDATED));
+            removalListener.onRemoval(
+                new RemovalNotification<>(key, deserializeValue(cache.get(serializeKey(key))), RemovalReason.INVALIDATED)
+            );
         }
     }
 
@@ -210,7 +219,14 @@ public class MockDiskCache<K, V> implements ICache<K, V> {
 
         @Override
         public ICache<K, V> build() {
-            return new MockDiskCache<K, V>(this.maxSize, this.delay, this.getRemovalListener(), getStatsTrackingEnabled(), keySerializer, valueSerializer);
+            return new MockDiskCache<K, V>(
+                this.maxSize,
+                this.delay,
+                this.getRemovalListener(),
+                getStatsTrackingEnabled(),
+                keySerializer,
+                valueSerializer
+            );
         }
 
         public Builder<K, V> setMaxSize(int maxSize) {
@@ -248,8 +264,12 @@ public class MockDiskCache<K, V> implements ICache<K, V> {
         private final Serializer<ICacheKey<K>, byte[]> keySerializer;
         private final Serializer<V, byte[]> valueSerializer;
 
-
-        public CacheKeyIterator(Map<ByteArrayWrapper, ByteArrayWrapper> cache, RemovalListener<ICacheKey<K>, V> removalListener, Serializer<ICacheKey<K>, byte[]> keySerializer, Serializer<V, byte[]> valueSerializer) {
+        public CacheKeyIterator(
+            Map<ByteArrayWrapper, ByteArrayWrapper> cache,
+            RemovalListener<ICacheKey<K>, V> removalListener,
+            Serializer<ICacheKey<K>, byte[]> keySerializer,
+            Serializer<V, byte[]> valueSerializer
+        ) {
             this.entryIterator = cache.entrySet().iterator();
             this.removalListener = removalListener;
             this.cache = cache;
