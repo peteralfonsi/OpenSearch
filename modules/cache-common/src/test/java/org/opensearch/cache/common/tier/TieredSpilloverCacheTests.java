@@ -2166,7 +2166,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         assertEquals(new ImmutableCacheStats(0, 0, 0, 0, 0), tieredSpilloverCache.stats().getTotalStats());
     }
 
-    private List<String> getMockDimensions() {
+    static private List<String> getMockDimensions() {
         List<String> dims = new ArrayList<>();
         for (String dimensionName : dimensionNames) {
             dims.add("0");
@@ -2416,7 +2416,7 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         return getStatsSnapshotForTier(tsc, tierValue).getItems();
     }
 
-    private ImmutableCacheStats getStatsSnapshotForTier(TieredSpilloverCache<?, ?> tsc, String tierValue) throws IOException {
+    private ImmutableCacheStats getStatsSnapshotForTier(TieredSpilloverCache<?, ?> tsc, String tierValue) {
         List<String> levelsList = new ArrayList<>(dimensionNames);
         levelsList.add(TIER_DIMENSION_NAME);
         String[] levels = levelsList.toArray(new String[0]);
@@ -2426,6 +2426,26 @@ public class TieredSpilloverCacheTests extends OpenSearchTestCase {
         List<String> mockDimensions = getMockDimensions();
         mockDimensions.add(tierValue);
         ImmutableCacheStats snapshot = cacheStats.getStatsForDimensionValues(mockDimensions);
+        if (snapshot == null) {
+            return new ImmutableCacheStats(0, 0, 0, 0, 0); // This can happen if no cache actions have happened for this set of
+            // dimensions yet
+        }
+        return snapshot;
+    }
+
+    public static ImmutableCacheStats getStatsSnapshotForTier(
+        TieredSpilloverCache<?, ?> tsc,
+        String tierValue,
+        List<String> dimensionNames,
+        List<String> dimensionValues
+    ) throws IOException {
+        List<String> levelsList = new ArrayList<>(dimensionNames);
+        levelsList.add(TIER_DIMENSION_NAME);
+        String[] levels = levelsList.toArray(new String[0]);
+        ImmutableCacheStatsHolder cacheStats = tsc.stats(levels);
+        List<String> finalValues = new ArrayList<>(dimensionValues);
+        finalValues.add(tierValue);
+        ImmutableCacheStats snapshot = cacheStats.getStatsForDimensionValues(finalValues);
         if (snapshot == null) {
             return new ImmutableCacheStats(0, 0, 0, 0, 0); // This can happen if no cache actions have happened for this set of
             // dimensions yet

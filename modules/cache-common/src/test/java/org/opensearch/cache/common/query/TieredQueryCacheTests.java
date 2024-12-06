@@ -20,11 +20,13 @@ import org.opensearch.cache.common.tier.MockDiskCache;
 import org.opensearch.cache.common.tier.TieredSpilloverCache;
 import org.opensearch.cache.common.tier.TieredSpilloverCachePlugin;
 import org.opensearch.cache.common.tier.TieredSpilloverCacheSettings;
+import org.opensearch.cache.common.tier.TieredSpilloverCacheTests;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.cache.CacheType;
 import org.opensearch.common.cache.ICache;
 import org.opensearch.common.cache.module.CacheModule;
 import org.opensearch.common.cache.settings.CacheSettings;
+import org.opensearch.common.cache.stats.ImmutableCacheStats;
 import org.opensearch.common.cache.store.OpenSearchOnHeapCache;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
 import org.opensearch.common.settings.Settings;
@@ -45,7 +47,9 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
+import static org.opensearch.cache.common.query.TieredQueryCache.SHARD_ID_DIMENSION_NAME;
 import static org.opensearch.cache.common.tier.TieredSpilloverCacheSettings.DISK_CACHE_ENABLED_SETTING_MAP;
+import static org.opensearch.cache.common.tier.TieredSpilloverCacheStatsHolder.TIER_DIMENSION_VALUE_DISK;
 
 public class TieredQueryCacheTests extends OpenSearchSingleNodeTestCase {
 
@@ -139,6 +143,19 @@ public class TieredQueryCacheTests extends OpenSearchSingleNodeTestCase {
 
         testBasicsDummyQuery(cache, s, shard);
 
+        // Explicitly check disk cache had items and hits
+        TieredSpilloverCache<TieredQueryCache.CompositeKey, TieredQueryCache.CacheAndCount> tsc = (TieredSpilloverCache<
+            TieredQueryCache.CompositeKey,
+            TieredQueryCache.CacheAndCount>) cache.getInnerCache();
+        ImmutableCacheStats diskTierStats = TieredSpilloverCacheTests.getStatsSnapshotForTier(
+            tsc,
+            TIER_DIMENSION_VALUE_DISK,
+            List.of(SHARD_ID_DIMENSION_NAME),
+            List.of(shard.toString())
+        );
+        assertTrue(diskTierStats.getItems() > 0);
+        assertTrue(diskTierStats.getHits() > 0);
+
         cache.close();
         IOUtils.close(r, dir);
     }
@@ -160,7 +177,7 @@ public class TieredQueryCacheTests extends OpenSearchSingleNodeTestCase {
         assertEquals(2L, stats.getMissCount());
         assertTrue(stats.getMemorySizeInBytes() > 0L && stats.getMemorySizeInBytes() < Long.MAX_VALUE);
 
-        int numEntries = 3;
+        int numEntries = 20;
 
         for (int i = 1; i < numEntries; ++i) {
             assertEquals(1, s.count(new DummyQuery(i)));
@@ -173,7 +190,7 @@ public class TieredQueryCacheTests extends OpenSearchSingleNodeTestCase {
         assertEquals(2 * numEntries, stats.getMissCount());
         assertTrue(stats.getMemorySizeInBytes() > 0L && stats.getMemorySizeInBytes() < Long.MAX_VALUE);
 
-        s.count(new DummyQuery(numEntries - 1));
+        s.count(new DummyQuery(1)); // Pick 1 so the hit comes from disk
 
         stats = cache.getStats(shard);
         // assertEquals(10L, stats.getCacheSize());
