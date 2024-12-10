@@ -21,6 +21,9 @@ import org.opensearch.core.common.io.stream.BytesStreamInput;
 import java.io.IOException;
 import java.util.Arrays;
 
+/**
+ * A class to serialize Query objects. Not all Query objects are supported. You can check with isAllowed().
+ */
 public class QuerySerializer implements Serializer<Query, byte[]> {
     // TODO - will have to basically do one query type at a time. Not TermQuery ever lol.
 
@@ -31,6 +34,10 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
     // TODO: Used as part of gross hack to determine which impl of PointRangeQuery comes in.
     static final Query longPointRangeQuery = LongPoint.newRangeQuery("", 0, 1);
 
+    /**
+     * Required for javadocs.
+     */
+    public QuerySerializer() {}
     @Override
     public byte[] serialize(Query object) {
         if (object == null) return null;
@@ -133,9 +140,12 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
         return query.getClass() == longPointRangeQuery.getClass();
     }
 
+    /**
+     * Checks whether the query is serializable.
+     * @param query The query to serialize.
+     * @return Whether it's serializable.
+     */
     public boolean isAllowed(Query query) {
-        // TODO - report true for serializable, false for not serializable. Feed this into a policy into the TSC to control disk tier
-        // access.
         return getClassByte(query) != INVALID_QUERY_BYTE;
     }
 

@@ -21,13 +21,15 @@ import org.apache.lucene.search.Weight;
 
 import java.io.IOException;
 
+/**
+ * A dummy query class for testing.
+ */
 public class DummyQuery extends Query {
     // This is mostly for testing, copied from IndicesQueryCacheTests.java. Just want to make sure everything works before testing on real
     // queries.
     // And to do this, the serializer must know about DummyQuery, so it can't live in test module
 
     private final int id;
-
     DummyQuery(int id) {
         this.id = id;
     }
@@ -67,6 +69,10 @@ public class DummyQuery extends Query {
         };
     }
 
+    /**
+     * Get id
+     * @return the id
+     */
     public int getId() {
         return id;
     }

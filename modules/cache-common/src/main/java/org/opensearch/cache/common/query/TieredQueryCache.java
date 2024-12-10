@@ -124,6 +124,10 @@ import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
     or is it actually the case there's lots of duplicated queries in different leaves? If the latter, we may want to use it.
     Check on this Monday. I dont really understand why - as the comments say - there would be multiple copies.
      */
+
+/**
+ * A pluggable version of the query cache which uses an ICache internally to store values. Proof of concept only! Incomplete
+ */
 public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
 
     private final ICache<CompositeKey, CacheAndCount> innerCache; // This should typically be a TieredSpilloverCache but theoretically can
@@ -144,10 +148,20 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
 
     private static final Logger logger = LogManager.getLogger(TieredQueryCache.class);
 
+    /**
+     * The shard id dimension name.
+     */
     public static final String SHARD_ID_DIMENSION_NAME = "shards";
 
     // Is there any need for locks? The underlying TSC is threadsafe. I think the need for locks in original was due to LeafCache impl.
 
+    /**
+     * Construct a TieredQueryCache.
+     * @param cacheService Cache service.
+     * @param settings Settings.
+     * @param clusterService Cluster service.
+     * @param nodeEnvironment Node env.
+     */
     public TieredQueryCache(CacheService cacheService, Settings settings, ClusterService clusterService, NodeEnvironment nodeEnvironment) {
 
         // Following IQC, hardcode leavesToCache and skipFactor
@@ -183,6 +197,12 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
         // For example, if we just do an OpenSearchOnHeapCache of the same size, how much worse does it perform?
     }
 
+    /**
+     * Get a value from the inner cache if present. Returns null if not present. Does not add anything to the cache.
+     * @param query The query
+     * @param cacheHelper Cache helper from the query context (?)
+     * @return The doc ids matching the query + count, if present in the cache
+     */
     protected CacheAndCount get(Query query, IndexReader.CacheHelper cacheHelper) {
         // TODO: Mostly same as LRUQC.get(), but skipping the singleton map stuff - dont think this is necessary here? But could be wrong
         assert query instanceof BoostQuery == false;
@@ -259,9 +279,17 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
     }
 
     /**
+     *
+     */
+    /**
+     * Cache the matching doc ids into a BitSet or RoaringDocIdSet.
      * Duplicated from LRUQC. I think this is a bad and confusing name, but let's keep it for consistency.
      * Default cache implementation: uses {@link RoaringDocIdSet} for sets that have a density &lt; 1%
      * and a {@link BitDocIdSet} over a {@link FixedBitSet} otherwise.
+     * @param scorer f
+     * @param maxDoc f
+     * @return f
+     * @throws IOException f
      */
     protected CacheAndCount cacheImpl(BulkScorer scorer, int maxDoc) throws IOException {
         if (scorer.cost() * 100 >= maxDoc) {
@@ -645,7 +673,14 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
     }
 
     // Duplicated from LRUQC with no changes
+
+    /**
+     * Doc ids and count for a query.
+     */
     protected static class CacheAndCount implements Accountable {
+        /**
+         * An empty CacheAndCount.
+         */
         protected static final CacheAndCount EMPTY = new CacheAndCount(DocIdSet.EMPTY, 0, 0);
 
         private static final long BASE_RAM_BYTES_USED = RamUsageEstimator.shallowSizeOfInstance(CacheAndCount.class);
@@ -653,16 +688,31 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
         private final int count;
         private final int maxDoc; // TODO: this value is needed for serialization here, but wasn't needed in LRUQC.
 
+        /**
+         * Constructor.
+         * @param cache f
+         * @param count f
+         * @param maxDoc f
+         */
         public CacheAndCount(DocIdSet cache, int count, int maxDoc) {
             this.cache = cache;
             this.count = count;
             this.maxDoc = maxDoc;
         }
 
+        /**
+         * It iterates!
+         * @return f
+         * @throws IOException f
+         */
         public DocIdSetIterator iterator() throws IOException {
             return cache.iterator();
         }
 
+        /**
+         * The count
+         * @return count
+         */
         public int count() {
             return count;
         }
