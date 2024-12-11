@@ -842,6 +842,13 @@ public final class ClusterSettings extends AbstractScopedSettings {
             ),
             OpenSearchOnHeapCacheSettings.EXPIRE_AFTER_ACCESS_SETTING.getConcreteSettingForNamespace(
                 CacheType.INDICES_REQUEST_CACHE.getSettingPrefix()
+            ),
+            CacheSettings.getConcreteStoreNameSettingForCacheType(CacheType.INDICES_QUERY_CACHE),
+            OpenSearchOnHeapCacheSettings.MAXIMUM_SIZE_IN_BYTES.getConcreteSettingForNamespace(
+                CacheType.INDICES_QUERY_CACHE.getSettingPrefix()
+            ),
+            OpenSearchOnHeapCacheSettings.EXPIRE_AFTER_ACCESS_SETTING.getConcreteSettingForNamespace(
+                CacheType.INDICES_QUERY_CACHE.getSettingPrefix()
             )
         ),
         List.of(FeatureFlags.READER_WRITER_SPLIT_EXPERIMENTAL),

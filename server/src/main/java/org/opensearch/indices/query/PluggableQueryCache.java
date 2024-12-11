@@ -622,6 +622,9 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
         }
     }
 
+    /**
+     * Key for the pluggable cache.
+     */
     public static class CompositeKey implements Accountable {
         final int leafCacheId;
         final Query query;
