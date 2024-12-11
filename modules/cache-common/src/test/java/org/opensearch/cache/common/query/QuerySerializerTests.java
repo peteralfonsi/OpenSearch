@@ -9,6 +9,7 @@
 package org.opensearch.cache.common.query;
 
 import org.apache.lucene.document.DoublePoint;
+import org.apache.lucene.document.LatLonPoint;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.search.Query;
 import org.opensearch.test.OpenSearchTestCase;
@@ -47,5 +48,20 @@ public class QuerySerializerTests extends OpenSearchTestCase {
         assertEquals(original, deser);
         assertNotEquals(new DummyQuery(id - 1), original);
         assertNotEquals(new DummyQuery(id - 1), deser);
+    }
+
+    public void testGeoBoundingBoxQuery() throws Exception {
+        String field = "location";
+        double minLatitude = -4.9;
+        double minLongitude = -122.0;
+        double maxLatitude = 44.0;
+        double maxLongitude = -121.9;
+
+        Query original = LatLonPoint.newBoxQuery(field, minLatitude, maxLatitude, minLongitude, maxLongitude);
+        QuerySerializer serializer = new QuerySerializer();
+        byte[] ser = serializer.serialize(original);
+        Query deser = serializer.deserialize(ser);
+        assertTrue(serializer.equals(original, ser));
+        assertEquals(original, deser);
     }
 }

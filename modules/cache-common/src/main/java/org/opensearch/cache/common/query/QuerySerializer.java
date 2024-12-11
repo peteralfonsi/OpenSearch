@@ -8,18 +8,28 @@
 
 package org.opensearch.cache.common.query;
 
+import org.apache.lucene.document.LatLonPoint;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.search.PointRangeQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.NumericUtils;
 import org.opensearch.OpenSearchException;
 import org.opensearch.common.cache.serializer.Serializer;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.BytesStreamInput;
 
+import java.io.IOError;
 import java.io.IOException;
 import java.util.Arrays;
+
+import static org.apache.lucene.geo.GeoEncodingUtils.decodeLatitude;
+import static org.apache.lucene.geo.GeoEncodingUtils.decodeLongitude;
+import static org.apache.lucene.geo.GeoEncodingUtils.encodeLatitude;
+import static org.apache.lucene.geo.GeoEncodingUtils.encodeLatitudeCeil;
+import static org.apache.lucene.geo.GeoEncodingUtils.encodeLongitude;
+import static org.apache.lucene.geo.GeoEncodingUtils.encodeLongitudeCeil;
 
 /**
  * A class to serialize Query objects. Not all Query objects are supported. You can check with isAllowed().
@@ -33,6 +43,11 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
 
     // TODO: Used as part of gross hack to determine which impl of PointRangeQuery comes in.
     static final Query longPointRangeQuery = LongPoint.newRangeQuery("", 0, 1);
+    static final Query geoBoundingBoxQuery = LatLonPoint.newBoxQuery("", 0.0, 0.0, 0.0, 0.0);
+
+    // Bytes for different type of PointRangeQuery
+    static final byte LONG_POINT_BYTE = 0x01;
+    static final byte GEO_BOUNDING_BOX_BYTE = 0x02;
 
     /**
      * Required for javadocs.
@@ -89,10 +104,19 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
 
     private void serializePointRangeQuery(BytesStreamOutput os, Query query) throws IOException {
         PointRangeQuery prQuery = (PointRangeQuery) query;
-        // Determine if it's LongPoint's implementation
-        if (!isLongPointRangeQuery(prQuery)) {
-            throw new UnsupportedOperationException("can only serialize LongPoint's implementation of PointRangeQuery");
+        final byte pointRangeTypeByte = getPointRangeTypeByte(prQuery);
+        os.writeByte(pointRangeTypeByte);
+        switch (pointRangeTypeByte) {
+            case LONG_POINT_BYTE:
+                serializeLongPoint(os, prQuery);
+                break;
+            case GEO_BOUNDING_BOX_BYTE:
+                serializeGeoBoundingBox(os, prQuery);
+                break;
         }
+    }
+
+    private void serializeLongPoint(BytesStreamOutput os, PointRangeQuery prQuery) throws IOException {
         os.writeString(prQuery.getField());
 
         byte[] lowerPoint = prQuery.getLowerPoint();
@@ -102,13 +126,9 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
         byte[] upperPoint = prQuery.getUpperPoint();
         os.writeVInt(upperPoint.length);
         os.writeBytes(upperPoint);
-        // TODO: for PointRangeQuery these are byte[] but for LongPoint's impl they're long[]
-        // It looks like LongPoint calls pack() (public) before shoving it into bytes. So I need to do the reverse of pack() on the way
-        // out...
     }
 
-    private Query deserializePointRangeQuery(BytesStreamInput is) throws IOException {
-        // TODO: Currently ONLY reads LongPoint's implementation of PointRangeQuery
+    private Query deserializeLongPoint(BytesStreamInput is) throws IOException {
         String field = is.readString();
 
         int lowerPointLength = is.readVInt();
@@ -126,6 +146,45 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
         return LongPoint.newRangeQuery(field, lowerPointLong, upperPointLong);
     }
 
+    private void serializeGeoBoundingBox(BytesStreamOutput os, PointRangeQuery prQuery) throws IOException {
+        // Serializes queries produced via LatLonPoint.newBoxQuery()
+        // TODO: For now, assume the query does NOT cross the dateline. If it does, newBoxQuery() does something complex, so avoid this case for now.
+        // I think in this case the query type ends up being ConstantScoreQuery, so it's probably going to fail on its own anyway.
+
+        os.writeString(prQuery.getField());
+
+        byte[] lowerPoint = prQuery.getLowerPoint();
+        assert lowerPoint.length == 2 * Integer.BYTES;
+        os.writeBytes(lowerPoint);
+
+        byte[] upperPoint = prQuery.getUpperPoint();
+        assert upperPoint.length == 2 * Integer.BYTES;
+        os.writeBytes(upperPoint);
+    }
+
+    private Query deserializeGeoBoundingBox(BytesStreamInput is) throws IOException {
+        String field = is.readString();
+        byte[] values = new byte[4 * Integer.BYTES];
+        is.readBytes(values, 0, 4 * Integer.BYTES);
+        double minLatitude = decodeLatitude(values, 0);
+        double minLongitude = decodeLongitude(values, Integer.BYTES);
+        double maxLatitude = decodeLatitude(values, 2 * Integer.BYTES);
+        double maxLongitude = decodeLongitude(values, 3 * Integer.BYTES);
+
+        return LatLonPoint.newBoxQuery(field, minLatitude, maxLatitude, minLongitude, maxLongitude);
+    }
+
+    private Query deserializePointRangeQuery(BytesStreamInput is) throws IOException {
+        final byte pointRangeTypeByte = is.readByte();
+        switch (pointRangeTypeByte) {
+            case LONG_POINT_BYTE:
+                return deserializeLongPoint(is);
+            case GEO_BOUNDING_BOX_BYTE:
+                return deserializeGeoBoundingBox(is);
+        }
+        throw new UnsupportedOperationException("Unrecognized PointRangeQuery type byte" + pointRangeTypeByte);
+    }
+
     private void serializeDummyQuery(BytesStreamOutput os, Query query) throws IOException {
         os.writeInt(((DummyQuery) query).getId());
     }
@@ -134,10 +193,19 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
         return new DummyQuery(is.readInt());
     }
 
+    private byte getPointRangeTypeByte(PointRangeQuery query) {
+        if (isLongPointRangeQuery(query)) return LONG_POINT_BYTE;
+        if (isGeoBoundingBoxQuery(query)) return GEO_BOUNDING_BOX_BYTE;
+        throw new UnsupportedOperationException("Cannot serialize this type of PointRangeQuery");
+    }
+
     private boolean isLongPointRangeQuery(PointRangeQuery query) {
         // TODO: A gross hack - but ok for the PoC
-        // TODO: also - does it work??
         return query.getClass() == longPointRangeQuery.getClass();
+    }
+
+    private boolean isGeoBoundingBoxQuery(PointRangeQuery query) {
+        return query.getClass() == geoBoundingBoxQuery.getClass();
     }
 
     /**
