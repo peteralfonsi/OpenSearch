@@ -181,6 +181,7 @@ import org.opensearch.index.translog.TranslogStats;
 import org.opensearch.index.warmer.ShardIndexWarmerService;
 import org.opensearch.index.warmer.WarmerStats;
 import org.opensearch.indices.IndexingMemoryController;
+import org.opensearch.indices.IndicesQueryCache;
 import org.opensearch.indices.IndicesService;
 import org.opensearch.indices.RemoteStoreSettings;
 import org.opensearch.indices.cluster.IndicesClusterStateService;
@@ -472,7 +473,8 @@ public class IndexShard extends AbstractIndexShardComponent implements IndicesCl
                 }
             };
         } else {
-            cachingPolicy = new UsageTrackingQueryCachingPolicy();
+            int cachingPolicyHistorySize = IndicesQueryCache.INDICES_QUERY_CACHE_HISTORY_SIZE.get(settings);
+            cachingPolicy = new UsageTrackingQueryCachingPolicy(cachingPolicyHistorySize);
         }
         indexShardOperationPermits = new IndexShardOperationPermits(shardId, threadPool);
         readerWrapper = indexReaderWrapper;

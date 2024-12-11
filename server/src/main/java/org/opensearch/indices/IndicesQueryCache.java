@@ -92,6 +92,15 @@ public class IndicesQueryCache implements QueryCache, OpenSearchQueryCache {
         Property.NodeScope
     );
 
+    // Passed to the policy controlling access to the query cache. Plug this into TieredQueryCache too.
+    public static final Setting<Integer> INDICES_QUERY_CACHE_HISTORY_SIZE = Setting.intSetting(
+        "indices.queries.cache.history_size",
+        256,
+        1,
+        10_000,
+        Property.NodeScope
+    );
+
     private final LRUQueryCache cache;
     private final ShardCoreKeyMap shardKeyMap = new ShardCoreKeyMap();
     private final Map<ShardId, Stats> shardStats = new ConcurrentHashMap<>();
