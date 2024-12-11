@@ -6,7 +6,7 @@
  * compatible open source license.
  */
 
-package org.opensearch.cache.common.query;
+package org.opensearch.indices.query;
 
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.ConstantScoreScorer;
@@ -30,7 +30,8 @@ public class DummyQuery extends Query {
     // And to do this, the serializer must know about DummyQuery, so it can't live in test module
 
     private final int id;
-    DummyQuery(int id) {
+
+    public DummyQuery(int id) {
         this.id = id;
     }
 

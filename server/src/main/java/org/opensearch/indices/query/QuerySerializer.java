@@ -6,30 +6,24 @@
  * compatible open source license.
  */
 
-package org.opensearch.cache.common.query;
+package org.opensearch.indices.query;
 
 import org.apache.lucene.document.LatLonPoint;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.search.PointRangeQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.NumericUtils;
 import org.opensearch.OpenSearchException;
 import org.opensearch.common.cache.serializer.Serializer;
 import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.common.io.stream.BytesStreamInput;
 
-import java.io.IOError;
 import java.io.IOException;
 import java.util.Arrays;
 
 import static org.apache.lucene.geo.GeoEncodingUtils.decodeLatitude;
 import static org.apache.lucene.geo.GeoEncodingUtils.decodeLongitude;
-import static org.apache.lucene.geo.GeoEncodingUtils.encodeLatitude;
-import static org.apache.lucene.geo.GeoEncodingUtils.encodeLatitudeCeil;
-import static org.apache.lucene.geo.GeoEncodingUtils.encodeLongitude;
-import static org.apache.lucene.geo.GeoEncodingUtils.encodeLongitudeCeil;
 
 /**
  * A class to serialize Query objects. Not all Query objects are supported. You can check with isAllowed().
@@ -53,6 +47,7 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
      * Required for javadocs.
      */
     public QuerySerializer() {}
+
     @Override
     public byte[] serialize(Query object) {
         if (object == null) return null;
@@ -148,7 +143,8 @@ public class QuerySerializer implements Serializer<Query, byte[]> {
 
     private void serializeGeoBoundingBox(BytesStreamOutput os, PointRangeQuery prQuery) throws IOException {
         // Serializes queries produced via LatLonPoint.newBoxQuery()
-        // TODO: For now, assume the query does NOT cross the dateline. If it does, newBoxQuery() does something complex, so avoid this case for now.
+        // TODO: For now, assume the query does NOT cross the dateline. If it does, newBoxQuery() does something complex, so avoid this case
+        // for now.
         // I think in this case the query type ends up being ConstantScoreQuery, so it's probably going to fail on its own anyway.
 
         os.writeString(prQuery.getField());

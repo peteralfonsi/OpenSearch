@@ -6,7 +6,7 @@
  * compatible open source license.
  */
 
-package org.opensearch.cache.common.query;
+package org.opensearch.indices.query;
 
 import org.apache.lucene.search.DocIdSet;
 import org.apache.lucene.util.BitDocIdSet;
@@ -19,7 +19,7 @@ import java.util.Collections;
 import java.util.List;
 
 // Tests for the serializers in TieredQueryCache.
-public class TieredQueryCacheSerializerTests extends OpenSearchTestCase {
+public class PluggableQueryCacheSerializerTests extends OpenSearchTestCase {
 
     public void testCacheAndCountSerializer() throws Exception {
         List<Integer> docs = List.of(1, 4, 5, 16, 288, 5838);
@@ -27,10 +27,10 @@ public class TieredQueryCacheSerializerTests extends OpenSearchTestCase {
         int count = 17;
         // Check for both BigDocIdSet and RoaringDocIdSet
         for (DocIdSet set : new DocIdSet[] { getBitDocIdSet(docs), getRoaringDocIdSet(docs, maxDoc) }) {
-            TieredQueryCache.CacheAndCount original = new TieredQueryCache.CacheAndCount(set, count, maxDoc);
-            TieredQueryCache.CacheAndCountSerializer ser = new TieredQueryCache.CacheAndCountSerializer();
+            PluggableQueryCache.CacheAndCount original = new PluggableQueryCache.CacheAndCount(set, count, maxDoc);
+            PluggableQueryCache.CacheAndCountSerializer ser = new PluggableQueryCache.CacheAndCountSerializer();
             byte[] serialized = ser.serialize(original);
-            TieredQueryCache.CacheAndCount deserialized = ser.deserialize(serialized);
+            PluggableQueryCache.CacheAndCount deserialized = ser.deserialize(serialized);
             assertTrue(ser.equals(original, serialized));
             assertEquals(original, deserialized);
         }

@@ -146,6 +146,7 @@ import org.opensearch.index.translog.TranslogStats;
 import org.opensearch.indices.cluster.IndicesClusterStateService;
 import org.opensearch.indices.fielddata.cache.IndicesFieldDataCache;
 import org.opensearch.indices.mapper.MapperRegistry;
+import org.opensearch.indices.query.PluggableQueryCache;
 import org.opensearch.indices.recovery.PeerRecoveryTargetService;
 import org.opensearch.indices.recovery.RecoveryListener;
 import org.opensearch.indices.recovery.RecoverySettings;
@@ -310,6 +311,12 @@ public class IndicesService extends AbstractLifecycleComponent
         Property.Final
     );
 
+    public static final Setting<Boolean> USE_PLUGGABLE_QUERY_CACHE = Setting.boolSetting(
+        "indices.queries.cache.use_pluggable",
+        false,
+        Property.NodeScope
+    );
+
     /**
      * The node's settings.
      */
@@ -417,7 +424,14 @@ public class IndicesService extends AbstractLifecycleComponent
             }
             return Optional.of(new IndexShardCacheEntity(indexService.getShardOrNull(shardId.id())));
         }), cacheService, threadPool, clusterService, nodeEnv);
-        this.indicesQueryCache = new IndicesQueryCache(settings);
+
+        boolean usePluggableQueryCache = USE_PLUGGABLE_QUERY_CACHE.get(settings);
+        if (usePluggableQueryCache) {
+            this.indicesQueryCache = new PluggableQueryCache(cacheService, settings, clusterService, nodeEnv);
+        } else {
+            this.indicesQueryCache = new IndicesQueryCache(settings);
+        }
+
         this.mapperRegistry = mapperRegistry;
         this.namedWriteableRegistry = namedWriteableRegistry;
         indexingMemoryController = new IndexingMemoryController(

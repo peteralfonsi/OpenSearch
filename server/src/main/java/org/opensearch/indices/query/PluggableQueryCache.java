@@ -6,7 +6,7 @@
  * compatible open source license.
  */
 
-package org.opensearch.cache.common.query;
+package org.opensearch.indices.query;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -58,7 +58,6 @@ import org.opensearch.core.index.shard.ShardId;
 import org.opensearch.env.NodeEnvironment;
 import org.opensearch.index.cache.query.QueryCacheStats;
 import org.opensearch.indices.OpenSearchQueryCache;
-import org.opensearch.search.aggregations.bucket.composite.CompositeKey;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -128,7 +127,7 @@ import static org.apache.lucene.search.DocIdSetIterator.NO_MORE_DOCS;
 /**
  * A pluggable version of the query cache which uses an ICache internally to store values. Proof of concept only! Incomplete
  */
-public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
+public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
 
     private final ICache<CompositeKey, CacheAndCount> innerCache; // This should typically be a TieredSpilloverCache but theoretically can
                                                                   // be anything - for testing purposes
@@ -146,7 +145,7 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
     private final ShardCoreKeyMap shardKeyMap = new ShardCoreKeyMap();
     private final Map<String, LongAdder> outerCacheMissCounts;
 
-    private static final Logger logger = LogManager.getLogger(TieredQueryCache.class);
+    private static final Logger logger = LogManager.getLogger(PluggableQueryCache.class);
 
     /**
      * The shard id dimension name.
@@ -162,7 +161,12 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
      * @param clusterService Cluster service.
      * @param nodeEnvironment Node env.
      */
-    public TieredQueryCache(CacheService cacheService, Settings settings, ClusterService clusterService, NodeEnvironment nodeEnvironment) {
+    public PluggableQueryCache(
+        CacheService cacheService,
+        Settings settings,
+        ClusterService clusterService,
+        NodeEnvironment nodeEnvironment
+    ) {
 
         // Following IQC, hardcode leavesToCache and skipFactor
         this.leavesToCache = context -> true;
@@ -342,8 +346,8 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
         return shardKeyMap.getShardId(readerCoreKey).toString();
     }
 
-    // pkg-private for testing
-    ICache<CompositeKey, CacheAndCount> getInnerCache() {
+    // for testing
+    public ICache<CompositeKey, CacheAndCount> getInnerCache() {
         return innerCache;
     }
 
@@ -618,7 +622,7 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
         }
     }
 
-    static class CompositeKey implements Accountable {
+    public static class CompositeKey implements Accountable {
         final int leafCacheId;
         final Query query;
 
@@ -677,7 +681,7 @@ public class TieredQueryCache implements QueryCache, OpenSearchQueryCache {
     /**
      * Doc ids and count for a query.
      */
-    protected static class CacheAndCount implements Accountable {
+    public static class CacheAndCount implements Accountable {
         /**
          * An empty CacheAndCount.
          */

@@ -6,7 +6,7 @@
  * compatible open source license.
  */
 
-package org.opensearch.cache.common.query;
+package org.opensearch.indices.query;
 
 import org.apache.lucene.document.DoublePoint;
 import org.apache.lucene.document.LatLonPoint;

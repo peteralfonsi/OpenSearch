@@ -7,6 +7,6 @@
  */
 
 /**
- * A package for pluggable query cache.
+ * A package for PoC tiered query cache stuff.
  */
-package org.opensearch.cache.common.query;
+package org.opensearch.indices.query;
