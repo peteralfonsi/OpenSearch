@@ -496,6 +496,11 @@ public class EhcacheDiskCache<K, V> implements ICache<K, V> {
         return cacheStatsHolder.getImmutableCacheStatsHolder(levels);
     }
 
+    @Override
+    public long getMaxHeapBytes() {
+        return 0;
+    }
+
     /**
      * This iterator wraps ehCache iterator and only iterates over its keys.
      * @param <K> Type of key

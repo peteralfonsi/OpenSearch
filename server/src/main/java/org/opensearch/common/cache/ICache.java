@@ -53,6 +53,9 @@ public interface ICache<K, V> extends Closeable {
     // Return stats aggregated by the provided levels. If levels is null or an empty array, return total stats only.
     ImmutableCacheStatsHolder stats(String[] levels);
 
+    // Return the bytes in memory this cache can consume.
+    long getMaxHeapBytes();
+
     /**
      * Factory to create objects.
      */

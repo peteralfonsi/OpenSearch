@@ -156,6 +156,11 @@ public class OpenSearchOnHeapCache<K, V> implements ICache<K, V>, RemovalListene
     }
 
     @Override
+    public long getMaxHeapBytes() {
+        return maximumWeight;
+    }
+
+    @Override
     public void onRemoval(RemovalNotification<ICacheKey<K>, V> notification) {
         removalListener.onRemoval(notification);
         cacheStatsHolder.decrementItems(notification.getKey().dimensions);

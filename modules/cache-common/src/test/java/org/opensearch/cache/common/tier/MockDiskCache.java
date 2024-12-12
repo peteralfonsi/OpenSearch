@@ -139,6 +139,11 @@ public class MockDiskCache<K, V> implements ICache<K, V> {
     }
 
     @Override
+    public long getMaxHeapBytes() {
+        return 0;
+    }
+
+    @Override
     public void close() {
 
     }

@@ -196,7 +196,7 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
                 .build(),
             CacheType.INDICES_QUERY_CACHE
         );
-        this.maxRamBytesUsed = 1_000_000; // TODO: i think this just controls the max size going in rn. Didnt want to deal w the settings rn
+        this.maxRamBytesUsed = innerCache.getMaxHeapBytes();
         // In theory it may be useful to test this with non-TSC internal caches for regression purposes.
         // For example, if we just do an OpenSearchOnHeapCache of the same size, how much worse does it perform?
     }

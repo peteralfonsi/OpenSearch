@@ -427,6 +427,11 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
         }
 
         @Override
+        public long getMaxHeapBytes() {
+            return onHeapCache.getMaxHeapBytes();
+        }
+
+        @Override
         public void close() throws IOException {
             for (Map.Entry<ICache<K, V>, TierInfo> cacheEntry : caches.entrySet()) {
                 // Close all the caches here irrespective of whether they are enabled or not.
@@ -652,6 +657,11 @@ public class TieredSpilloverCache<K, V> implements ICache<K, V> {
     @Override
     public ImmutableCacheStatsHolder stats(String[] levels) {
         return statsHolder.getImmutableCacheStatsHolder(levels);
+    }
+
+    @Override
+    public long getMaxHeapBytes() {
+        return numberOfSegments * tieredSpilloverCacheSegments[0].getMaxHeapBytes();
     }
 
     // Package private for testing.
