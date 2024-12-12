@@ -892,8 +892,8 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
                     nextDoc = iterator.nextDoc();
                     os.writeVInt(nextDoc);
                 }
-                os.writeVInt(NO_MORE_DOCS);
-                os.writeVInt(0); // Spare value for deserializer to read, to spare us from checking if nextDoc == NO_MORE_DOCS on every read
+                //os.writeVInt(NO_MORE_DOCS);
+                //os.writeVInt(0); // Spare value for deserializer to read, to spare us from checking if nextDoc == NO_MORE_DOCS on every read
             } catch (IOException e) {
                 throw new OpenSearchException("Error iterating through DocSetIdIterator", e);
             }
@@ -914,7 +914,7 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
                     int bitSetLength = 0;
                     while (nextDoc != NO_MORE_DOCS) {
                         bitset.set(nextDoc);
-                        nextDoc = is.readVInt();
+                        nextDoc = is.readVInt(); // TODO: Was getting EOF here.
                         bitSetLength++;
                     }
                     return new BitDocIdSet(bitset, bitSetLength); // TODO: I *think* bitSetLength is the correct value for cost.
