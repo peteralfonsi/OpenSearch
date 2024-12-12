@@ -1,0 +1,37 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
+
+apply plugin: 'opensearch.internal-cluster-test'
+
+opensearchplugin {
+  description 'Caffeine based cache implementation.'
+  classname 'org.opensearch.cache.CaffeineCachePlugin'
+}
+
+versions << [
+  'caffeine' : '3.1.8'
+]
+
+dependencies {
+  api "com.github.ben-manes.caffeine:caffeine:${versions.caffeine}"
+  api "org.slf4j:slf4j-api:${versions.slf4j}"
+}
+
+thirdPartyAudit {
+  ignoreMissingClasses(
+    'org.slf4j.impl.StaticLoggerBinder',
+    'org.slf4j.impl.StaticMDCBinder',
+    'org.slf4j.impl.StaticMarkerBinder'
+  )
+}
+
+tasks.named("bundlePlugin").configure {
+  from('config/cache-caffeine') {
+    into 'config'
+  }
+}
