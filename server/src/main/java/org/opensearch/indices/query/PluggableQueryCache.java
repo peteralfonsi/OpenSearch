@@ -836,6 +836,8 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
         static final byte BIT_DOC_ID_SET_BYTE = 0x01;
         static final byte ROARING_DOC_ID_SET_BYTE = 0x02;
 
+        static final int BLOCK_SIZE = 1024;
+
         @Override
         public byte[] serialize(CacheAndCount object) {
             if (object == null) return null;
@@ -883,20 +885,44 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
             }
             os.writeByte(classByte);
 
-            // TODO: For now, just write each doc id as an int until there are no more.
-            // TODO: overflow check?
             try {
                 DocIdSetIterator iterator = set.iterator();
                 int nextDoc = -1;
+                int blockIndex = 0;
+                byte[] block = new byte[BLOCK_SIZE * Integer.BYTES];
                 while (nextDoc != NO_MORE_DOCS) {
                     nextDoc = iterator.nextDoc();
-                    os.writeVInt(nextDoc);
+                    writeInt(nextDoc, block, blockIndex);
+                    blockIndex++;
+                    if (blockIndex == BLOCK_SIZE) {
+                        blockIndex = 0;
+                        os.writeBytes(block);
+                        block = new byte[BLOCK_SIZE * Integer.BYTES];
+                    }
                 }
-                //os.writeVInt(NO_MORE_DOCS);
-                //os.writeVInt(0); // Spare value for deserializer to read, to spare us from checking if nextDoc == NO_MORE_DOCS on every read
+                // Write remaining partial block
+                os.writeBytes(block);
+
             } catch (IOException e) {
                 throw new OpenSearchException("Error iterating through DocSetIdIterator", e);
             }
+
+
+        }
+
+        // Modified from StreamOutput
+        private void writeInt(int value, byte[] block, int blockIndex) throws IOException {
+            int offset = blockIndex * Integer.BYTES;
+            block[offset] = (byte) (value >> 24);
+            block[offset + 1] = (byte) (value >> 16);
+            block[offset + 2] = (byte) (value >> 8);
+            block[offset + 3] = (byte) value;
+        }
+
+        // Modified from StreamInput
+        private int readInt(byte[] block, int blockIndex) throws IOException {
+            int offset = blockIndex * Integer.BYTES;
+            return ((block[offset] & 0xFF) << 24) | ((block[offset + 1] & 0xFF) << 16) | ((block[offset + 2] & 0xFF) << 8) | (block[offset + 3] & 0xFF);
         }
 
         private DocIdSet deserializeDocIdSet(BytesStreamInput is, int maxDoc) {
@@ -910,20 +936,38 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
                     // TODO: There's several impls for underlying BitSet... I imagine these have perf implications.
                     // For now pick FixedBitSet semi-arbitrarily to return.
                     BitSet bitset = new FixedBitSet(maxDoc);
-                    int nextDoc = is.readVInt();
                     int bitSetLength = 0;
+                    byte[] block = new byte[BLOCK_SIZE * Integer.BYTES];
+                    int blockIndex = 0;
+                    is.readBytes(block, 0, BLOCK_SIZE * Integer.BYTES);
+                    int nextDoc = readInt(block, blockIndex);
                     while (nextDoc != NO_MORE_DOCS) {
                         bitset.set(nextDoc);
-                        nextDoc = is.readVInt(); // TODO: Was getting EOF here.
                         bitSetLength++;
+                        blockIndex++;
+                        nextDoc = readInt(block, blockIndex);
+                        if (blockIndex == BLOCK_SIZE - 1) {
+                            block = new byte[BLOCK_SIZE * Integer.BYTES];
+                            blockIndex = -1;
+                            is.readBytes(block, 0, BLOCK_SIZE * Integer.BYTES);
+                        }
                     }
                     return new BitDocIdSet(bitset, bitSetLength); // TODO: I *think* bitSetLength is the correct value for cost.
                 } else if (classByte == ROARING_DOC_ID_SET_BYTE) {
                     RoaringDocIdSet.Builder builder = new RoaringDocIdSet.Builder(maxDoc);
-                    int nextDoc = is.readVInt();
+                    byte[] block = new byte[BLOCK_SIZE * Integer.BYTES];
+                    int blockIndex = 0;
+                    is.readBytes(block, 0, BLOCK_SIZE * Integer.BYTES);
+                    int nextDoc = readInt(block, blockIndex);
                     while (nextDoc != NO_MORE_DOCS) {
                         builder.add(nextDoc);
-                        nextDoc = is.readVInt();
+                        blockIndex++;
+                        nextDoc = readInt(block, blockIndex);
+                        if (blockIndex == BLOCK_SIZE - 1) {
+                            block = new byte[BLOCK_SIZE * Integer.BYTES];
+                            blockIndex = -1;
+                            is.readBytes(block, 0, BLOCK_SIZE * Integer.BYTES);
+                        }
                     }
                     return builder.build();
                 } else {

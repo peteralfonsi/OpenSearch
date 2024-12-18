@@ -13,10 +13,13 @@ import org.apache.lucene.util.BitDocIdSet;
 import org.apache.lucene.util.BitSet;
 import org.apache.lucene.util.FixedBitSet;
 import org.apache.lucene.util.RoaringDocIdSet;
+import org.opensearch.common.Randomness;
 import org.opensearch.test.OpenSearchTestCase;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Random;
 
 // Tests for the serializers in TieredQueryCache.
 public class PluggableQueryCacheSerializerTests extends OpenSearchTestCase {
@@ -33,6 +36,32 @@ public class PluggableQueryCacheSerializerTests extends OpenSearchTestCase {
             PluggableQueryCache.CacheAndCount deserialized = ser.deserialize(serialized);
             assertTrue(ser.equals(original, serialized));
             assertEquals(original, deserialized);
+            assertTrue(serialized.length > PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE * Integer.BYTES);
+        }
+    }
+
+    public void testCacheAndCountSerializerLongDocIdSet() throws Exception {
+        List<Integer> docs = new ArrayList<>();
+
+        // populate docs with > block size...
+        int lastDoc = 1;
+        docs.add(lastDoc);
+        Random rand = Randomness.get();
+        for (int i = 0; i < PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE; i++) {
+            lastDoc += rand.nextInt(5) + 1;
+            docs.add(lastDoc);
+        }
+        int maxDoc = Collections.max(docs) + 250;
+        int count = 17;
+
+        for (DocIdSet set : new DocIdSet[] { getBitDocIdSet(docs), getRoaringDocIdSet(docs, maxDoc) }) {
+            PluggableQueryCache.CacheAndCount original = new PluggableQueryCache.CacheAndCount(set, count, maxDoc);
+            PluggableQueryCache.CacheAndCountSerializer ser = new PluggableQueryCache.CacheAndCountSerializer();
+            byte[] serialized = ser.serialize(original);
+            PluggableQueryCache.CacheAndCount deserialized = ser.deserialize(serialized);
+            assertTrue(ser.equals(original, serialized));
+            assertEquals(original, deserialized);
+            assertTrue(serialized.length > 2 * PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE * Integer.BYTES);
         }
     }
 
