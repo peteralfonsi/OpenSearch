@@ -40,6 +40,7 @@ import org.opensearch.common.Nullable;
 import org.opensearch.common.collect.MapBuilder;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.index.codec.composite.CompositeCodecFactory;
+import org.opensearch.index.codec.leaf_size.ConfigurableBKDLeafSizeCodec;
 import org.opensearch.index.mapper.MapperService;
 
 import java.util.Map;
@@ -70,7 +71,8 @@ public class CodecService {
         final MapBuilder<String, Codec> codecs = MapBuilder.<String, Codec>newMapBuilder();
         assert null != indexSettings;
         if (mapperService == null) {
-            codecs.put(DEFAULT_CODEC, new Lucene912Codec());
+            codecs.put(DEFAULT_CODEC, new ConfigurableBKDLeafSizeCodec());
+            //codecs.put(DEFAULT_CODEC, new Lucene912Codec());
             codecs.put(LZ4, new Lucene912Codec());
             codecs.put(BEST_COMPRESSION_CODEC, new Lucene912Codec(Mode.BEST_COMPRESSION));
             codecs.put(ZLIB, new Lucene912Codec(Mode.BEST_COMPRESSION));
@@ -80,7 +82,8 @@ public class CodecService {
             if (mapperService.isCompositeIndexPresent()) {
                 codecs.putAll(compositeCodecFactory.getCompositeIndexCodecs(mapperService, logger));
             } else {
-                codecs.put(DEFAULT_CODEC, new PerFieldMappingPostingFormatCodec(Mode.BEST_SPEED, mapperService, logger));
+                codecs.put(DEFAULT_CODEC, new ConfigurableBKDLeafSizeCodec());
+                //codecs.put(DEFAULT_CODEC, new PerFieldMappingPostingFormatCodec(Mode.BEST_SPEED, mapperService, logger));
                 codecs.put(LZ4, new PerFieldMappingPostingFormatCodec(Mode.BEST_SPEED, mapperService, logger));
                 codecs.put(BEST_COMPRESSION_CODEC, new PerFieldMappingPostingFormatCodec(Mode.BEST_COMPRESSION, mapperService, logger));
                 codecs.put(ZLIB, new PerFieldMappingPostingFormatCodec(Mode.BEST_COMPRESSION, mapperService, logger));
