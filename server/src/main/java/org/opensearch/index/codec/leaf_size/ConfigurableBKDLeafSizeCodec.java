@@ -19,9 +19,13 @@ import org.apache.lucene.index.SegmentReadState;
 import org.apache.lucene.index.SegmentWriteState;
 import org.apache.lucene.util.bkd.BKDWriter;
 import org.opensearch.common.settings.Setting;
+import org.opensearch.common.settings.Settings;
 
 import java.io.IOException;
 
+/**
+ * Codec exposing configurable maxPointsInLeafNode for BKD trees.
+ */
 public class ConfigurableBKDLeafSizeCodec extends FilterCodec {
 
     public static final String CONFIGURABLE_BKD_LEAF_SIZE_CODEC_NAME = "ConfigurableBKDLeafSizeCodec";
@@ -36,6 +40,13 @@ public class ConfigurableBKDLeafSizeCodec extends FilterCodec {
 
     private final int maxPointsInLeafNode;
 
+    // May be needed for SPI. Hopefully this not actually invoked on running, as if so there's not a good way to pass the actual setting value
+    // I think it is ok, bc the no-arg constructor for Composite912Codec uses null for mapperService,
+    // but I know from debugging the mapperService isn't null at lease
+    public ConfigurableBKDLeafSizeCodec() {
+        this(BKD_MAX_POINTS_IN_LEAF_SETTING.getDefault(Settings.EMPTY));
+    }
+
     public ConfigurableBKDLeafSizeCodec(int maxPointsInLeafNode) {
         super(CONFIGURABLE_BKD_LEAF_SIZE_CODEC_NAME, new Lucene912Codec());
         this.maxPointsInLeafNode = maxPointsInLeafNode;
@@ -46,6 +57,9 @@ public class ConfigurableBKDLeafSizeCodec extends FilterCodec {
         return new LeafSizePointsFormat(maxPointsInLeafNode);
     }
 
+    /**
+     * Custom PointsFormat which uses a PointsWriter with configurable maxPointsInLeafNode.
+     */
     public static class LeafSizePointsFormat extends PointsFormat {
 
         private final int maxPointsInLeafNode;
