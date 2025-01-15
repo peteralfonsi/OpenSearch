@@ -68,6 +68,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.function.ToLongBiFunction;
 
@@ -925,6 +926,31 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
             return ((block[offset] & 0xFF) << 24) | ((block[offset + 1] & 0xFF) << 16) | ((block[offset + 2] & 0xFF) << 8) | (block[offset + 3] & 0xFF);
         }
 
+        private int addDocs(BytesStreamInput is, Consumer<Integer> docAdder) {
+            // Returns bitSetLength which may or may not be needed.
+            int bitSetLength = 0;
+            try {
+                byte[] block = new byte[BLOCK_SIZE * Integer.BYTES];
+                int blockIndex = 0;
+                is.readBytes(block, 0, BLOCK_SIZE * Integer.BYTES);
+                int nextDoc = readInt(block, blockIndex);
+                while (nextDoc != NO_MORE_DOCS) {
+                    docAdder.accept(nextDoc);
+                    bitSetLength++;
+                    blockIndex++;
+                    nextDoc = readInt(block, blockIndex);
+                    if (blockIndex == BLOCK_SIZE - 1) {
+                        block = new byte[BLOCK_SIZE * Integer.BYTES];
+                        blockIndex = -1;
+                        is.readBytes(block, 0, BLOCK_SIZE * Integer.BYTES);
+                    }
+                }
+            } catch (IOException e) {
+                throw new OpenSearchException("Error deserializing DocIdSet", e);
+            }
+            return bitSetLength;
+        }
+
         private DocIdSet deserializeDocIdSet(BytesStreamInput is, int maxDoc) {
             // TODO: This seems kinda gross...
             // For BitSetDocIdSet, you provide it a BitSet, which I guess we set one int at a time.
@@ -936,39 +962,13 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
                     // TODO: There's several impls for underlying BitSet... I imagine these have perf implications.
                     // For now pick FixedBitSet semi-arbitrarily to return.
                     BitSet bitset = new FixedBitSet(maxDoc);
-                    int bitSetLength = 0;
-                    byte[] block = new byte[BLOCK_SIZE * Integer.BYTES];
-                    int blockIndex = 0;
-                    is.readBytes(block, 0, BLOCK_SIZE * Integer.BYTES);
-                    int nextDoc = readInt(block, blockIndex);
-                    while (nextDoc != NO_MORE_DOCS) {
-                        bitset.set(nextDoc);
-                        bitSetLength++;
-                        blockIndex++;
-                        nextDoc = readInt(block, blockIndex);
-                        if (blockIndex == BLOCK_SIZE - 1) {
-                            block = new byte[BLOCK_SIZE * Integer.BYTES];
-                            blockIndex = -1;
-                            is.readBytes(block, 0, BLOCK_SIZE * Integer.BYTES);
-                        }
-                    }
+                    Consumer<Integer> docAdder = bitset::set;
+                    int bitSetLength = addDocs(is, docAdder);
                     return new BitDocIdSet(bitset, bitSetLength); // TODO: I *think* bitSetLength is the correct value for cost.
                 } else if (classByte == ROARING_DOC_ID_SET_BYTE) {
                     RoaringDocIdSet.Builder builder = new RoaringDocIdSet.Builder(maxDoc);
-                    byte[] block = new byte[BLOCK_SIZE * Integer.BYTES];
-                    int blockIndex = 0;
-                    is.readBytes(block, 0, BLOCK_SIZE * Integer.BYTES);
-                    int nextDoc = readInt(block, blockIndex);
-                    while (nextDoc != NO_MORE_DOCS) {
-                        builder.add(nextDoc);
-                        blockIndex++;
-                        nextDoc = readInt(block, blockIndex);
-                        if (blockIndex == BLOCK_SIZE - 1) {
-                            block = new byte[BLOCK_SIZE * Integer.BYTES];
-                            blockIndex = -1;
-                            is.readBytes(block, 0, BLOCK_SIZE * Integer.BYTES);
-                        }
-                    }
+                    Consumer<Integer> docAdder = builder::add;
+                    addDocs(is, docAdder);
                     return builder.build();
                 } else {
                     throw new UnsupportedOperationException("Unknown class byte " + classByte);

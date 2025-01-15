@@ -47,7 +47,7 @@ public class PluggableQueryCacheSerializerTests extends OpenSearchTestCase {
         int lastDoc = 1;
         docs.add(lastDoc);
         Random rand = Randomness.get();
-        for (int i = 0; i < PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE; i++) {
+        for (int i = 0; i < PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE + 252; i++) {
             lastDoc += rand.nextInt(5) + 1;
             docs.add(lastDoc);
         }
