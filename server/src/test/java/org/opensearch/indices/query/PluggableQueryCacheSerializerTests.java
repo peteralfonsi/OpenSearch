@@ -31,12 +31,14 @@ public class PluggableQueryCacheSerializerTests extends OpenSearchTestCase {
         // Check for both BigDocIdSet and RoaringDocIdSet
         for (DocIdSet set : new DocIdSet[] { getBitDocIdSet(docs), getRoaringDocIdSet(docs, maxDoc) }) {
             PluggableQueryCache.CacheAndCount original = new PluggableQueryCache.CacheAndCount(set, count, maxDoc);
-            PluggableQueryCache.CacheAndCountSerializer ser = new PluggableQueryCache.CacheAndCountSerializer();
+            CompressorPool pool = new CompressorPool(10);
+            PluggableQueryCache.CacheAndCountSerializer ser = new PluggableQueryCache.CacheAndCountSerializer(pool);
             byte[] serialized = ser.serialize(original);
             PluggableQueryCache.CacheAndCount deserialized = ser.deserialize(serialized);
             assertTrue(ser.equals(original, serialized));
             assertEquals(original, deserialized);
             assertTrue(serialized.length > PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE * Integer.BYTES);
+            pool.shutdown();
         }
     }
 
@@ -56,12 +58,14 @@ public class PluggableQueryCacheSerializerTests extends OpenSearchTestCase {
 
         for (DocIdSet set : new DocIdSet[] { getBitDocIdSet(docs), getRoaringDocIdSet(docs, maxDoc) }) {
             PluggableQueryCache.CacheAndCount original = new PluggableQueryCache.CacheAndCount(set, count, maxDoc);
-            PluggableQueryCache.CacheAndCountSerializer ser = new PluggableQueryCache.CacheAndCountSerializer();
+            CompressorPool pool = new CompressorPool(10);
+            PluggableQueryCache.CacheAndCountSerializer ser = new PluggableQueryCache.CacheAndCountSerializer(pool);
             byte[] serialized = ser.serialize(original);
             PluggableQueryCache.CacheAndCount deserialized = ser.deserialize(serialized);
             assertTrue(ser.equals(original, serialized));
             assertEquals(original, deserialized);
             assertTrue(serialized.length > 2 * PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE * Integer.BYTES);
+            pool.shutdown();
         }
     }
 

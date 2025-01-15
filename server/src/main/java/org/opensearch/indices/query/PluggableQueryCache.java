@@ -10,6 +10,8 @@ package org.opensearch.indices.query;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.lucene.codecs.compressing.Compressor;
+import org.apache.lucene.index.CorruptIndexException;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.ReaderUtil;
@@ -30,12 +32,20 @@ import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Scorer;
 import org.apache.lucene.search.ScorerSupplier;
 import org.apache.lucene.search.Weight;
+import org.apache.lucene.store.ByteArrayDataInput;
+import org.apache.lucene.store.ByteArrayDataOutput;
+import org.apache.lucene.store.ByteBuffersDataInput;
+import org.apache.lucene.store.DataInput;
+import org.apache.lucene.store.DataOutput;
 import org.apache.lucene.util.Accountable;
+import org.apache.lucene.util.ArrayUtil;
 import org.apache.lucene.util.BitDocIdSet;
 import org.apache.lucene.util.BitSet;
+import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.FixedBitSet;
 import org.apache.lucene.util.RamUsageEstimator;
 import org.apache.lucene.util.RoaringDocIdSet;
+import org.apache.lucene.util.compress.LZ4;
 import org.opensearch.OpenSearchException;
 import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.cache.CacheType;
@@ -65,6 +75,10 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
@@ -151,6 +165,7 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
      * The shard id dimension name.
      */
     public static final String SHARD_ID_DIMENSION_NAME = "shards";
+    private final CompressorPool compressorPool;
 
     // Is there any need for locks? The underlying TSC is threadsafe. I think the need for locks in original was due to LeafCache impl.
 
@@ -179,6 +194,7 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
             .ramBytesUsed();
         this.removalListener = new TSCRemovalListener();
         this.nextLeafCacheId = new AtomicInteger();
+        this.compressorPool = new CompressorPool(10);
 
         this.innerCache = cacheService.createCache(
             new CacheConfig.Builder<CompositeKey, CacheAndCount>().setSettings(settings)
@@ -190,7 +206,7 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
                 // TODO: I dont know what to do with this. This shouldn't be hardcoded like that...
                 .setCachedResultParser((cacheAndCount) -> new CachedQueryResult.PolicyValues(1))
                 .setKeySerializer(keySerializer)
-                .setValueSerializer(new CacheAndCountSerializer())
+                .setValueSerializer(new CacheAndCountSerializer(compressorPool))
                 .setClusterSettings(clusterService.getClusterSettings())
                 .setStoragePath(nodeEnvironment.nodePaths()[0].path.toString() + "/query_cache")
                 .build(),
@@ -261,6 +277,7 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
     @Override
     public void close() throws IOException {
         innerCache.close();
+        compressorPool.shutdown();
     }
 
     @Override
@@ -838,6 +855,12 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
 
         static final int BLOCK_SIZE = 1024;
 
+        private final CompressorPool compressorPool;
+
+        CacheAndCountSerializer(CompressorPool compressorPool) {
+            this.compressorPool = compressorPool;
+        }
+
         @Override
         public byte[] serialize(CacheAndCount object) {
             if (object == null) return null;
@@ -846,8 +869,8 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
                 os.writeVInt(object.count);
                 os.writeVInt(object.maxDoc);
                 serializeDocIdSet(object.cache, os);
-                return BytesReference.toBytes(os.bytes());
-            } catch (IOException e) {
+                return compressorPool.compress(BytesReference.toBytes(os.bytes())).get();
+            } catch (IOException | InterruptedException | ExecutionException e) {
                 logger.debug("Could not write CacheAndCount to byte[]");
                 throw new OpenSearchException(e);
             }
@@ -857,7 +880,8 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
         public CacheAndCount deserialize(byte[] bytes) {
             if (bytes == null) return null;
             try {
-                BytesStreamInput is = new BytesStreamInput(bytes, 0, bytes.length);
+                byte[] decompressed = compressorPool.decompress(bytes);
+                BytesStreamInput is = new BytesStreamInput(decompressed, 0, decompressed.length);
                 int count = is.readVInt();
                 int maxDoc = is.readVInt();
                 DocIdSet cache = deserializeDocIdSet(is, maxDoc);
