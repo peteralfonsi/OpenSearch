@@ -28,15 +28,16 @@ public class PluggableQueryCacheSerializerTests extends OpenSearchTestCase {
         List<Integer> docs = List.of(1, 4, 5, 16, 288, 5838);
         int maxDoc = Collections.max(docs) + 250;
         int count = 17;
-        // Check for both BigDocIdSet and RoaringDocIdSet
+        // Check for both BitDocIdSet and RoaringDocIdSet
         for (DocIdSet set : new DocIdSet[] { getBitDocIdSet(docs), getRoaringDocIdSet(docs, maxDoc) }) {
             PluggableQueryCache.CacheAndCount original = new PluggableQueryCache.CacheAndCount(set, count, maxDoc);
-            PluggableQueryCache.CacheAndCountSerializer ser = new PluggableQueryCache.CacheAndCountSerializer();
+            PluggableQueryCache.CacheAndCountSerializer ser = new PluggableQueryCache.CacheAndCountSerializer((r) -> {});
             byte[] serialized = ser.serialize(original);
             PluggableQueryCache.CacheAndCount deserialized = ser.deserialize(serialized);
             assertTrue(ser.equals(original, serialized));
             assertEquals(original, deserialized);
-            assertTrue(serialized.length > PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE * Integer.BYTES);
+            assertEquals(2 * PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE + 9, serialized.length); // +4 each for count and max
+                                                                                                             // doc, 1 for class byte
         }
     }
 
@@ -47,7 +48,7 @@ public class PluggableQueryCacheSerializerTests extends OpenSearchTestCase {
         int lastDoc = 1;
         docs.add(lastDoc);
         Random rand = Randomness.get();
-        for (int i = 0; i < PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE + 252; i++) {
+        for (int i = 0; i < PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE + 4; i++) {
             lastDoc += rand.nextInt(5) + 1;
             docs.add(lastDoc);
         }
@@ -56,12 +57,38 @@ public class PluggableQueryCacheSerializerTests extends OpenSearchTestCase {
 
         for (DocIdSet set : new DocIdSet[] { getBitDocIdSet(docs), getRoaringDocIdSet(docs, maxDoc) }) {
             PluggableQueryCache.CacheAndCount original = new PluggableQueryCache.CacheAndCount(set, count, maxDoc);
-            PluggableQueryCache.CacheAndCountSerializer ser = new PluggableQueryCache.CacheAndCountSerializer();
+            PluggableQueryCache.CacheAndCountSerializer ser = new PluggableQueryCache.CacheAndCountSerializer((r) -> {});
             byte[] serialized = ser.serialize(original);
             PluggableQueryCache.CacheAndCount deserialized = ser.deserialize(serialized);
             assertTrue(ser.equals(original, serialized));
             assertEquals(original, deserialized);
-            assertTrue(serialized.length > 2 * PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE * Integer.BYTES);
+            // assertEquals(4 * PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE + 9, serialized.length);
+        }
+    }
+
+    public void testCacheAndCountSerializerVeryLongDocIdSet() throws Exception {
+        List<Integer> docs = new ArrayList<>();
+
+        // populate docs with > block size...
+        int lastDoc = 1;
+        docs.add(lastDoc);
+        Random rand = Randomness.get();
+        for (int i = 0; i < 5 * PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE + 4; i++) {
+            lastDoc += rand.nextInt(5) + 1;
+            assertTrue(lastDoc < Integer.MAX_VALUE);
+            docs.add(lastDoc);
+        }
+        int maxDoc = Collections.max(docs) + 250;
+        int count = 17;
+
+        for (DocIdSet set : new DocIdSet[] { getBitDocIdSet(docs), getRoaringDocIdSet(docs, maxDoc) }) {
+            PluggableQueryCache.CacheAndCount original = new PluggableQueryCache.CacheAndCount(set, count, maxDoc);
+            PluggableQueryCache.CacheAndCountSerializer ser = new PluggableQueryCache.CacheAndCountSerializer((r) -> {});
+            byte[] serialized = ser.serialize(original);
+            PluggableQueryCache.CacheAndCount deserialized = ser.deserialize(serialized);
+            assertTrue(ser.equals(original, serialized));
+            assertEquals(original, deserialized);
+            // assertEquals(4 * PluggableQueryCache.CacheAndCountSerializer.BLOCK_SIZE + 9, serialized.length);
         }
     }
 

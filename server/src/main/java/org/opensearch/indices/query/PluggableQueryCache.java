@@ -152,6 +152,8 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
      * The shard id dimension name.
      */
     public static final String SHARD_ID_DIMENSION_NAME = "shards";
+    private double oldAverageCompressionRatio;
+    private long compressionCount;
 
     // Is there any need for locks? The underlying TSC is threadsafe. I think the need for locks in original was due to LeafCache impl.
 
@@ -191,13 +193,15 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
                 // TODO: I dont know what to do with this. This shouldn't be hardcoded like that...
                 .setCachedResultParser((cacheAndCount) -> new CachedQueryResult.PolicyValues(1))
                 .setKeySerializer(keySerializer)
-                .setValueSerializer(new CacheAndCountSerializer())
+                .setValueSerializer(new CacheAndCountSerializer(this::updateAverageCompressionRatio))
                 .setClusterSettings(clusterService.getClusterSettings())
                 .setStoragePath(nodeEnvironment.nodePaths()[0].path.toString() + "/query_cache")
                 .build(),
             CacheType.INDICES_QUERY_CACHE
         );
         this.maxRamBytesUsed = innerCache.getMaxHeapBytes();
+        this.compressionCount = 0;
+        this.oldAverageCompressionRatio = 0.0;
         // In theory it may be useful to test this with non-TSC internal caches for regression purposes.
         // For example, if we just do an OpenSearchOnHeapCache of the same size, how much worse does it perform?
     }
@@ -229,6 +233,15 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
 
     // TODO: Dont forget - the LRUQC has some logic about what even should enter the cache. Make sure to duplicate this.
 
+    private double getAverageCompressionRatio() {
+        return oldAverageCompressionRatio;
+    }
+
+    void updateAverageCompressionRatio(double newValue) {
+        oldAverageCompressionRatio = oldAverageCompressionRatio * (compressionCount - 1) / compressionCount + newValue / compressionCount;
+        compressionCount++;
+    }
+
     @Override
     public QueryCacheStats getStats(ShardId shard) {
         ImmutableCacheStatsHolder innerStats = innerCache.stats(new String[] { SHARD_ID_DIMENSION_NAME });
@@ -243,7 +256,8 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
             shardInnerStats.getHits(),
             shardInnerStats.getMisses() + outerMisses,
             shardInnerStats.getItems() + shardInnerStats.getEvictions(),
-            shardInnerStats.getItems()
+            shardInnerStats.getItems(),
+            getAverageCompressionRatio()
         ); // TODO: Not clear on what cache count is meant to be... I *think* it's the number of keys that have ever entered the cache,
            // including those now evicted? It doesn't *look* like it's doing anything smart about double-entries so I think it's just count
            // + evictions.
@@ -837,17 +851,26 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
         static final byte BIT_DOC_ID_SET_BYTE = 0x01;
         static final byte ROARING_DOC_ID_SET_BYTE = 0x02;
 
-        static final int BLOCK_SIZE = 1024;
+        static final int BLOCK_SIZE = 4096; // Must be > 5
+        private static final ThreadLocal<byte[]> scratch = ThreadLocal.withInitial(() -> new byte[1024]);
+        private final Consumer<Double> ratioUpdater;
+
+        public CacheAndCountSerializer(Consumer<Double> ratioUpdater) {
+            this.ratioUpdater = ratioUpdater;
+        }
 
         @Override
         public byte[] serialize(CacheAndCount object) {
             if (object == null) return null;
             try {
                 BytesStreamOutput os = new BytesStreamOutput();
-                os.writeVInt(object.count);
-                os.writeVInt(object.maxDoc);
-                serializeDocIdSet(object.cache, os);
-                return BytesReference.toBytes(os.bytes());
+                os.writeInt(object.count);
+                os.writeInt(object.maxDoc);
+                int numDocs = serializeDocIdSet(object.cache, os);
+                byte[] result = BytesReference.toBytes(os.bytes());
+                double compressionRatio = (double) result.length / (4 * (numDocs + 2) + 1); // Compare to storing everything as raw ints
+                ratioUpdater.accept(compressionRatio);
+                return result;
             } catch (IOException e) {
                 logger.debug("Could not write CacheAndCount to byte[]");
                 throw new OpenSearchException(e);
@@ -859,8 +882,8 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
             if (bytes == null) return null;
             try {
                 BytesStreamInput is = new BytesStreamInput(bytes, 0, bytes.length);
-                int count = is.readVInt();
-                int maxDoc = is.readVInt();
+                int count = is.readInt();
+                int maxDoc = is.readInt();
                 DocIdSet cache = deserializeDocIdSet(is, maxDoc);
                 return new CacheAndCount(cache, count, maxDoc);
             } catch (IOException e) {
@@ -875,7 +898,8 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
             return Arrays.equals(serialize(object), bytes);
         }
 
-        private void serializeDocIdSet(DocIdSet set, BytesStreamOutput os) {
+        private int serializeDocIdSet(DocIdSet set, BytesStreamOutput os) {
+            // Returns the number of docs in the original set.
             final byte classByte;
             if (set.getClass() == BitDocIdSet.class) {
                 classByte = BIT_DOC_ID_SET_BYTE;
@@ -885,64 +909,154 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
                 throw new UnsupportedOperationException("Cannot serialize DocIdSet implementation " + set.getClass());
             }
             os.writeByte(classByte);
+            int numDocs = 0;
 
             try {
                 DocIdSetIterator iterator = set.iterator();
                 int nextDoc = -1;
-                int blockIndex = 0;
-                byte[] block = new byte[BLOCK_SIZE * Integer.BYTES];
+                int blockPos = 0;
+                byte[] currentBlock = new byte[BLOCK_SIZE];
+                byte[] nextBlock = new byte[BLOCK_SIZE];
                 while (nextDoc != NO_MORE_DOCS) {
                     nextDoc = iterator.nextDoc();
-                    writeInt(nextDoc, block, blockIndex);
-                    blockIndex++;
-                    if (blockIndex == BLOCK_SIZE) {
-                        blockIndex = 0;
-                        os.writeBytes(block);
-                        block = new byte[BLOCK_SIZE * Integer.BYTES];
+                    blockPos = writeVInt(nextDoc, currentBlock, nextBlock, blockPos);
+                    numDocs++;
+                    if (blockPos >= BLOCK_SIZE) {
+                        os.writeBytes(currentBlock);
+                        currentBlock = nextBlock;
+                        nextBlock = new byte[BLOCK_SIZE];
+                        blockPos %= BLOCK_SIZE;
                     }
                 }
-                // Write remaining partial block
-                os.writeBytes(block);
+                // Write remaining partial block(s)
+                os.writeBytes(currentBlock);
+                os.writeBytes(nextBlock);
 
             } catch (IOException e) {
                 throw new OpenSearchException("Error iterating through DocSetIdIterator", e);
             }
-
-
+            return numDocs;
         }
 
-        // Modified from StreamOutput
-        private void writeInt(int value, byte[] block, int blockIndex) throws IOException {
-            int offset = blockIndex * Integer.BYTES;
-            block[offset] = (byte) (value >> 24);
-            block[offset + 1] = (byte) (value >> 16);
-            block[offset + 2] = (byte) (value >> 8);
-            block[offset + 3] = (byte) value;
+        public int writeVInt(int i, byte[] currentBlock, byte[] nextBlock, int pos) throws IOException {
+            // Returns an int for the value of pos after writing the VInt.
+
+            int posAfterWriting = pos;
+            // Modified from StreamOutput
+            if (Integer.numberOfLeadingZeros(i) >= 25) {
+                writeByteToBlocks((byte) i, currentBlock, nextBlock, posAfterWriting);
+                posAfterWriting++;
+                return posAfterWriting;
+            }
+            byte[] buffer = scratch.get();
+            int index = 0;
+            do {
+                buffer[index++] = ((byte) ((i & 0x7f) | 0x80));
+                i >>>= 7;
+            } while ((i & ~0x7F) != 0);
+            buffer[index++] = ((byte) i);
+            for (int j = 0; j < index; j++) {
+                writeByteToBlocks(buffer[j], currentBlock, nextBlock, posAfterWriting);
+                posAfterWriting++;
+            }
+            return posAfterWriting;
         }
 
-        // Modified from StreamInput
-        private int readInt(byte[] block, int blockIndex) throws IOException {
-            int offset = blockIndex * Integer.BYTES;
-            return ((block[offset] & 0xFF) << 24) | ((block[offset + 1] & 0xFF) << 16) | ((block[offset + 2] & 0xFF) << 8) | (block[offset + 3] & 0xFF);
+        private void writeByteToBlocks(byte b, byte[] currentBlock, byte[] nextBlock, int pos) {
+            if (pos < BLOCK_SIZE) {
+                currentBlock[pos] = b;
+            } else {
+                nextBlock[pos % BLOCK_SIZE] = b;
+            }
+        }
+
+        private byte readByteFromBlocks(byte[] currentBlock, byte[] nextBlock, int pos) {
+            if (pos < BLOCK_SIZE) {
+                return currentBlock[pos];
+            }
+            return nextBlock[pos % BLOCK_SIZE];
+        }
+
+        private long packInts(int value, int posAfterReading) {
+            return (long) posAfterReading << 32 | value;
+        }
+
+        private long readVInt(byte[] currentBlock, byte[] nextBlock, int pos) throws IOException {
+            // Returns a packed long containing (in least significant 4 bytes) the VInt read from pos onwards, and (second least significant
+            // 4 bytes) the resulting position after reading.
+            // If the VInt extends past currentBlock, will read into nextBlock, and pos returned will be > BLOCK_SIZE
+
+            // Below modified from StreamInput.java
+            int posAfterReading = pos;
+            byte b = readByteFromBlocks(currentBlock, nextBlock, posAfterReading);
+            posAfterReading++;
+            int i = b & 0x7F;
+            if ((b & 0x80) == 0) {
+                return packInts(i, posAfterReading);
+            }
+            b = readByteFromBlocks(currentBlock, nextBlock, posAfterReading);
+            posAfterReading++;
+            i |= (b & 0x7F) << 7;
+            if ((b & 0x80) == 0) {
+                return packInts(i, posAfterReading);
+            }
+            b = readByteFromBlocks(currentBlock, nextBlock, posAfterReading);
+            posAfterReading++;
+            i |= (b & 0x7F) << 14;
+            if ((b & 0x80) == 0) {
+                return packInts(i, posAfterReading);
+            }
+            b = readByteFromBlocks(currentBlock, nextBlock, posAfterReading);
+            posAfterReading++;
+            i |= (b & 0x7F) << 21;
+            if ((b & 0x80) == 0) {
+                return packInts(i, posAfterReading);
+            }
+            b = readByteFromBlocks(currentBlock, nextBlock, posAfterReading);
+            posAfterReading++;
+            if ((b & 0x80) != 0) {
+                throw new IOException("Invalid vInt ((" + Integer.toHexString(b) + " & 0x7f) << 28) | " + Integer.toHexString(i));
+            }
+            int value = i | ((b & 0x7F) << 28);
+            // TODO: If value is negative this may cause issues with leading bit?
+            return packInts(value, posAfterReading);
         }
 
         private int addDocs(BytesStreamInput is, Consumer<Integer> docAdder) {
             // Returns bitSetLength which may or may not be needed.
             int bitSetLength = 0;
             try {
-                byte[] block = new byte[BLOCK_SIZE * Integer.BYTES];
-                int blockIndex = 0;
-                is.readBytes(block, 0, BLOCK_SIZE * Integer.BYTES);
-                int nextDoc = readInt(block, blockIndex);
+                byte[] currentBlock = new byte[BLOCK_SIZE];
+                byte[] nextBlock = new byte[BLOCK_SIZE];
+                int blockPos = 0;
+                // TODO: Ensure there is always enough in StreamInput to do this. Probably just write two empty blocks at end.
+                is.readBytes(currentBlock, 0, BLOCK_SIZE);
+                is.readBytes(nextBlock, 0, BLOCK_SIZE);
+
+                long packedVInt = readVInt(currentBlock, nextBlock, blockPos);
+                int nextDoc = (int) packedVInt; // Apparently equivalent to packedVInt & 0xffffffff
+                blockPos = (int) (packedVInt >> 32);
+                // If nextPos is into nextBlock, we need to fetch another block
+                if (blockPos >= BLOCK_SIZE) {
+                    currentBlock = nextBlock;
+                    nextBlock = new byte[BLOCK_SIZE];
+                    is.readBytes(nextBlock, 0, BLOCK_SIZE);
+                    blockPos %= BLOCK_SIZE;
+                }
+
                 while (nextDoc != NO_MORE_DOCS) {
                     docAdder.accept(nextDoc);
                     bitSetLength++;
-                    blockIndex++;
-                    nextDoc = readInt(block, blockIndex);
-                    if (blockIndex == BLOCK_SIZE - 1) {
-                        block = new byte[BLOCK_SIZE * Integer.BYTES];
-                        blockIndex = -1;
-                        is.readBytes(block, 0, BLOCK_SIZE * Integer.BYTES);
+
+                    packedVInt = readVInt(currentBlock, nextBlock, blockPos);
+                    nextDoc = (int) packedVInt; // Equivalent to packedVInt & 0xffffffff
+                    blockPos = (int) (packedVInt >> 32);
+                    // If nextPos is into nextBlock, we need to fetch another block
+                    if (blockPos >= BLOCK_SIZE) {
+                        currentBlock = nextBlock;
+                        nextBlock = new byte[BLOCK_SIZE];
+                        is.readBytes(nextBlock, 0, BLOCK_SIZE);
+                        blockPos %= BLOCK_SIZE;
                     }
                 }
             } catch (IOException e) {

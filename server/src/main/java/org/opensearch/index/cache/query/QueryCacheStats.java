@@ -57,6 +57,7 @@ public class QueryCacheStats implements Writeable, ToXContentFragment {
     private long missCount;
     private long cacheCount;
     private long cacheSize;
+    private double compressionRatio; // Optional - debug only
 
     public QueryCacheStats() {}
 
@@ -69,11 +70,16 @@ public class QueryCacheStats implements Writeable, ToXContentFragment {
     }
 
     public QueryCacheStats(long ramBytesUsed, long hitCount, long missCount, long cacheCount, long cacheSize) {
+        this(ramBytesUsed, hitCount, missCount, cacheCount, cacheSize, 0.0);
+    }
+
+    public QueryCacheStats(long ramBytesUsed, long hitCount, long missCount, long cacheCount, long cacheSize, double compressionRatio) {
         this.ramBytesUsed = ramBytesUsed;
         this.hitCount = hitCount;
         this.missCount = missCount;
         this.cacheCount = cacheCount;
         this.cacheSize = cacheSize;
+        this.compressionRatio = compressionRatio;
     }
 
     public void add(QueryCacheStats stats) {
@@ -137,6 +143,14 @@ public class QueryCacheStats implements Writeable, ToXContentFragment {
         return cacheCount - cacheSize;
     }
 
+    /**
+     * fldkfj
+     * @return sldfjk
+     */
+    public double getCompressionRatio() {
+        return compressionRatio;
+    }
+
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         out.writeLong(ramBytesUsed);
@@ -156,6 +170,7 @@ public class QueryCacheStats implements Writeable, ToXContentFragment {
         builder.field(Fields.CACHE_SIZE, getCacheSize());
         builder.field(Fields.CACHE_COUNT, getCacheCount());
         builder.field(Fields.EVICTIONS, getEvictions());
+        builder.field(Fields.COMPRESSION_RATIO, getCompressionRatio());
         builder.endObject();
         return builder;
     }
@@ -175,6 +190,7 @@ public class QueryCacheStats implements Writeable, ToXContentFragment {
         static final String CACHE_SIZE = "cache_size";
         static final String CACHE_COUNT = "cache_count";
         static final String EVICTIONS = "evictions";
+        static final String COMPRESSION_RATIO = "disk_compression_ratio";
     }
 
 }
