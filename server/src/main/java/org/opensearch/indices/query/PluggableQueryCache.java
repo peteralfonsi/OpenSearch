@@ -910,6 +910,7 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
             }
             os.writeByte(classByte);
             int numDocs = 0;
+            int prevDoc = 0;
 
             try {
                 DocIdSetIterator iterator = set.iterator();
@@ -919,7 +920,9 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
                 byte[] nextBlock = new byte[BLOCK_SIZE];
                 while (nextDoc != NO_MORE_DOCS) {
                     nextDoc = iterator.nextDoc();
-                    blockPos = writeVInt(nextDoc, currentBlock, nextBlock, blockPos);
+                    int delta = nextDoc - prevDoc;
+                    prevDoc = nextDoc;
+                    blockPos = writeVInt(delta, currentBlock, nextBlock, blockPos);
                     numDocs++;
                     if (blockPos >= BLOCK_SIZE) {
                         os.writeBytes(currentBlock);
@@ -1025,6 +1028,7 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
         private int addDocs(BytesStreamInput is, Consumer<Integer> docAdder) {
             // Returns bitSetLength which may or may not be needed.
             int bitSetLength = 0;
+            int prevDoc = 0;
             try {
                 byte[] currentBlock = new byte[BLOCK_SIZE];
                 byte[] nextBlock = new byte[BLOCK_SIZE];
@@ -1034,7 +1038,8 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
                 is.readBytes(nextBlock, 0, BLOCK_SIZE);
 
                 long packedVInt = readVInt(currentBlock, nextBlock, blockPos);
-                int nextDoc = (int) packedVInt; // Apparently equivalent to packedVInt & 0xffffffff
+                int delta = (int) packedVInt; // Apparently equivalent to packedVInt & 0xffffffff
+                int nextDoc = prevDoc + delta;
                 blockPos = (int) (packedVInt >> 32);
                 // If nextPos is into nextBlock, we need to fetch another block
                 if (blockPos >= BLOCK_SIZE) {
@@ -1046,10 +1051,12 @@ public class PluggableQueryCache implements QueryCache, OpenSearchQueryCache {
 
                 while (nextDoc != NO_MORE_DOCS) {
                     docAdder.accept(nextDoc);
+                    prevDoc = nextDoc;
                     bitSetLength++;
 
                     packedVInt = readVInt(currentBlock, nextBlock, blockPos);
-                    nextDoc = (int) packedVInt; // Equivalent to packedVInt & 0xffffffff
+                    delta = (int) packedVInt; // Equivalent to packedVInt & 0xffffffff
+                    nextDoc = prevDoc + delta;
                     blockPos = (int) (packedVInt >> 32);
                     // If nextPos is into nextBlock, we need to fetch another block
                     if (blockPos >= BLOCK_SIZE) {
