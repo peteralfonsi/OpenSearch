@@ -216,7 +216,7 @@ public class ReadOnlyEngine extends Engine {
         Function<DirectoryReader, DirectoryReader> readerWrapperFunction
     ) throws IOException {
         reader = readerWrapperFunction.apply(reader);
-        return OpenSearchDirectoryReader.wrap(reader, engineConfig.getShardId());
+        return OpenSearchDirectoryReader.wrap(reader, engineConfig.getShardId(), null);
     }
 
     protected DirectoryReader open(IndexCommit commit) throws IOException {

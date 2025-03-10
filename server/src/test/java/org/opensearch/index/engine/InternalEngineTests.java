@@ -8224,4 +8224,67 @@ public class InternalEngineTests extends EngineTestCase {
         store.close();
         engine.close();
     }
+
+    public void testNumericFieldValueCounts() throws Exception {
+        IOUtils.close(store, engine);
+
+        final Settings.Builder settings = Settings.builder().put(defaultSettings.getSettings()).put("index.refresh_interval", "300s");
+        final IndexMetadata indexMetadata = IndexMetadata.builder(defaultSettings.getIndexMetadata()).settings(settings).build();
+        final IndexSettings indexSettings = IndexSettingsModule.newIndexSettings(indexMetadata);
+
+        Store store = createStore();
+        InternalEngine engine = createEngine(indexSettings, store, createTempDir(), newMergePolicy());
+
+        final int numIndexingThreads = scaledRandomIntBetween(3, 8);
+        final int numDocsPerThread = randomIntBetween(500, 1000);
+        final CyclicBarrier barrier = new CyclicBarrier(numIndexingThreads + 1);
+        final List<Thread> indexingThreads = new ArrayList<>();
+        final CountDownLatch doneLatch = new CountDownLatch(numIndexingThreads);
+        // create N indexing threads to index documents simultaneously
+        for (int threadNum = 0; threadNum < numIndexingThreads; threadNum++) {
+            final int threadIdx = threadNum;
+            int finalThreadNum = threadNum; // Reuse as the value
+            Thread indexingThread = new Thread(() -> {
+                try {
+                    barrier.await(); // wait for all threads to start at the same time
+                    // index random number of docs
+                    for (int i = 0; i < numDocsPerThread; i++) {
+                        final String id = "thread" + threadIdx + "#" + i;
+                        ParsedDocument doc = testParsedDocument(id, null, testDocumentWithIntegerField(finalThreadNum), B_1, null);
+                        engine.index(indexForDoc(doc));
+                    }
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                } finally {
+                    doneLatch.countDown();
+                }
+            });
+            indexingThreads.add(indexingThread);
+        }
+
+        // start the indexing threads
+        for (Thread thread : indexingThreads) {
+            thread.start();
+        }
+        barrier.await(); // wait for indexing threads to all be ready to start
+        assertTrue(doneLatch.await(10, TimeUnit.SECONDS));
+
+        // We expect each value for the field named "value" to have a count of numDocsPerThread
+        FieldValueCounts fvc = engine.getFieldValueCounts();
+        for (int fieldValue = 0; fieldValue < numIndexingThreads; fieldValue++) {
+            assertEquals(numDocsPerThread, fvc.getFieldCounts("value").get(fieldValue).get());
+        }
+
+        // Now run > 10k distinct values on this field. We should see it stops tracking once cardinality gets too high.
+        // TODO: Hook this into actual default setting value
+        for (int i = 0; i < 10_001; i++) {
+            final String id = "#" + i;
+            ParsedDocument doc = testParsedDocument(id, null, testDocumentWithIntegerField(i), B_1, null);
+            engine.index(indexForDoc(doc));
+        }
+        assertNull(fvc.getFieldCounts("value"));
+
+        store.close();
+        engine.close();
+    }
 }

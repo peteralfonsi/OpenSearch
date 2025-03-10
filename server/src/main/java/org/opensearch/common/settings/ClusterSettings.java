@@ -119,6 +119,7 @@ import org.opensearch.index.ShardIndexingPressureMemoryManager;
 import org.opensearch.index.ShardIndexingPressureSettings;
 import org.opensearch.index.ShardIndexingPressureStore;
 import org.opensearch.index.compositeindex.CompositeIndexSettings;
+import org.opensearch.index.engine.FieldValueCounts;
 import org.opensearch.index.remote.RemoteStorePressureSettings;
 import org.opensearch.index.remote.RemoteStoreStatsTrackerFactory;
 import org.opensearch.index.store.remote.filecache.FileCacheSettings;
@@ -810,7 +811,10 @@ public final class ClusterSettings extends AbstractScopedSettings {
                 ResponseLimitSettings.CAT_SEGMENTS_RESPONSE_LIMIT_SETTING,
 
                 // Thread pool Settings
-                ThreadPool.CLUSTER_THREAD_POOL_SIZE_SETTING
+                ThreadPool.CLUSTER_THREAD_POOL_SIZE_SETTING,
+
+                // Field value count settings
+                FieldValueCounts.MAX_FIELD_VALUE_COUNT_CARDINALITY_SETTING
             )
         )
     );

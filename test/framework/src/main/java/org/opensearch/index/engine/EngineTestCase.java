@@ -37,6 +37,7 @@ import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.codecs.Codec;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.document.IntField;
 import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.TextField;
@@ -368,6 +369,12 @@ public abstract class EngineTestCase extends OpenSearchTestCase {
     protected static ParseContext.Document testDocumentWithTextField(String value) {
         ParseContext.Document document = testDocument();
         document.add(new TextField("value", value, Field.Store.YES));
+        return document;
+    }
+
+    protected static ParseContext.Document testDocumentWithIntegerField(Integer value) {
+        ParseContext.Document document = testDocument();
+        document.add(new IntField("value", value, Field.Store.YES)); // TODO: Do we want Field.Store.YES?
         return document;
     }
 

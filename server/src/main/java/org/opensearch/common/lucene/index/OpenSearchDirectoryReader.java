@@ -38,6 +38,7 @@ import org.apache.lucene.index.LeafReader;
 import org.opensearch.common.SuppressForbidden;
 import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.core.index.shard.ShardId;
+import org.opensearch.index.engine.FieldValueCounts;
 
 import java.io.IOException;
 import java.util.Optional;
@@ -56,13 +57,19 @@ public final class OpenSearchDirectoryReader extends FilterDirectoryReader {
     private final FilterDirectoryReader.SubReaderWrapper wrapper;
 
     private final DelegatingCacheHelper delegatingCacheHelper;
+    private final FieldValueCounts fieldValueCounts;
 
-    private OpenSearchDirectoryReader(DirectoryReader in, FilterDirectoryReader.SubReaderWrapper wrapper, ShardId shardId)
-        throws IOException {
+    private OpenSearchDirectoryReader(
+        DirectoryReader in,
+        FilterDirectoryReader.SubReaderWrapper wrapper,
+        ShardId shardId,
+        FieldValueCounts fieldValueCounts
+    ) throws IOException {
         super(in, wrapper);
         this.wrapper = wrapper;
         this.shardId = shardId;
         this.delegatingCacheHelper = new DelegatingCacheHelper(in.getReaderCacheHelper());
+        this.fieldValueCounts = fieldValueCounts;
     }
 
     /**
@@ -139,7 +146,7 @@ public final class OpenSearchDirectoryReader extends FilterDirectoryReader {
 
     @Override
     protected DirectoryReader doWrapDirectoryReader(DirectoryReader in) throws IOException {
-        return new OpenSearchDirectoryReader(in, wrapper, shardId);
+        return new OpenSearchDirectoryReader(in, wrapper, shardId, fieldValueCounts);
     }
 
     /**
@@ -151,7 +158,22 @@ public final class OpenSearchDirectoryReader extends FilterDirectoryReader {
      * @param shardId the shard ID to expose via the opensearch internal reader wrappers.
      */
     public static OpenSearchDirectoryReader wrap(DirectoryReader reader, ShardId shardId) throws IOException {
-        return new OpenSearchDirectoryReader(reader, new SubReaderWrapper(shardId), shardId);
+        return new OpenSearchDirectoryReader(reader, new SubReaderWrapper(shardId), shardId, null);
+    }
+
+    /**
+     * Wraps the given reader in a {@link OpenSearchDirectoryReader} as
+     * well as all it's sub-readers in {@link OpenSearchLeafReader} to
+     * expose the given shard Id.
+     * Also has access to field value counts.
+     *
+     * @param reader the reader to wrap
+     * @param shardId the shard ID to expose via the opensearch internal reader wrappers.
+     * @param fieldValueCounts the field value counts
+     */
+    public static OpenSearchDirectoryReader wrap(DirectoryReader reader, ShardId shardId, FieldValueCounts fieldValueCounts)
+        throws IOException {
+        return new OpenSearchDirectoryReader(reader, new SubReaderWrapper(shardId), shardId, fieldValueCounts);
     }
 
     private static final class SubReaderWrapper extends FilterDirectoryReader.SubReaderWrapper {
