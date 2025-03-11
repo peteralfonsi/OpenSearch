@@ -48,10 +48,12 @@ import org.opensearch.core.xcontent.XContentParser;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
@@ -393,6 +395,8 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
             return any.get();
         }
 
+        changed |= rewriteNumericMustClausesToFilter(newBuilder);
+
         if (changed) {
             newBuilder.adjustPureNegative = adjustPureNegative;
             newBuilder.minimumShouldMatch = minimumShouldMatch;
@@ -460,4 +464,35 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
 
     }
 
+    private boolean rewriteNumericMustClausesToFilter(BoolQueryBuilder newBuilder) {
+        boolean changed = false;
+        // TODO: Check this isn't causing issues when in a function_score context
+        // If we aren't in a function_score context, we can move purely numeric clauses like ranges from MUST clauses to FILTER clauses,
+        // which improves performance in some cases.
+        Set<QueryBuilder> mustClausesToMove = new HashSet<>();
+        for (QueryBuilder clause : mustClauses) {
+            if (isClauseIrrelevantToScoring(clause)) {
+                mustClausesToMove.add(clause);
+                changed = true;
+            }
+        }
+        newBuilder.mustClauses.removeAll(mustClausesToMove);
+        newBuilder.filterClauses.addAll(mustClausesToMove);
+        return changed;
+    }
+
+    private boolean isClauseIrrelevantToScoring(QueryBuilder clause) {
+        // If a clause is purely numeric, for example a date range, its score is unimportant
+        // and it can be moved from a must to a filter clause for performance.
+
+        if (clause.boost() != DEFAULT_BOOST) {
+            return false; // TODO: If a range query has a non-default boost, and it's in a must clause, doesn't that boost still not matter? All returned docs will have it.
+        }
+
+        // This is an incomplete list of subclauses this might apply for; it can be expanded in future.
+        if (clause instanceof RangeQueryBuilder) {
+            return true;
+        }
+        return false;
+    }
 }

@@ -497,4 +497,24 @@ public class BoolQueryBuilderTests extends AbstractQueryTestCase<BoolQueryBuilde
         assertEquals(0, set.size());
 
     }
+
+    public void testNumericMustClauseRewritten() throws Exception {
+        BoolQueryBuilder qb = new BoolQueryBuilder();
+        QueryBuilder termQuery = new TermQueryBuilder(TEXT_FIELD_NAME, "bar");
+        QueryBuilder rangeQuery = new RangeQueryBuilder(INT_FIELD_NAME).gt(10).lt(20);
+        QueryBuilder rangeQueryWithBoost = new RangeQueryBuilder(DATE_FIELD_NAME).gt(10).lt(20).boost(2);
+        qb.must(termQuery); // Should not be moved to filter clause, not numeric
+        qb.must(rangeQuery); // Should be moved to filter clause
+        qb.must(rangeQueryWithBoost); // Should not be moved to filter clause, numeric but has non-default boost
+
+        BoolQueryBuilder rewritten = (BoolQueryBuilder) Rewriteable.rewrite(qb, createShardContext());
+        assertTrue(rewritten.must().contains(termQuery));
+        assertFalse(rewritten.must().contains(rangeQuery));
+        assertTrue(rewritten.filter().contains(rangeQuery));
+        assertTrue(rewritten.must().contains(rangeQueryWithBoost));
+    }
+
+    public void testNumericMustClauseRewriteDoesNotImpactFunctionScore() throws Exception {
+        // TODO
+    }
 }
