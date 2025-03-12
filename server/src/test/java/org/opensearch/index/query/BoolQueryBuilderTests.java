@@ -37,6 +37,7 @@ import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
+import org.opensearch.common.unit.Fuzziness;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.xcontent.MediaTypeRegistry;
 import org.opensearch.core.xcontent.XContentBuilder;
@@ -498,7 +499,7 @@ public class BoolQueryBuilderTests extends AbstractQueryTestCase<BoolQueryBuilde
 
     }
 
-    public void testNumericMustClauseRewritten() throws Exception {
+    public void testRangeMustClauseRewritten() throws Exception {
         BoolQueryBuilder qb = new BoolQueryBuilder();
         QueryBuilder termQuery = new TermQueryBuilder(TEXT_FIELD_NAME, "bar");
         QueryBuilder rangeQuery = new RangeQueryBuilder(INT_FIELD_NAME).gt(10).lt(20);
@@ -512,6 +513,23 @@ public class BoolQueryBuilderTests extends AbstractQueryTestCase<BoolQueryBuilde
         assertFalse(rewritten.must().contains(rangeQuery));
         assertTrue(rewritten.filter().contains(rangeQuery));
         assertTrue(rewritten.must().contains(rangeQueryWithBoost));
+    }
+
+    public void testNumericMatchMustClauseRewritten() throws Exception {
+        BoolQueryBuilder qb = new BoolQueryBuilder();
+        QueryBuilder numericMatchQuery = new MatchQueryBuilder(INT_FIELD_NAME, 10);
+        QueryBuilder textMatchQuery = new MatchQueryBuilder(TEXT_FIELD_NAME, "test");
+        // TODO: does fuzziness even apply for int queries?
+        QueryBuilder fuzzyMatchQuery = new MatchQueryBuilder(INT_FIELD_NAME, 20).fuzziness(Fuzziness.ONE);
+        qb.must(numericMatchQuery);
+        qb.must(textMatchQuery);
+        qb.must(fuzzyMatchQuery);
+
+        BoolQueryBuilder rewritten = (BoolQueryBuilder) Rewriteable.rewrite(qb, createShardContext());
+        assertTrue(rewritten.must().contains(textMatchQuery));
+        assertTrue(rewritten.must().contains(fuzzyMatchQuery));
+        assertFalse(rewritten.must().contains(numericMatchQuery));
+        assertTrue(rewritten.filter().contains(numericMatchQuery));
     }
 
     public void testNumericMustClauseRewriteDoesNotImpactFunctionScore() throws Exception {

@@ -486,12 +486,23 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
         // and it can be moved from a must to a filter clause for performance.
 
         if (clause.boost() != DEFAULT_BOOST) {
-            return false; // TODO: If a range query has a non-default boost, and it's in a must clause, doesn't that boost still not matter? All returned docs will have it.
+            return false; // TODO: If a range query has a non-default boost, and it's in a must clause, doesn't that boost still not matter?
+                          // All returned docs will have it.
         }
 
         // This is an incomplete list of subclauses this might apply for; it can be expanded in future.
         if (clause instanceof RangeQueryBuilder) {
             return true;
+        }
+
+        if (clause instanceof MatchQueryBuilder mq) {
+            if (mq.fuzziness() != null) {
+                return false;
+            }
+            if (mq.value() instanceof Number) {
+                // TODO: Is this correct? Check in debugger
+                return true;
+            }
         }
         return false;
     }
