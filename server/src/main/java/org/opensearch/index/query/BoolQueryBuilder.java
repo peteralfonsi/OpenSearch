@@ -48,6 +48,7 @@ import org.opensearch.core.xcontent.XContentParser;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -396,6 +397,7 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
         }
 
         changed |= rewriteNumericMustClausesToFilter(newBuilder);
+        changed |= rewriteRangeMustNotClausesToShould(newBuilder);
 
         if (changed) {
             newBuilder.adjustPureNegative = adjustPureNegative;
@@ -495,7 +497,11 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
             return true;
         }
 
-        if (clause instanceof MatchQueryBuilder mq) {
+        // TODO: We can't easily check the field type for MatchQueryBuilder at QueryBuilder rewrite time as QueryShardContext is not available in QueryRewriteContext.
+        //   It is available in doToQuery() - see MatchQueryBuilder - but it's clearly not *intended* to modify the builder here.
+        //   A wrapper over Lucene BooleanQuery where we can add more rewrite behavior isn't viable since the clauses are private in BooleanQuery.
+        //   Similarly we can't shove the context into the BooleanQuery like we do for MatchQuery and modify the query there, since it's Lucene.
+        /*if (clause instanceof MatchQueryBuilder mq) {
             if (mq.fuzziness() != null) {
                 return false;
             }
@@ -503,7 +509,50 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
                 // TODO: Is this correct? Check in debugger
                 return true;
             }
-        }
+        }*/
         return false;
+    }
+
+    private boolean rewriteRangeMustNotClausesToShould(BoolQueryBuilder newBuilder) {
+        // If there is a range query on a given field in a must_not clause, it's more performant to execute it as
+        // multiple should clauses representing everything outside the target ranges.
+
+        boolean changed = false;
+        // TODO: For now, only handle the case where there's exactly 1 range query for this field.
+        Map<String, Integer> fieldCounts = new HashMap<>();
+        Set<RangeQueryBuilder> rangeQueries = new HashSet<>();
+        for (QueryBuilder clause : mustNotClauses) {
+            if (clause instanceof RangeQueryBuilder rq) {
+                fieldCounts.merge(rq.fieldName(), 1, Integer::sum);
+                rangeQueries.add(rq);
+            }
+        }
+
+        for (RangeQueryBuilder rq : rangeQueries) {
+            String fieldName = rq.fieldName();
+            if (fieldCounts.getOrDefault(fieldName, 0) == 1) {
+                BoolQueryBuilder nestedBoolQuery = new BoolQueryBuilder();
+                nestedBoolQuery.minimumShouldMatch(1);
+                if (rq.from() != null) {
+                    RangeQueryBuilder belowRange = new RangeQueryBuilder(fieldName);
+                    belowRange.to(rq.from());
+                    belowRange.includeUpper(rq.includeLower());
+                    nestedBoolQuery.should(belowRange);
+                }
+
+                if (rq.to() != null) {
+                    RangeQueryBuilder aboveRange = new RangeQueryBuilder(fieldName);
+                    aboveRange.from(rq.to());
+                    aboveRange.includeLower(rq.includeUpper());
+                    nestedBoolQuery.should(aboveRange);
+                }
+
+                // TODO: In some cases (seemingly narrower nyc_taxis query only) wrapping each should clause in a bool:filter speeds up by another 2x. Why is this?
+                newBuilder.must(nestedBoolQuery);
+                newBuilder.mustNotClauses.remove(rq);
+                changed = true;
+            }
+        }
+        return changed;
     }
 }
