@@ -397,11 +397,13 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
         }
 
         changed |= rewriteNumericMustClausesToFilter(newBuilder);
-        changed |= rewriteRangeMustNotClausesToShould(newBuilder);
+        changed |= rewriteMustNotRangeClausesToShould(newBuilder);
 
         if (changed) {
             newBuilder.adjustPureNegative = adjustPureNegative;
-            newBuilder.minimumShouldMatch = minimumShouldMatch;
+            if (minimumShouldMatch != null) {
+                newBuilder.minimumShouldMatch = minimumShouldMatch;
+            }
             newBuilder.boost(boost());
             newBuilder.queryName(queryName());
             return newBuilder;
@@ -497,10 +499,13 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
             return true;
         }
 
-        // TODO: We can't easily check the field type for MatchQueryBuilder at QueryBuilder rewrite time as QueryShardContext is not available in QueryRewriteContext.
-        //   It is available in doToQuery() - see MatchQueryBuilder - but it's clearly not *intended* to modify the builder here.
-        //   A wrapper over Lucene BooleanQuery where we can add more rewrite behavior isn't viable since the clauses are private in BooleanQuery.
-        //   Similarly we can't shove the context into the BooleanQuery like we do for MatchQuery and modify the query there, since it's Lucene.
+        // TODO: We can't easily check the field type for MatchQueryBuilder at QueryBuilder rewrite time as QueryShardContext is not
+        // available in QueryRewriteContext.
+        // It is available in doToQuery() - see MatchQueryBuilder - but it's clearly not *intended* to modify the builder here.
+        // A wrapper over Lucene BooleanQuery where we can add more rewrite behavior isn't viable since the clauses are private in
+        // BooleanQuery.
+        // Similarly we can't shove the context into the BooleanQuery like we do for MatchQuery and modify the query there, since it's
+        // Lucene.
         /*if (clause instanceof MatchQueryBuilder mq) {
             if (mq.fuzziness() != null) {
                 return false;
@@ -513,9 +518,9 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
         return false;
     }
 
-    private boolean rewriteRangeMustNotClausesToShould(BoolQueryBuilder newBuilder) {
+    private boolean rewriteMustNotRangeClausesToShould(BoolQueryBuilder newBuilder) {
         // If there is a range query on a given field in a must_not clause, it's more performant to execute it as
-        // multiple should clauses representing everything outside the target ranges.
+        // multiple should clauses representing everything outside the target range.
 
         boolean changed = false;
         // TODO: For now, only handle the case where there's exactly 1 range query for this field.
@@ -531,26 +536,30 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
         for (RangeQueryBuilder rq : rangeQueries) {
             String fieldName = rq.fieldName();
             if (fieldCounts.getOrDefault(fieldName, 0) == 1) {
-                BoolQueryBuilder nestedBoolQuery = new BoolQueryBuilder();
-                nestedBoolQuery.minimumShouldMatch(1);
-                if (rq.from() != null) {
-                    RangeQueryBuilder belowRange = new RangeQueryBuilder(fieldName);
-                    belowRange.to(rq.from());
-                    belowRange.includeUpper(rq.includeLower());
-                    nestedBoolQuery.should(belowRange);
+                List<RangeQueryBuilder> complement = rq.getComplement();
+                if (complement != null) {
+                    BoolQueryBuilder nestedBoolQuery = new BoolQueryBuilder();
+                    nestedBoolQuery.minimumShouldMatch(1);
+                    for (RangeQueryBuilder complementComponent : complement) {
+                        nestedBoolQuery.should(complementComponent);
+                    }
+                    newBuilder.must(nestedBoolQuery);
+                    newBuilder.mustNotClauses.remove(rq);
+                    changed = true;
                 }
 
-                if (rq.to() != null) {
-                    RangeQueryBuilder aboveRange = new RangeQueryBuilder(fieldName);
-                    aboveRange.from(rq.to());
-                    aboveRange.includeLower(rq.includeUpper());
-                    nestedBoolQuery.should(aboveRange);
-                }
+                // TODO: In some cases (seemingly narrower nyc_taxis query only) wrapping each should clause in a bool:filter speeds up by
+                // another 2x. Why is this?
+            }
+        }
 
-                // TODO: In some cases (seemingly narrower nyc_taxis query only) wrapping each should clause in a bool:filter speeds up by another 2x. Why is this?
-                newBuilder.must(nestedBoolQuery);
-                newBuilder.mustNotClauses.remove(rq);
-                changed = true;
+        if (minimumShouldMatch == null && changed) {
+            if ((!shouldClauses.isEmpty()) && mustClauses.isEmpty() && filterClauses.isEmpty()) {
+                // If there were originally should clauses and no must/filter clauses, null minimumShouldMatch is set to a default of 1
+                // within Lucene.
+                // But if there was originally a must or filter clause, the default is 0.
+                // If we added a must clause due to this rewrite, we should respect what the original default would have been.
+                newBuilder.minimumShouldMatch(1);
             }
         }
         return changed;

@@ -37,7 +37,6 @@ import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
-import org.opensearch.common.unit.Fuzziness;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.xcontent.MediaTypeRegistry;
 import org.opensearch.core.xcontent.XContentBuilder;
@@ -540,8 +539,8 @@ public class BoolQueryBuilderTests extends AbstractQueryTestCase<BoolQueryBuilde
     public void testOneMustNotRangeRewritten() throws Exception {
         int from = 10;
         int to = 20;
-        for (boolean includeLower : new boolean[]{true, false}) {
-            for (boolean includeUpper : new boolean[]{true, false}) {
+        for (boolean includeLower : new boolean[] { true, false }) {
+            for (boolean includeUpper : new boolean[] { true, false }) {
                 BoolQueryBuilder qb = new BoolQueryBuilder();
                 QueryBuilder rq = getRangeQueryBuilder(INT_FIELD_NAME, from, to, includeLower, includeUpper);
                 qb.mustNot(rq);
@@ -549,9 +548,8 @@ public class BoolQueryBuilderTests extends AbstractQueryTestCase<BoolQueryBuilde
                 BoolQueryBuilder rewritten = (BoolQueryBuilder) Rewriteable.rewrite(qb, createShardContext());
                 assertFalse(rewritten.mustNot().contains(rq));
 
-
-                QueryBuilder expectedLowerQuery = getRangeQueryBuilder(INT_FIELD_NAME, null, from, false, includeLower);
-                QueryBuilder expectedUpperQuery = getRangeQueryBuilder(INT_FIELD_NAME, to, null, includeUpper, true);
+                QueryBuilder expectedLowerQuery = getRangeQueryBuilder(INT_FIELD_NAME, null, from, false, !includeLower);
+                QueryBuilder expectedUpperQuery = getRangeQueryBuilder(INT_FIELD_NAME, to, null, !includeUpper, true);
                 assertEquals(1, rewritten.must().size());
 
                 BoolQueryBuilder nestedBoolQuery = (BoolQueryBuilder) rewritten.must().get(0);
@@ -572,7 +570,7 @@ public class BoolQueryBuilderTests extends AbstractQueryTestCase<BoolQueryBuilde
         BoolQueryBuilder rewritten = (BoolQueryBuilder) Rewriteable.rewrite(qb, createShardContext());
         assertFalse(rewritten.mustNot().contains(rq));
 
-        QueryBuilder expectedQuery = getRangeQueryBuilder(INT_FIELD_NAME, null, from, false, false);
+        QueryBuilder expectedQuery = getRangeQueryBuilder(INT_FIELD_NAME, null, from, false, true);
         assertEquals(1, rewritten.must().size());
         BoolQueryBuilder nestedBoolQuery = (BoolQueryBuilder) rewritten.must().get(0);
         assertEquals(1, nestedBoolQuery.should().size());
