@@ -38,6 +38,7 @@ import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.Query;
 import org.opensearch.common.lucene.search.Queries;
+import org.opensearch.common.unit.Fuzziness;
 import org.opensearch.core.ParseField;
 import org.opensearch.core.common.ParsingException;
 import org.opensearch.core.common.io.stream.StreamInput;
@@ -45,13 +46,17 @@ import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.xcontent.ObjectParser;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.core.xcontent.XContentParser;
+import org.opensearch.index.mapper.MappedFieldType;
+import org.opensearch.index.mapper.NumberFieldMapper;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
@@ -393,6 +398,8 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
             return any.get();
         }
 
+        changed |= rewriteMustClausesToFilter(newBuilder, queryRewriteContext);
+
         if (changed) {
             newBuilder.adjustPureNegative = adjustPureNegative;
             newBuilder.minimumShouldMatch = minimumShouldMatch;
@@ -460,4 +467,70 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
 
     }
 
+    private boolean rewriteMustClausesToFilter(BoolQueryBuilder newBuilder, QueryRewriteContext queryRewriteContext) {
+        // IF we have must clauses which return the same score for all matching documents, like term queries or numeric ranges,
+        // moving them from must clauses to filter clauses improves performance in some cases.
+        boolean changed = false;
+        Set<QueryBuilder> mustClausesToMove = new HashSet<>();
+
+        QueryShardContext shardContext;
+        if (queryRewriteContext == null) {
+            shardContext = null;
+        } else {
+            shardContext = queryRewriteContext.convertToShardContext(); // Note this can still be null
+        }
+
+        for (QueryBuilder clause : mustClauses) {
+            if (isClauseIrrelevantToScoring(clause, shardContext)) {
+                mustClausesToMove.add(clause);
+                changed = true;
+            }
+        }
+
+        newBuilder.mustClauses.removeAll(mustClausesToMove);
+        newBuilder.filterClauses.addAll(mustClausesToMove);
+        return changed;
+    }
+
+    private boolean isClauseIrrelevantToScoring(QueryBuilder clause, QueryShardContext context) {
+        // This is an incomplete list of clauses this might apply for; it can be expanded in future.
+
+        // If a clause is purely numeric, for example a date range, its score is unimportant as
+        // it'll be the same for all returned docs
+        if (clause instanceof RangeQueryBuilder) {
+            return true;
+        }
+
+        // Term queries return the same score for all matching documents
+        if (clause instanceof TermQueryBuilder) {
+            return true;
+        }
+        if (clause instanceof TermsQueryBuilder) {
+            return true;
+        }
+
+        if (clause instanceof GeoBoundingBoxQueryBuilder) {
+            return true;
+        }
+
+        // Further optimizations depend on knowing whether the field is numeric.
+        // QueryBuilder.doRewrite() is called several times in the search flow, and the shard context telling us this
+        // is only available the last time, when it's called from SearchService.executeQueryPhase().
+        // Skip moving these clauses if we don't have the shard context.
+        if (context == null) {
+            return false;
+        }
+
+        if (clause instanceof MatchQueryBuilder) {
+            MatchQueryBuilder mq = (MatchQueryBuilder) clause;
+            MappedFieldType fieldType = context.fieldMapper(mq.fieldName());
+            if (mq.fuzziness() != null && mq.fuzziness() != Fuzziness.ZERO) {
+                return false;
+            }
+            if (fieldType instanceof NumberFieldMapper.NumberFieldType) {
+                return true;
+            }
+        }
+        return false;
+    }
 }
