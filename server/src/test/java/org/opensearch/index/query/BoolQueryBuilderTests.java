@@ -37,6 +37,7 @@ import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
+import org.opensearch.common.unit.Fuzziness;
 import org.opensearch.common.xcontent.XContentType;
 import org.opensearch.core.xcontent.MediaTypeRegistry;
 import org.opensearch.core.xcontent.XContentBuilder;
@@ -57,6 +58,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.opensearch.index.query.QueryBuilders.boolQuery;
 import static org.opensearch.index.query.QueryBuilders.termQuery;
 import static org.hamcrest.CoreMatchers.containsString;
@@ -502,6 +505,57 @@ public class BoolQueryBuilderTests extends AbstractQueryTestCase<BoolQueryBuilde
         }
 
         assertEquals(0, set.size());
+
+    }
+
+    public void testMustClausesRewritten() throws Exception {
+        BoolQueryBuilder qb = new BoolQueryBuilder();
+        QueryBuilder termQuery = new TermQueryBuilder(TEXT_FIELD_NAME, "bar");
+        QueryBuilder rangeQuery = new RangeQueryBuilder(INT_FIELD_NAME).gt(10).lt(20);
+        QueryBuilder rangeQueryWithBoost = new RangeQueryBuilder(DATE_FIELD_NAME).gt(10).lt(20).boost(2);
+        QueryBuilder termsQuery = new TermsQueryBuilder(TEXT_FIELD_NAME, "foo", "bar");
+        QueryBuilder boundingBoxQuery = new GeoBoundingBoxQueryBuilder(GEO_POINT_FIELD_NAME);
+
+        // These should all be moved to filter clauses
+        qb.must(termQuery);
+        qb.must(rangeQuery);
+        qb.must(rangeQueryWithBoost); // Should be moved to filter clause, the boost applies equally to all matched docs
+        qb.must(termsQuery);
+        qb.must(boundingBoxQuery);
+
+        // These shouldn't
+        //qb.must()
+
+        BoolQueryBuilder rewritten = (BoolQueryBuilder) Rewriteable.rewrite(qb, createShardContext());
+        for (QueryBuilder clause : new QueryBuilder[]{termQuery, rangeQuery, rangeQueryWithBoost, termsQuery, boundingBoxQuery}) {
+            assertFalse(rewritten.must().contains(clause));
+            assertTrue(rewritten.filter().contains(clause));
+        }
+    }
+
+    public void testNumericMatchMustClauseRewritten() throws Exception {
+        BoolQueryBuilder qb = new BoolQueryBuilder();
+        QueryBuilder numericMatchQuery = new MatchQueryBuilder(INT_FIELD_NAME, 10);
+        QueryBuilder textMatchQuery = new MatchQueryBuilder(TEXT_FIELD_NAME, "test");
+        QueryBuilder fuzzyMatchQuery = new MatchQueryBuilder(INT_FIELD_NAME, 20).fuzziness(Fuzziness.ONE);
+        qb.must(numericMatchQuery);
+        qb.must(textMatchQuery);
+        qb.must(fuzzyMatchQuery);
+
+        BoolQueryBuilder rewritten = (BoolQueryBuilder) Rewriteable.rewrite(qb, createShardContext());
+        assertTrue(rewritten.must().contains(textMatchQuery));
+        assertTrue(rewritten.must().contains(fuzzyMatchQuery));
+        assertFalse(rewritten.must().contains(numericMatchQuery));
+        assertTrue(rewritten.filter().contains(numericMatchQuery));
+
+        // When the QueryShardContext is null, we should not rewrite any match queries as we can't confirm if they're on numeric fields.
+        QueryRewriteContext nullContext = mock(QueryRewriteContext.class);
+        when(nullContext.convertToShardContext()).thenReturn(null);
+        BoolQueryBuilder rewrittenNoContext = (BoolQueryBuilder) Rewriteable.rewrite(qb, nullContext);
+        assertTrue(rewrittenNoContext.must().contains(textMatchQuery));
+        assertTrue(rewrittenNoContext.must().contains(fuzzyMatchQuery));
+        assertTrue(rewrittenNoContext.must().contains(numericMatchQuery));
+        assertEquals(0, rewrittenNoContext.filter().size());
 
     }
 }
