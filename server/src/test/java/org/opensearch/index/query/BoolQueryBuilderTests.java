@@ -104,8 +104,8 @@ public class BoolQueryBuilderTests extends AbstractQueryTestCase<BoolQueryBuilde
             if (clauses.isEmpty()) {
                 assertThat(query, instanceOf(MatchAllDocsQuery.class));
             } else if (query instanceof MatchNoDocsQuery == false) {
-                assertThat(query, instanceOf(BooleanQuery.class));
-                BooleanQuery booleanQuery = (BooleanQuery) query;
+                assertThat(query, instanceOf(OpenSearchBooleanQuery.class));
+                BooleanQuery booleanQuery = (BooleanQuery) ((OpenSearchBooleanQuery) query).getWrapped();
                 if (queryBuilder.adjustPureNegative()) {
                     boolean isNegative = true;
                     for (BooleanClause clause : clauses) {
@@ -121,7 +121,7 @@ public class BoolQueryBuilderTests extends AbstractQueryTestCase<BoolQueryBuilde
                 assertThat(booleanQuery.clauses().size(), equalTo(clauses.size()));
                 Iterator<BooleanClause> clauseIterator = clauses.iterator();
                 for (BooleanClause booleanClause : booleanQuery.clauses()) {
-                    assertThat(booleanClause, instanceOf(clauseIterator.next().getClass()));
+                    assertThat(booleanClause, instanceOf(clauseIterator.next().getClass())); // TODO: Might this cause issues sometimes? Not sure.
                 }
             }
         }
@@ -195,14 +195,14 @@ public class BoolQueryBuilderTests extends AbstractQueryTestCase<BoolQueryBuilde
         BoolQueryBuilder boolQueryBuilder = new BoolQueryBuilder();
         boolQueryBuilder.filter(new BoolQueryBuilder().must(new MatchAllQueryBuilder()));
         Query query = boolQueryBuilder.toQuery(createShardContext());
-        assertThat(query, instanceOf(BooleanQuery.class));
-        BooleanQuery booleanQuery = (BooleanQuery) query;
+        assertThat(query, instanceOf(OpenSearchBooleanQuery.class));
+        BooleanQuery booleanQuery = (BooleanQuery) ((OpenSearchBooleanQuery) query).getWrapped();
         assertThat(booleanQuery.getMinimumNumberShouldMatch(), equalTo(0));
         assertThat(booleanQuery.clauses().size(), equalTo(1));
         BooleanClause booleanClause = booleanQuery.clauses().get(0);
         assertThat(booleanClause.occur(), equalTo(BooleanClause.Occur.FILTER));
-        assertThat(booleanClause.query(), instanceOf(BooleanQuery.class));
-        BooleanQuery innerBooleanQuery = (BooleanQuery) booleanClause.query();
+        assertThat(booleanClause.query(), instanceOf(OpenSearchBooleanQuery.class));
+        BooleanQuery innerBooleanQuery = (BooleanQuery) ((OpenSearchBooleanQuery) booleanClause.query()).getWrapped();
         // we didn't set minimum should match initially, there are no should clauses so it should be 0
         assertThat(innerBooleanQuery.getMinimumNumberShouldMatch(), equalTo(0));
         assertThat(innerBooleanQuery.clauses().size(), equalTo(1));
@@ -212,21 +212,17 @@ public class BoolQueryBuilderTests extends AbstractQueryTestCase<BoolQueryBuilde
     }
 
     public void testMinShouldMatchBiggerThanNumberOfShouldClauses() throws Exception {
-        BooleanQuery bq = (BooleanQuery) parseQuery(
-            boolQuery().should(termQuery(TEXT_FIELD_NAME, "bar")).should(termQuery(KEYWORD_FIELD_NAME, "bar2")).minimumShouldMatch("3")
-        ).toQuery(createShardContext());
+        BooleanQuery bq = getWrappedBooleanQuery(boolQuery().should(termQuery(TEXT_FIELD_NAME, "bar")).should(termQuery(KEYWORD_FIELD_NAME, "bar2")).minimumShouldMatch("3"));
         assertEquals(3, bq.getMinimumNumberShouldMatch());
 
-        bq = (BooleanQuery) parseQuery(
-            boolQuery().should(termQuery(TEXT_FIELD_NAME, "bar")).should(termQuery(KEYWORD_FIELD_NAME, "bar2")).minimumShouldMatch(3)
-        ).toQuery(createShardContext());
+        bq = getWrappedBooleanQuery(boolQuery().should(termQuery(TEXT_FIELD_NAME, "bar")).should(termQuery(KEYWORD_FIELD_NAME, "bar2")).minimumShouldMatch(3));
         assertEquals(3, bq.getMinimumNumberShouldMatch());
     }
 
     public void testMinShouldMatchDisableCoord() throws Exception {
-        BooleanQuery bq = (BooleanQuery) parseQuery(
+        BooleanQuery bq = getWrappedBooleanQuery(
             boolQuery().should(termQuery(TEXT_FIELD_NAME, "bar")).should(termQuery(TEXT_FIELD_NAME, "bar2")).minimumShouldMatch("3")
-        ).toQuery(createShardContext());
+        );
         assertEquals(3, bq.getMinimumNumberShouldMatch());
     }
 
@@ -496,5 +492,10 @@ public class BoolQueryBuilderTests extends AbstractQueryTestCase<BoolQueryBuilde
 
         assertEquals(0, set.size());
 
+    }
+
+    private BooleanQuery getWrappedBooleanQuery(AbstractQueryBuilder<BoolQueryBuilder> qb) throws Exception {
+        OpenSearchBooleanQuery wrapper = (OpenSearchBooleanQuery) parseQuery(qb).toQuery(createShardContext());
+        return (BooleanQuery) wrapper.getWrapped();
     }
 }

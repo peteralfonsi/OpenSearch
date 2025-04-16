@@ -335,7 +335,11 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
         }
 
         Query query = Queries.applyMinimumShouldMatch(booleanQuery, minimumShouldMatch);
-        return adjustPureNegative ? fixNegativeQueryIfNeeded(query) : query;
+        query = adjustPureNegative ? fixNegativeQueryIfNeeded(query) : query;
+        if (query instanceof BooleanQuery bq) {
+            return new OpenSearchBooleanQuery(bq);
+        }
+        return query;
     }
 
     private static void addBooleanClauses(

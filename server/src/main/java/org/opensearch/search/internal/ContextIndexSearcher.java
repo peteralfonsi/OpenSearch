@@ -68,6 +68,7 @@ import org.apache.lucene.util.SparseFixedBitSet;
 import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.common.lease.Releasable;
 import org.opensearch.common.lucene.search.TopDocsAndMaxScore;
+import org.opensearch.index.query.QueryShardContext;
 import org.opensearch.lucene.util.CombinedBitSet;
 import org.opensearch.search.DocValueFormat;
 import org.opensearch.search.SearchService;
@@ -615,5 +616,10 @@ public class ContextIndexSearcher extends IndexSearcher implements Releasable {
             logger.debug("Slice count using max target slice supplier [{}]", leafSlices.length);
         }
         return leafSlices;
+    }
+
+    // TODO: This may not be the best way of exposing this for query rewrite; testing it for now
+    public QueryShardContext getQueryShardContext() {
+        return searchContext.getQueryShardContext();
     }
 }
