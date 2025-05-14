@@ -58,6 +58,7 @@ import java.util.Map;
  */
 public class NumericHistogramAggregator extends AbstractHistogramAggregator {
     private final ValuesSource.Numeric valuesSource;
+    //private final boolean useNaturalBucketOrdering;
 
     public NumericHistogramAggregator(
         String name,
@@ -93,6 +94,16 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
         );
         // TODO: Stop using null here
         this.valuesSource = valuesSourceConfig.hasValues() ? (ValuesSource.Numeric) valuesSourceConfig.getValuesSource() : null;
+        // TODO: It appears if valuesSource is ValuesSource$Numeric$FieldData, then it's always sorted, and we can use our new bucketOrds implementation.
+        /*if (valuesSource instanceof ValuesSource.Numeric.FieldData) {
+            // TODO: Set up new impl
+            ValuesSource.Numeric.FieldData source = (ValuesSource.Numeric.FieldData) valuesSource;
+            long min = source.
+            bucketOrds = null;
+            useNaturalBucketOrdering = true;
+        } else {
+            useNaturalBucketOrdering = false;
+        }*/
     }
 
     @Override
@@ -110,6 +121,9 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
         }
 
         final SortedNumericDoubleValues values = valuesSource.doubleValues(ctx);
+        /*if (useNaturalBucketOrdering) {
+            // TODO: Return a similar one which doesn't do Double.doubleToLongBits()
+        }*/
         return new LeafBucketCollectorBase(sub, values) {
             @Override
             public void collect(int doc, long owningBucketOrd) throws IOException {
@@ -126,6 +140,8 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
                         }
                         if (hardBounds == null || hardBounds.contain(key * interval)) {
                             long bucketOrd = bucketOrds.add(owningBucketOrd, Double.doubleToLongBits(key));
+                            // TODO: Why do we do this doubleToLongBits? Isn't this destroying the ordering?
+                            //   We should add an if in this return statement, so that if we are using the new impl, we don't do this and instead just cast to long.
                             if (bucketOrd < 0) { // already seen
                                 bucketOrd = -1 - bucketOrd;
                                 collectExistingBucket(sub, doc, bucketOrd);

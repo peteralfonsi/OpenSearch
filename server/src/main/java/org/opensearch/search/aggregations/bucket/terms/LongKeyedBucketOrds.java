@@ -32,8 +32,11 @@
 
 package org.opensearch.search.aggregations.bucket.terms;
 
+import org.opensearch.common.Numbers;
 import org.opensearch.common.lease.Releasable;
+import org.opensearch.common.lease.Releasables;
 import org.opensearch.common.util.BigArrays;
+import org.opensearch.common.util.IntArray;
 import org.opensearch.common.util.LongLongHash;
 import org.opensearch.common.util.ReorganizingLongHash;
 import org.opensearch.search.aggregations.CardinalityUpperBound;
@@ -314,6 +317,142 @@ public abstract class LongKeyedBucketOrds implements Releasable {
         @Override
         public void close() {
             ords.close();
+        }
+    }
+
+    /**
+     * Implementation which can skip using a hash table for histogram aggregations, since it knows the minimum value and bucket size.
+     * Can only be used if it is collecting from a single bucket.
+     * Expects the values to come in sorted order.
+     */
+    public static class MinimumAwareBucketOrds extends LongKeyedBucketOrds {
+        private long minimum; // TODO: I don't think we can get this in before actually seeing the first value sadly.
+        private final double interval;
+        private final BigArrays bigArrays;
+        private static final long MAX_CAPACITY = 1L << 32;
+        private static final long DEFAULT_INITIAL_CAPACITY = 32;
+        private long capacity;
+
+        private IntArray alreadySeen; // TODO: For now use IntArray with 0 and 1, there's no ByteArray or BitArray
+        private int size;
+
+        public MinimumAwareBucketOrds(double interval, BigArrays bigArrays) {
+            this.minimum = Long.MIN_VALUE; // TODO: This is no good, but placeholder
+            this.interval = interval;
+            this.bigArrays = bigArrays;
+            this.capacity = DEFAULT_INITIAL_CAPACITY;
+            this.size = 0;
+
+            try {
+                alreadySeen = bigArrays.newIntArray(capacity, false);
+                alreadySeen.fill(0, capacity, 0);  // 0 represents not yet seen
+            } finally {
+                if (alreadySeen == null) {
+                    Releasables.closeWhileHandlingException(alreadySeen);
+                }
+            }
+        }
+
+        // Sets that we've now seen this key, and return 0 if we hadn't seen it before and 1 if we had. Grow array if needed.
+        private int setAlreadySeen(long key) {
+            if (alreadySeen.size() < key) {
+                growAlreadySeen(key);
+            }
+            return alreadySeen.set(key, 1);
+        }
+
+        private void growAlreadySeen(long key) {
+            assert key < MAX_CAPACITY : "incoming key is larger than the max capacity";
+            capacity = Numbers.nextPowerOfTwo(key);
+            alreadySeen = bigArrays.resize(alreadySeen, capacity);
+        }
+
+        private long valueToKey(long value) {
+            if (minimum == Long.MIN_VALUE) {
+                minimum = value;
+            }
+            return value - minimum;
+        }
+
+        @Override
+        public long add(long owningBucketOrd, long value) {
+            // This is in the critical path for collecting most aggs. Be careful of performance.
+            assert owningBucketOrd == 0;
+            long key = valueToKey(value);
+            int seen = setAlreadySeen(key);
+            // seen == 0 --> not yet seen this key
+            if (seen == 0) {
+                size++;
+                return key;
+            }
+            return -1 - key;
+            //return (seen == 0 ? -1 - key : key); // TODO: See if we can do anything fancy arithmetically to eliminate this ternary
+        }
+
+        // TODO: If these methods get called before add() is ever called, the results will be nonsensical bc the minimum won't be set.
+        @Override
+        public long find(long owningBucketOrd, long value) {
+            assert owningBucketOrd == 0;
+            if (alreadySeen.get(valueToKey(value)) == 0) {
+                return -1;
+            }
+            return valueToKey(value);
+        }
+
+        @Override
+        public long get(long ordinal) {
+            return ordinal + minimum;
+        }
+
+        @Override
+        public long bucketsInOrd(long owningBucketOrd) {
+            assert owningBucketOrd == 0;
+            return size;
+        }
+
+        @Override
+        public long size() {
+            return size;
+        }
+
+        @Override
+        public long maxOwningBucketOrd() {
+            return 0;
+        }
+
+        @Override
+        public BucketOrdsEnum ordsEnum(long owningBucketOrd) {
+            // TODO: Probably not functional yet. Not sure what should happen for intermediate buckets. May be an issue.
+            assert owningBucketOrd == 0;
+            return new BucketOrdsEnum() {
+                private long ord = -1;
+                private long value;
+
+                @Override
+                public boolean next() {
+                    /*ord++;
+                    if (ord >= ords.size()) {
+                        return false;
+                    }
+                    value = ords.get(ord);*/
+                    return true;
+                }
+
+                @Override
+                public long value() {
+                    return value;
+                }
+
+                @Override
+                public long ord() {
+                    return ord;
+                }
+            };
+        }
+
+        @Override
+        public void close() {
+            Releasables.close(alreadySeen);
         }
     }
 }

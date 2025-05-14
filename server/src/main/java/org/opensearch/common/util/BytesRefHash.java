@@ -56,7 +56,7 @@ import org.opensearch.core.common.util.ByteArray;
 @InternalApi
 public final class BytesRefHash implements Releasable {
     private static final long MAX_CAPACITY = 1L << 32;
-    private static final long DEFAULT_INITIAL_CAPACITY = 32;
+    private static final long DEFAULT_INITIAL_CAPACITY = 1024;
     private static final float DEFAULT_LOAD_FACTOR = 0.6f;
     private static final Hasher DEFAULT_HASHER = key -> T1ha1.hash(key.bytes, key.offset, key.length);
 

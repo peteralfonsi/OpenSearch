@@ -67,7 +67,7 @@ public abstract class AbstractHistogramAggregator extends BucketsAggregator {
     protected final long minDocCount;
     protected final DoubleBounds extendedBounds;
     protected final DoubleBounds hardBounds;
-    protected final LongKeyedBucketOrds bucketOrds;
+    protected LongKeyedBucketOrds bucketOrds;
 
     public AbstractHistogramAggregator(
         String name,
