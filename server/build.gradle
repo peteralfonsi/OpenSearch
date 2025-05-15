@@ -87,6 +87,9 @@ dependencies {
   // percentile ranks aggregation
   api libs.hdrhistogram
 
+  // test: percentiles aggregation from apache
+  api libs.apache.datasketches
+
   // lucene spatial
   api libs.spatial4j, optional
   api libs.jtscore, optional
