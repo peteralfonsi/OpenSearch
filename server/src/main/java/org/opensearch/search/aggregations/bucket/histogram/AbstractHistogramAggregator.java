@@ -68,6 +68,7 @@ public abstract class AbstractHistogramAggregator extends BucketsAggregator {
     protected final DoubleBounds extendedBounds;
     protected final DoubleBounds hardBounds;
     protected LongKeyedBucketOrds bucketOrds;
+    protected boolean useNaturalBucketOrdering;
 
     public AbstractHistogramAggregator(
         String name,
@@ -99,12 +100,14 @@ public abstract class AbstractHistogramAggregator extends BucketsAggregator {
         this.hardBounds = hardBounds;
         this.formatter = formatter;
         bucketOrds = LongKeyedBucketOrds.build(context.bigArrays(), cardinalityUpperBound);
+        useNaturalBucketOrdering = false;
     }
 
     @Override
     public InternalAggregation[] buildAggregations(long[] owningBucketOrds) throws IOException {
         return buildAggregationsForVariableBuckets(owningBucketOrds, bucketOrds, (bucketValue, docCount, subAggregationResults) -> {
-            double roundKey = Double.longBitsToDouble(bucketValue);
+            //double roundKey = Double.longBitsToDouble(bucketValue); // TODO: this is causing the issue. Should not be hardcoded if we are using the other one.
+            double roundKey = mapLongBucketValueToDouble(bucketValue);
             double key = roundKey * interval + offset;
             return new InternalHistogram.Bucket(key, docCount, keyed, formatter, subAggregationResults);
         }, (owningBucketOrd, buckets) -> {
@@ -149,5 +152,13 @@ public abstract class AbstractHistogramAggregator extends BucketsAggregator {
     public void collectDebugInfo(BiConsumer<String, Object> add) {
         add.accept("total_buckets", bucketOrds.size());
         super.collectDebugInfo(add);
+    }
+
+    protected long mapDoubleKeyToLong(double doubleKey) {
+        return useNaturalBucketOrdering ? (long) doubleKey : Double.doubleToLongBits(doubleKey);
+    }
+
+    protected double mapLongBucketValueToDouble(long bucketValue) {
+        return useNaturalBucketOrdering ? (double) bucketValue : Double.longBitsToDouble(bucketValue);
     }
 }

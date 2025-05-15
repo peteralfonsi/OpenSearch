@@ -41,6 +41,7 @@ import org.opensearch.search.aggregations.BucketOrder;
 import org.opensearch.search.aggregations.CardinalityUpperBound;
 import org.opensearch.search.aggregations.LeafBucketCollector;
 import org.opensearch.search.aggregations.LeafBucketCollectorBase;
+import org.opensearch.search.aggregations.bucket.terms.LongKeyedBucketOrds;
 import org.opensearch.search.aggregations.support.ValuesSource;
 import org.opensearch.search.aggregations.support.ValuesSourceConfig;
 import org.opensearch.search.internal.SearchContext;
@@ -58,8 +59,6 @@ import java.util.Map;
  */
 public class NumericHistogramAggregator extends AbstractHistogramAggregator {
     private final ValuesSource.Numeric valuesSource;
-    //private final boolean useNaturalBucketOrdering;
-
     public NumericHistogramAggregator(
         String name,
         AggregatorFactories factories,
@@ -95,15 +94,12 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
         // TODO: Stop using null here
         this.valuesSource = valuesSourceConfig.hasValues() ? (ValuesSource.Numeric) valuesSourceConfig.getValuesSource() : null;
         // TODO: It appears if valuesSource is ValuesSource$Numeric$FieldData, then it's always sorted, and we can use our new bucketOrds implementation.
-        /*if (valuesSource instanceof ValuesSource.Numeric.FieldData) {
-            // TODO: Set up new impl
-            ValuesSource.Numeric.FieldData source = (ValuesSource.Numeric.FieldData) valuesSource;
-            long min = source.
-            bucketOrds = null;
+        if (valuesSource instanceof ValuesSource.Numeric.FieldData) {
+            //ValuesSource.Numeric.FieldData source = (ValuesSource.Numeric.FieldData) valuesSource;
+            // TODO: seems not actually sorted, but for first test just going w it by key == ordinal
+            this.bucketOrds = new LongKeyedBucketOrds.MinimumAwareBucketOrds(context.bigArrays());
             useNaturalBucketOrdering = true;
-        } else {
-            useNaturalBucketOrdering = false;
-        }*/
+        }
     }
 
     @Override
@@ -121,9 +117,6 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
         }
 
         final SortedNumericDoubleValues values = valuesSource.doubleValues(ctx);
-        /*if (useNaturalBucketOrdering) {
-            // TODO: Return a similar one which doesn't do Double.doubleToLongBits()
-        }*/
         return new LeafBucketCollectorBase(sub, values) {
             @Override
             public void collect(int doc, long owningBucketOrd) throws IOException {
@@ -139,9 +132,8 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
                             continue;
                         }
                         if (hardBounds == null || hardBounds.contain(key * interval)) {
-                            long bucketOrd = bucketOrds.add(owningBucketOrd, Double.doubleToLongBits(key));
-                            // TODO: Why do we do this doubleToLongBits? Isn't this destroying the ordering?
-                            //   We should add an if in this return statement, so that if we are using the new impl, we don't do this and instead just cast to long.
+                            //long bucketOrd = bucketOrds.add(owningBucketOrd, Double.doubleToLongBits(key));
+                            long bucketOrd = bucketOrds.add(owningBucketOrd, mapDoubleKeyToLong(key));
                             if (bucketOrd < 0) { // already seen
                                 bucketOrd = -1 - bucketOrd;
                                 collectExistingBucket(sub, doc, bucketOrd);

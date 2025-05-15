@@ -57,6 +57,13 @@ public class LongKeyedBucketOrdsTests extends OpenSearchTestCase {
         collectsFromSingleBucketCase(LongKeyedBucketOrds.build(bigArrays, CardinalityUpperBound.MANY));
     }
 
+    public void testMinimumAwareBucketOrds() {
+        // TODO: collectsFromSingleBucketCase isn't appropriate here since we map directly,
+        //   for example 0 then 1000 expects it to produce ords 0 and then 1
+
+        //collectsFromSingleBucketCase(new LongKeyedBucketOrds.MinimumAwareBucketOrds(0, bigArrays));
+    }
+
     private void collectsFromSingleBucketCase(LongKeyedBucketOrds ords) {
         try {
             // Test a few explicit values
