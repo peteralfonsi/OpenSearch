@@ -468,7 +468,7 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
     }
 
     private boolean rewriteMustClausesToFilter(BoolQueryBuilder newBuilder, QueryRewriteContext queryRewriteContext) {
-        // IF we have must clauses which return the same score for all matching documents, like term queries or numeric ranges,
+        // If we have must clauses which return the same score for all matching documents, like term queries or numeric ranges,
         // moving them from must clauses to filter clauses improves performance in some cases.
         boolean changed = false;
         Set<QueryBuilder> mustClausesToMove = new HashSet<>();
@@ -497,39 +497,24 @@ public class BoolQueryBuilder extends AbstractQueryBuilder<BoolQueryBuilder> {
 
         // If a clause is purely numeric, for example a date range, its score is unimportant as
         // it'll be the same for all returned docs
-        if (clause instanceof RangeQueryBuilder) {
-            return true;
-        }
+        if (clause instanceof RangeQueryBuilder) return true;
 
         // Term queries return the same score for all matching documents
-        if (clause instanceof TermQueryBuilder) {
-            return true;
-        }
-        if (clause instanceof TermsQueryBuilder) {
-            return true;
-        }
+        if (clause instanceof TermQueryBuilder) return true;
+        if (clause instanceof TermsQueryBuilder) return true;
 
-        if (clause instanceof GeoBoundingBoxQueryBuilder) {
-            return true;
-        }
+        if (clause instanceof GeoBoundingBoxQueryBuilder) return true;
 
         // Further optimizations depend on knowing whether the field is numeric.
         // QueryBuilder.doRewrite() is called several times in the search flow, and the shard context telling us this
         // is only available the last time, when it's called from SearchService.executeQueryPhase().
         // Skip moving these clauses if we don't have the shard context.
-        if (context == null) {
-            return false;
-        }
+        if (context == null) return false;
 
-        if (clause instanceof MatchQueryBuilder) {
-            MatchQueryBuilder mq = (MatchQueryBuilder) clause;
+        if (clause instanceof MatchQueryBuilder mq) {
             MappedFieldType fieldType = context.fieldMapper(mq.fieldName());
-            if (mq.fuzziness() != null && mq.fuzziness() != Fuzziness.ZERO) {
-                return false;
-            }
-            if (fieldType instanceof NumberFieldMapper.NumberFieldType) {
-                return true;
-            }
+            if (mq.fuzziness() != null && mq.fuzziness() != Fuzziness.ZERO) return false;
+            if (fieldType instanceof NumberFieldMapper.NumberFieldType) return true;
         }
         return false;
     }

@@ -523,9 +523,6 @@ public class BoolQueryBuilderTests extends AbstractQueryTestCase<BoolQueryBuilde
         qb.must(termsQuery);
         qb.must(boundingBoxQuery);
 
-        // These shouldn't
-        //qb.must()
-
         BoolQueryBuilder rewritten = (BoolQueryBuilder) Rewriteable.rewrite(qb, createShardContext());
         for (QueryBuilder clause : new QueryBuilder[]{termQuery, rangeQuery, rangeQueryWithBoost, termsQuery, boundingBoxQuery}) {
             assertFalse(rewritten.must().contains(clause));
@@ -556,6 +553,5 @@ public class BoolQueryBuilderTests extends AbstractQueryTestCase<BoolQueryBuilde
         assertTrue(rewrittenNoContext.must().contains(fuzzyMatchQuery));
         assertTrue(rewrittenNoContext.must().contains(numericMatchQuery));
         assertEquals(0, rewrittenNoContext.filter().size());
-
     }
 }
