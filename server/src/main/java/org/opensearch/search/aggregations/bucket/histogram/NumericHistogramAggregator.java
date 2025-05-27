@@ -64,6 +64,7 @@ import java.util.Map;
  */
 public class NumericHistogramAggregator extends AbstractHistogramAggregator {
     private final ValuesSource.Numeric valuesSource;
+
     public NumericHistogramAggregator(
         String name,
         AggregatorFactories factories,
@@ -98,7 +99,8 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
         );
         // TODO: Stop using null here
         this.valuesSource = valuesSourceConfig.hasValues() ? (ValuesSource.Numeric) valuesSourceConfig.getValuesSource() : null;
-        if (valuesSource instanceof ValuesSource.Numeric.FieldData) { // TODO: Do we need a version check here? We may just need to check we can get PointValues. Later code assumes we can run .doubleValues()
+        if (valuesSource instanceof ValuesSource.Numeric.FieldData) { // TODO: Do we need a version check here? We may just need to check we
+                                                                      // can get PointValues. Later code assumes we can run .doubleValues()
             Double minimumKey = getMinimumKey(valuesSource, context);
             if (minimumKey != null) {
                 // Close the default bucketOrds created by the parent class before creating a new one
@@ -163,7 +165,8 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
                             continue;
                         }
                         if (hardBounds == null || hardBounds.contain(key * interval)) {
-                            // TODO: mapDoubleKeyToLong() has an if inside it. For performance reasons, would it be better if that `if` were outside, as its gonna run millions of times? I think prob not, as it should figure it out p quick?
+                            // TODO: mapDoubleKeyToLong() has an if inside it. For performance reasons, would it be better if that `if` were
+                            // outside, as its gonna run millions of times? I think prob not, as it should figure it out p quick?
                             long bucketOrd = bucketOrds.add(owningBucketOrd, mapDoubleKeyToLong(key));
                             if (bucketOrd < 0) { // already seen
                                 bucketOrd = -1 - bucketOrd;

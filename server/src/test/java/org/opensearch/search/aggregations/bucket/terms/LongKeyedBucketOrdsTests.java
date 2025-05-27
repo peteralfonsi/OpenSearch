@@ -60,9 +60,9 @@ public class LongKeyedBucketOrdsTests extends OpenSearchTestCase {
 
     public void testMinimumAwareBucketOrds() {
         // TODO: collectsFromSingleBucketCase isn't appropriate here since we map directly,
-        //   for example 0 then 1000 expects it to produce ords 0 and then 1
+        // for example 0 then 1000 expects it to produce ords 0 and then 1
 
-        //collectsFromSingleBucketCase(new LongKeyedBucketOrds.MinimumAwareBucketOrds(0, bigArrays));
+        // collectsFromSingleBucketCase(new LongKeyedBucketOrds.MinimumAwareBucketOrds(0, bigArrays));
 
         // TODO: For now just check that resizing is working as I expect.
         double minValue = 5;

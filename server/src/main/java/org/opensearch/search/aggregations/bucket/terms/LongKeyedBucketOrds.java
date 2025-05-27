@@ -36,9 +36,9 @@ import org.opensearch.common.Numbers;
 import org.opensearch.common.lease.Releasable;
 import org.opensearch.common.lease.Releasables;
 import org.opensearch.common.util.BigArrays;
-import org.opensearch.common.util.IntArray;
 import org.opensearch.common.util.LongLongHash;
 import org.opensearch.common.util.ReorganizingLongHash;
+import org.opensearch.core.common.util.ByteArray;
 import org.opensearch.search.aggregations.CardinalityUpperBound;
 
 /**
@@ -335,7 +335,7 @@ public abstract class LongKeyedBucketOrds implements Releasable {
 
         // TODO: pkg-private for debug testing only! Set to private before any commit.
 
-        IntArray alreadySeen; // TODO: No BitArray or BooleanArray, but prob switch to BigByteArray. Looks like resizing in place may be allowed for this one too.
+        ByteArray alreadySeen; // TODO: No BitArray or BooleanArray
 
         public MinimumAwareBucketOrds(double minimumValue, BigArrays bigArrays) {
             this.minimumValue = (long) minimumValue;
@@ -344,8 +344,8 @@ public abstract class LongKeyedBucketOrds implements Releasable {
             this.capacity = DEFAULT_INITIAL_CAPACITY;
 
             try {
-                alreadySeen = bigArrays.newIntArray(capacity, true);
-                alreadySeen.fill(0, capacity, 0);  // 0 represents not yet seen
+                alreadySeen = bigArrays.newByteArray(capacity, true);
+                alreadySeen.fill(0, capacity, (byte) 0);  // 0 represents not yet seen
             } finally {
                 if (alreadySeen == null) {
                     Releasables.closeWhileHandlingException(alreadySeen);
@@ -360,7 +360,7 @@ public abstract class LongKeyedBucketOrds implements Releasable {
                 capacity = Numbers.nextPowerOfTwo(key + 1);
                 alreadySeen = bigArrays.resize(alreadySeen, capacity);
             }
-            return alreadySeen.set(key, 1);
+            return alreadySeen.set(key, (byte) 1);
         }
 
         private long valueToKey(long value) {
