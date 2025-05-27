@@ -32,6 +32,7 @@
 
 package org.opensearch.search.aggregations.bucket.terms;
 
+import org.opensearch.common.Numbers;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.MockBigArrays;
 import org.opensearch.common.util.MockPageCacheRecycler;
@@ -62,6 +63,32 @@ public class LongKeyedBucketOrdsTests extends OpenSearchTestCase {
         //   for example 0 then 1000 expects it to produce ords 0 and then 1
 
         //collectsFromSingleBucketCase(new LongKeyedBucketOrds.MinimumAwareBucketOrds(0, bigArrays));
+
+        // TODO: For now just check that resizing is working as I expect.
+        double minValue = 5;
+        int size = 36;
+        LongKeyedBucketOrds.MinimumAwareBucketOrds ords = new LongKeyedBucketOrds.MinimumAwareBucketOrds(minValue, bigArrays);
+        try {
+            // Check at creation, all entries are 0
+            for (int i = 0; i < ords.alreadySeen.size(); i++) {
+                assertEquals(0, ords.alreadySeen.get(i));
+            }
+
+            for (int i = 0; i < size; i++) {
+                ords.add(0, (long) minValue + i);
+            }
+            // Should have had 1 resize
+            assertEquals(ords.size(), size);
+            assertEquals(ords.alreadySeen.size(), Numbers.nextPowerOfTwo(size));
+            for (int i = size; i < ords.alreadySeen.size(); i++) {
+                assertEquals(0, ords.alreadySeen.get(i));
+            }
+            for (int i = 0; i < size; i++) {
+                assertEquals(1, ords.alreadySeen.get(i));
+            }
+        } finally {
+            ords.close();
+        }
     }
 
     private void collectsFromSingleBucketCase(LongKeyedBucketOrds ords) {

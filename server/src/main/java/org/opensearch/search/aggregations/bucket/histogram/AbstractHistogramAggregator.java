@@ -106,7 +106,6 @@ public abstract class AbstractHistogramAggregator extends BucketsAggregator {
     @Override
     public InternalAggregation[] buildAggregations(long[] owningBucketOrds) throws IOException {
         return buildAggregationsForVariableBuckets(owningBucketOrds, bucketOrds, (bucketValue, docCount, subAggregationResults) -> {
-            //double roundKey = Double.longBitsToDouble(bucketValue); // TODO: this is causing the issue. Should not be hardcoded if we are using the other one.
             double roundKey = mapLongBucketValueToDouble(bucketValue);
             double key = roundKey * interval + offset;
             return new InternalHistogram.Bucket(key, docCount, keyed, formatter, subAggregationResults);

@@ -322,26 +322,29 @@ public abstract class LongKeyedBucketOrds implements Releasable {
 
     /**
      * Implementation which can skip using a hash table for histogram aggregations, since it knows the minimum value it might see.
+     * Assumes incoming values will be densely packed. For example if the minimum key is 5, it expects to see values like 5, 6, 7, ... which become keys like 0, 1, 2, ...
      * Can only be used if it is collecting from a single bucket.
      */
     public static class MinimumAwareBucketOrds extends LongKeyedBucketOrds {
-        private long minimumKey;
+        private final long minimumValue;
         private long largestKeySeen;
         private final BigArrays bigArrays;
         private static final long MAX_CAPACITY = 1L << 32;
         private static final long DEFAULT_INITIAL_CAPACITY = 32;
         private long capacity;
 
-        private IntArray alreadySeen; // TODO: For now use IntArray with 0 and 1, there's no ByteArray or BitArray
+        // TODO: pkg-private for debug testing only! Set to private before any commit.
 
-        public MinimumAwareBucketOrds(double minimumKey, BigArrays bigArrays) {
-            this.minimumKey = (long) minimumKey;
+        IntArray alreadySeen; // TODO: No BitArray or BooleanArray, but prob switch to BigByteArray. Looks like resizing in place may be allowed for this one too.
+
+        public MinimumAwareBucketOrds(double minimumValue, BigArrays bigArrays) {
+            this.minimumValue = (long) minimumValue;
             this.largestKeySeen = 0;
             this.bigArrays = bigArrays;
             this.capacity = DEFAULT_INITIAL_CAPACITY;
 
             try {
-                alreadySeen = bigArrays.newIntArray(capacity, false);
+                alreadySeen = bigArrays.newIntArray(capacity, true);
                 alreadySeen.fill(0, capacity, 0);  // 0 represents not yet seen
             } finally {
                 if (alreadySeen == null) {
@@ -353,19 +356,16 @@ public abstract class LongKeyedBucketOrds implements Releasable {
         // Sets that we've now seen this key, and return 0 if we hadn't seen it before and 1 if we had. Grow array if needed.
         private int setAlreadySeen(long key) {
             if (alreadySeen.size() < key + 1) {
-                growAlreadySeen(key);
+                assert key < MAX_CAPACITY : "incoming key is larger than the max capacity";
+                capacity = Numbers.nextPowerOfTwo(key + 1);
+                alreadySeen = bigArrays.resize(alreadySeen, capacity);
             }
             return alreadySeen.set(key, 1);
         }
 
-        private void growAlreadySeen(long key) {
-            assert key < MAX_CAPACITY : "incoming key is larger than the max capacity";
-            capacity = Numbers.nextPowerOfTwo(key + 1);
-            alreadySeen = bigArrays.resize(alreadySeen, capacity);
-        }
-
         private long valueToKey(long value) {
-            return value - minimumKey;
+            assert value >= minimumValue;
+            return value - minimumValue;
         }
 
         @Override
@@ -428,7 +428,7 @@ public abstract class LongKeyedBucketOrds implements Releasable {
 
                 @Override
                 public long value() {
-                    return ord + minimumKey;
+                    return ord + minimumValue;
                 }
 
                 @Override
