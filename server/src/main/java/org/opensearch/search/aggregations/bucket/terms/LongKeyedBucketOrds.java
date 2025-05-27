@@ -321,29 +321,24 @@ public abstract class LongKeyedBucketOrds implements Releasable {
     }
 
     /**
-     * Implementation which can skip using a hash table for histogram aggregations, since it knows the minimum value and bucket size.
+     * Implementation which can skip using a hash table for histogram aggregations, since it knows the minimum value it might see.
      * Can only be used if it is collecting from a single bucket.
-     * Expects the values to come in sorted order.
-     * TODO: For a first test, to see if we even get a perf boost, do not do the minimum thing, and don't transform the keys at all.
-     *   Just use them directly as passed in from histogram. I think it'll crap out on negative numbers too.
      */
     public static class MinimumAwareBucketOrds extends LongKeyedBucketOrds {
-        private long minimum; // TODO: I don't think we can get this in before actually seeing the first value sadly.
-        private long maximum;
+        private long minimumKey;
+        private long largestKeySeen;
         private final BigArrays bigArrays;
         private static final long MAX_CAPACITY = 1L << 32;
         private static final long DEFAULT_INITIAL_CAPACITY = 32;
         private long capacity;
 
         private IntArray alreadySeen; // TODO: For now use IntArray with 0 and 1, there's no ByteArray or BitArray
-        private int size;
 
-        public MinimumAwareBucketOrds(BigArrays bigArrays) {
-            this.minimum = Long.MIN_VALUE; // TODO: This is no good, but placeholder
-            this.maximum = Long.MIN_VALUE;
+        public MinimumAwareBucketOrds(double minimumKey, BigArrays bigArrays) {
+            this.minimumKey = (long) minimumKey;
+            this.largestKeySeen = 0;
             this.bigArrays = bigArrays;
             this.capacity = DEFAULT_INITIAL_CAPACITY;
-            this.size = 0;
 
             try {
                 alreadySeen = bigArrays.newIntArray(capacity, false);
@@ -370,16 +365,7 @@ public abstract class LongKeyedBucketOrds implements Releasable {
         }
 
         private long valueToKey(long value) {
-            /*if (minimum == Long.MIN_VALUE) {
-                minimum = value;
-            }
-            return value - minimum;*/
-            return value;
-        }
-
-        private long keyToValue(long key) {
-            // return key + minimum;
-            return key;
+            return value - minimumKey;
         }
 
         @Override
@@ -387,20 +373,17 @@ public abstract class LongKeyedBucketOrds implements Releasable {
             // This is in the critical path for collecting most aggs. Be careful of performance.
             assert owningBucketOrd == 0;
             long key = valueToKey(value);
-            if (key > maximum) {
-                maximum = key;
+            if (key > largestKeySeen) {
+                largestKeySeen = key;
             }
             int seen = setAlreadySeen(key);
             // seen == 0 --> not yet seen this key
             if (seen == 0) {
-                size++;
                 return key;
             }
             return -1 - key;
-            //return (seen == 0 ? -1 - key : key); // TODO: See if we can do anything fancy arithmetically to eliminate this ternary
         }
 
-        // TODO: If these methods get called before add() is ever called, the results will be nonsensical bc the minimum won't be set.
         @Override
         public long find(long owningBucketOrd, long value) {
             assert owningBucketOrd == 0;
@@ -418,14 +401,12 @@ public abstract class LongKeyedBucketOrds implements Releasable {
         @Override
         public long bucketsInOrd(long owningBucketOrd) {
             assert owningBucketOrd == 0;
-            //return size;
-            return maximum + 1;
+            return largestKeySeen + 1;
         }
 
         @Override
         public long size() {
-            //return size;
-            return maximum + 1;
+            return largestKeySeen + 1;
         }
 
         @Override
@@ -435,29 +416,19 @@ public abstract class LongKeyedBucketOrds implements Releasable {
 
         @Override
         public BucketOrdsEnum ordsEnum(long owningBucketOrd) {
-            // TODO: Probably not functional yet. Not sure what should happen for intermediate buckets. May be an issue.
-            // When we aren't doing the minimum thing, ordinal = key, so we just return ord.
             assert owningBucketOrd == 0;
             return new BucketOrdsEnum() {
                 private long ord = -1;
-                //private long value;
 
                 @Override
                 public boolean next() {
-                    /*ord++;
-                    if (ord >= ords.size()) {
-                        return false;
-                    }
-                    value = ords.get(ord);*/
                     ord++;
-                    if (ord > maximum) return false;
-
-                    return true;
+                    return ord <= largestKeySeen;
                 }
 
                 @Override
                 public long value() {
-                    return ord; // TODO: Would be like ord + minimum
+                    return ord + minimumKey;
                 }
 
                 @Override

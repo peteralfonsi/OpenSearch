@@ -32,7 +32,10 @@
 
 package org.opensearch.search.aggregations.bucket.histogram;
 
+import org.apache.lucene.document.FloatPoint;
+import org.apache.lucene.index.LeafReader;
 import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.index.PointValues;
 import org.apache.lucene.search.ScoreMode;
 import org.opensearch.index.fielddata.SortedNumericDoubleValues;
 import org.opensearch.search.aggregations.Aggregator;
@@ -44,9 +47,11 @@ import org.opensearch.search.aggregations.LeafBucketCollectorBase;
 import org.opensearch.search.aggregations.bucket.terms.LongKeyedBucketOrds;
 import org.opensearch.search.aggregations.support.ValuesSource;
 import org.opensearch.search.aggregations.support.ValuesSourceConfig;
+import org.opensearch.search.internal.ContextIndexSearcher;
 import org.opensearch.search.internal.SearchContext;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -93,13 +98,39 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
         );
         // TODO: Stop using null here
         this.valuesSource = valuesSourceConfig.hasValues() ? (ValuesSource.Numeric) valuesSourceConfig.getValuesSource() : null;
-        // TODO: It appears if valuesSource is ValuesSource$Numeric$FieldData, then it's always sorted, and we can use our new bucketOrds implementation.
-        if (valuesSource instanceof ValuesSource.Numeric.FieldData) {
-            //ValuesSource.Numeric.FieldData source = (ValuesSource.Numeric.FieldData) valuesSource;
-            // TODO: seems not actually sorted, but for first test just going w it by key == ordinal
-            this.bucketOrds = new LongKeyedBucketOrds.MinimumAwareBucketOrds(context.bigArrays());
-            useNaturalBucketOrdering = true;
+        if (valuesSource instanceof ValuesSource.Numeric.FieldData) { // TODO: Do we need a version check here? We may just need to check we can get PointValues. Later code assumes we can run .doubleValues()
+            Double minimumKey = getMinimumKey(valuesSource, context);
+            if (minimumKey != null) {
+                // Close the default bucketOrds created by the parent class before creating a new one
+                this.bucketOrds.close();
+                this.bucketOrds = new LongKeyedBucketOrds.MinimumAwareBucketOrds(minimumKey, context.bigArrays());
+                useNaturalBucketOrdering = true;
+            }
         }
+    }
+
+    // Return the key that would be produced for the minimum value in the field across all leaf contexts,
+    // or null if this couldn't be determined
+    private Double getMinimumKey(ValuesSource.Numeric valuesSource, SearchContext context) {
+        ContextIndexSearcher searcher = context.searcher();
+        if (searcher == null) return null;
+        List<LeafReaderContext> leafReaderContexts = searcher.getLeafContexts();
+        if (leafReaderContexts == null || leafReaderContexts.isEmpty()) return null; // TODO: is empty check necessary?
+
+        double overallMin = Double.MAX_VALUE;
+        for (LeafReaderContext lrc : leafReaderContexts) {
+            LeafReader reader = lrc.reader();
+            String fieldName = ((ValuesSource.Numeric.FieldData) valuesSource).getIndexFieldName(); // TODO: This cannot be the best way
+            try {
+                PointValues pointValues = reader.getPointValues(fieldName);
+                if (pointValues == null) return null;
+                double leafMin = FloatPoint.decodeDimension(pointValues.getMinPackedValue(), 0); // TODO: Is FloatPoint always right?
+                overallMin = Math.min(overallMin, leafMin);
+            } catch (IOException e) {
+                return null; // If we can't open PointValues to get the minimum value, return null
+            }
+        }
+        return Math.floor((overallMin - offset) / interval);
     }
 
     @Override
@@ -132,7 +163,7 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
                             continue;
                         }
                         if (hardBounds == null || hardBounds.contain(key * interval)) {
-                            //long bucketOrd = bucketOrds.add(owningBucketOrd, Double.doubleToLongBits(key));
+                            // TODO: mapDoubleKeyToLong() has an if inside it. For performance reasons, would it be better if that `if` were outside, as its gonna run millions of times? I think prob not, as it should figure it out p quick?
                             long bucketOrd = bucketOrds.add(owningBucketOrd, mapDoubleKeyToLong(key));
                             if (bucketOrd < 0) { // already seen
                                 bucketOrd = -1 - bucketOrd;
