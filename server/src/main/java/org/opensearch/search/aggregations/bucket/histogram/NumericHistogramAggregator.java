@@ -101,7 +101,7 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
         this.valuesSource = valuesSourceConfig.hasValues() ? (ValuesSource.Numeric) valuesSourceConfig.getValuesSource() : null;
         if (valuesSource instanceof ValuesSource.Numeric.FieldData) { // TODO: Do we need a version check here? We may just need to check we
                                                                       // can get PointValues. Later code assumes we can run .doubleValues()
-            Double minimumKey = getMinimumKey(valuesSource, context);
+            Long minimumKey = getMinimumKey(valuesSource, context);
             if (minimumKey != null) {
                 // Close the default bucketOrds created by the parent class before creating a new one
                 this.bucketOrds.close();
@@ -113,7 +113,7 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
 
     // Return the key that would be produced for the minimum value in the field across all leaf contexts,
     // or null if this couldn't be determined
-    private Double getMinimumKey(ValuesSource.Numeric valuesSource, SearchContext context) {
+    private Long getMinimumKey(ValuesSource.Numeric valuesSource, SearchContext context) {
         ContextIndexSearcher searcher = context.searcher();
         if (searcher == null) return null;
         List<LeafReaderContext> leafReaderContexts = searcher.getLeafContexts();
@@ -126,13 +126,13 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
             try {
                 PointValues pointValues = reader.getPointValues(fieldName);
                 if (pointValues == null) return null;
-                double leafMin = FloatPoint.decodeDimension(pointValues.getMinPackedValue(), 0); // TODO: Is FloatPoint always right?
+                double leafMin = FloatPoint.decodeDimension(pointValues.getMinPackedValue(), 0); // TODO: Is FloatPoint always right? Might need to get from field somehow.
                 overallMin = Math.min(overallMin, leafMin);
             } catch (IOException e) {
                 return null; // If we can't open PointValues to get the minimum value, return null
             }
         }
-        return Math.floor((overallMin - offset) / interval);
+        return (long) Math.floor((overallMin - offset) / interval);
     }
 
     @Override

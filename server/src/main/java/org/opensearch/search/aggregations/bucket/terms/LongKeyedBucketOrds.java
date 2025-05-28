@@ -330,15 +330,15 @@ public abstract class LongKeyedBucketOrds implements Releasable {
         private long largestKeySeen;
         private final BigArrays bigArrays;
         private static final long MAX_CAPACITY = 1L << 32;
-        private static final long DEFAULT_INITIAL_CAPACITY = 32;
+        // pkg-private for testing
+        static final long DEFAULT_INITIAL_CAPACITY = 32;
         private long capacity;
 
-        // TODO: pkg-private for debug testing only! Set to private before any commit.
-
+        // pkg-private for testing
         ByteArray alreadySeen; // TODO: No BitArray or BooleanArray
 
-        public MinimumAwareBucketOrds(double minimumValue, BigArrays bigArrays) {
-            this.minimumValue = (long) minimumValue;
+        public MinimumAwareBucketOrds(long minimumValue, BigArrays bigArrays) {
+            this.minimumValue = minimumValue;
             this.largestKeySeen = 0;
             this.bigArrays = bigArrays;
             this.capacity = DEFAULT_INITIAL_CAPACITY;

@@ -59,35 +59,75 @@ public class LongKeyedBucketOrdsTests extends OpenSearchTestCase {
     }
 
     public void testMinimumAwareBucketOrds() {
-        // TODO: collectsFromSingleBucketCase isn't appropriate here since we map directly,
-        // for example 0 then 1000 expects it to produce ords 0 and then 1
+        // collectsFromSingleBucketCase isn't appropriate here since incoming values are mapped more directly to
+        // ordinals, rather than being based on order they are first seen
+        long minValue = randomLongBetween(-1000, 1000);
+        try (LongKeyedBucketOrds.MinimumAwareBucketOrds ords = new LongKeyedBucketOrds.MinimumAwareBucketOrds(minValue, bigArrays)) {
+            Set<Long> seen = new HashSet<>();
+            long largestSeen = Long.MIN_VALUE;
 
-        // collectsFromSingleBucketCase(new LongKeyedBucketOrds.MinimumAwareBucketOrds(0, bigArrays));
+            // Add some random values all above minValue
+            for (int i = 0; i < 1000; i++) {
+                long value = randomLongBetween(minValue, minValue + 2000);
+                if (value > largestSeen) {
+                    largestSeen = value;
+                }
+                boolean alreadySeen = seen.contains(value);
+                long ord = ords.add(0, value);
+                long expectedOrd = alreadySeen ? -1 - (value - minValue) : value - minValue;
+                assertEquals(expectedOrd, ord);
+                assertEquals(ords.size(), largestSeen - minValue + 1);
+                seen.add(value);
+            }
 
-        // TODO: For now just check that resizing is working as I expect.
-        double minValue = 5;
-        int size = 36;
-        LongKeyedBucketOrds.MinimumAwareBucketOrds ords = new LongKeyedBucketOrds.MinimumAwareBucketOrds(minValue, bigArrays);
-        try {
+            // check values below minValue throw AssertionError
+            long illegalValue = minValue - randomLongBetween(1, 100);
+            assertThrows(AssertionError.class, () -> ords.add(0, illegalValue));
+
+            // Check counting values
+            assertEquals(largestSeen - minValue + 1, ords.bucketsInOrd(0));
+
+            // check iteration
+            LongKeyedBucketOrds.BucketOrdsEnum ordsEnum = ords.ordsEnum(0);
+            assertTrue(ordsEnum.next());
+            for (int expectedOrd = 0; expectedOrd < ords.bucketsInOrd(0); expectedOrd++) {
+                assertEquals(expectedOrd, ordsEnum.ord());
+                assertEquals(expectedOrd + minValue, ordsEnum.value());
+                if (expectedOrd < ords.bucketsInOrd(0) - 1) {
+                    assertTrue(ordsEnum.next());
+                } else {
+                    assertFalse(ordsEnum.next());
+                }
+            }
+
+            assertEquals(0, ords.maxOwningBucketOrd());
+        }
+    }
+
+    public void testMinimumAwareBucketOrdsResizing() {
+        long minValue = 5;
+        int size = (int) LongKeyedBucketOrds.MinimumAwareBucketOrds.DEFAULT_INITIAL_CAPACITY + 4;
+        try (LongKeyedBucketOrds.MinimumAwareBucketOrds ords = new LongKeyedBucketOrds.MinimumAwareBucketOrds(minValue, bigArrays)) {
             // Check at creation, all entries are 0
             for (int i = 0; i < ords.alreadySeen.size(); i++) {
                 assertEquals(0, ords.alreadySeen.get(i));
             }
 
+            // add enough values to trigger 1 resize
             for (int i = 0; i < size; i++) {
                 ords.add(0, (long) minValue + i);
             }
-            // Should have had 1 resize
             assertEquals(ords.size(), size);
             assertEquals(ords.alreadySeen.size(), Numbers.nextPowerOfTwo(size));
+
+            // Check new entries are initialized to 0
             for (int i = size; i < ords.alreadySeen.size(); i++) {
                 assertEquals(0, ords.alreadySeen.get(i));
             }
+            // Check original entries are maintained
             for (int i = 0; i < size; i++) {
                 assertEquals(1, ords.alreadySeen.get(i));
             }
-        } finally {
-            ords.close();
         }
     }
 
