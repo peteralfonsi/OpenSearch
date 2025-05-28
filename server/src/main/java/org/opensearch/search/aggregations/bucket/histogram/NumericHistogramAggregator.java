@@ -32,12 +32,14 @@
 
 package org.opensearch.search.aggregations.bucket.histogram;
 
-import org.apache.lucene.document.FloatPoint;
 import org.apache.lucene.index.LeafReader;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.PointValues;
 import org.apache.lucene.search.ScoreMode;
 import org.opensearch.index.fielddata.SortedNumericDoubleValues;
+import org.opensearch.index.mapper.MappedFieldType;
+import org.opensearch.index.mapper.MapperService;
+import org.opensearch.index.mapper.NumberFieldMapper;
 import org.opensearch.search.aggregations.Aggregator;
 import org.opensearch.search.aggregations.AggregatorFactories;
 import org.opensearch.search.aggregations.BucketOrder;
@@ -99,9 +101,8 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
         );
         // TODO: Stop using null here
         this.valuesSource = valuesSourceConfig.hasValues() ? (ValuesSource.Numeric) valuesSourceConfig.getValuesSource() : null;
-        if (valuesSource instanceof ValuesSource.Numeric.FieldData) { // TODO: Do we need a version check here? We may just need to check we
-                                                                      // can get PointValues. Later code assumes we can run .doubleValues()
-            Long minimumKey = getMinimumKey(valuesSource, context);
+        if (valuesSource instanceof ValuesSource.Numeric.FieldData) {
+            Long minimumKey = getMinimumKey(valuesSource, context, extendedBounds);
             if (minimumKey != null) {
                 // Close the default bucketOrds created by the parent class before creating a new one
                 this.bucketOrds.close();
@@ -112,27 +113,40 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
     }
 
     // Return the key that would be produced for the minimum value in the field across all leaf contexts,
-    // or null if this couldn't be determined
-    private Long getMinimumKey(ValuesSource.Numeric valuesSource, SearchContext context) {
+    // or null if this couldn't be determined. If extended bounds go lower than this value, return the value that
+    // would be produced by those extended bounds.
+    private Long getMinimumKey(ValuesSource.Numeric valuesSource, SearchContext context, DoubleBounds extendedBounds) {
         ContextIndexSearcher searcher = context.searcher();
         if (searcher == null) return null;
         List<LeafReaderContext> leafReaderContexts = searcher.getLeafContexts();
-        if (leafReaderContexts == null || leafReaderContexts.isEmpty()) return null; // TODO: is empty check necessary?
+        if (leafReaderContexts == null || leafReaderContexts.isEmpty()) return null;
+
+        String fieldName = ((ValuesSource.Numeric.FieldData) valuesSource).getIndexFieldName(); // TODO: This cannot be the best way
+        MapperService mapperService = context.mapperService();
+        if (mapperService == null) return null;
+        MappedFieldType fieldType = mapperService.fieldType(fieldName);
+        if (!(fieldType instanceof NumberFieldMapper.NumberFieldType numberFieldType)) return null;
 
         double overallMin = Double.MAX_VALUE;
         for (LeafReaderContext lrc : leafReaderContexts) {
             LeafReader reader = lrc.reader();
-            String fieldName = ((ValuesSource.Numeric.FieldData) valuesSource).getIndexFieldName(); // TODO: This cannot be the best way
             try {
                 PointValues pointValues = reader.getPointValues(fieldName);
                 if (pointValues == null) return null;
-                double leafMin = FloatPoint.decodeDimension(pointValues.getMinPackedValue(), 0); // TODO: Is FloatPoint always right? Might need to get from field somehow.
+                byte[] packedValue = pointValues.getMinPackedValue();
+                if (packedValue == null) return null;
+                double leafMin = numberFieldType.parsePoint(packedValue).doubleValue();
                 overallMin = Math.min(overallMin, leafMin);
             } catch (IOException e) {
                 return null; // If we can't open PointValues to get the minimum value, return null
             }
         }
-        return (long) Math.floor((overallMin - offset) / interval);
+        long keyFromPointValues = (long) Math.floor((overallMin - offset) / interval);
+        long keyFromExtendedBounds = Long.MAX_VALUE;
+        if (extendedBounds != null && extendedBounds.getMin() != null) {
+            keyFromExtendedBounds = (long) Math.floor((extendedBounds.getMin() - offset) / interval);
+        }
+        return Math.min(keyFromPointValues, keyFromExtendedBounds);
     }
 
     @Override
@@ -165,8 +179,6 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
                             continue;
                         }
                         if (hardBounds == null || hardBounds.contain(key * interval)) {
-                            // TODO: mapDoubleKeyToLong() has an if inside it. For performance reasons, would it be better if that `if` were
-                            // outside, as its gonna run millions of times? I think prob not, as it should figure it out p quick?
                             long bucketOrd = bucketOrds.add(owningBucketOrd, mapDoubleKeyToLong(key));
                             if (bucketOrd < 0) { // already seen
                                 bucketOrd = -1 - bucketOrd;
