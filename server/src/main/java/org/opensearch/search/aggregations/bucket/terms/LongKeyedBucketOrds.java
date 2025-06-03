@@ -36,6 +36,7 @@ import org.opensearch.common.Numbers;
 import org.opensearch.common.lease.Releasable;
 import org.opensearch.common.lease.Releasables;
 import org.opensearch.common.util.BigArrays;
+import org.opensearch.common.util.IntArray;
 import org.opensearch.common.util.LongLongHash;
 import org.opensearch.common.util.ReorganizingLongHash;
 import org.opensearch.core.common.util.ByteArray;
@@ -335,7 +336,7 @@ public abstract class LongKeyedBucketOrds implements Releasable {
         private long capacity;
 
         // pkg-private for testing
-        ByteArray alreadySeen; // TODO: No BitArray or BooleanArray
+        IntArray alreadySeen; // While IntArray takes a bit more space than ByteArray, it seems significantly faster in benchmarks
 
         public MinimumAwareBucketOrds(long minimumValue, BigArrays bigArrays) {
             this.minimumValue = minimumValue;
@@ -344,8 +345,8 @@ public abstract class LongKeyedBucketOrds implements Releasable {
             this.capacity = DEFAULT_INITIAL_CAPACITY;
 
             try {
-                alreadySeen = bigArrays.newByteArray(capacity, true);
-                alreadySeen.fill(0, capacity, (byte) 0);  // 0 represents not yet seen
+                alreadySeen = bigArrays.newIntArray(capacity, true);
+                alreadySeen.fill(0, capacity, 0);  // 0 represents not yet seen
             } finally {
                 if (alreadySeen == null) {
                     Releasables.closeWhileHandlingException(alreadySeen);
@@ -360,7 +361,7 @@ public abstract class LongKeyedBucketOrds implements Releasable {
                 capacity = Numbers.nextPowerOfTwo(key + 1);
                 alreadySeen = bigArrays.resize(alreadySeen, capacity);
             }
-            return alreadySeen.set(key, (byte) 1);
+            return alreadySeen.set(key, 1);
         }
 
         private long valueToKey(long value) {
