@@ -101,7 +101,7 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
         );
         // TODO: Stop using null here
         this.valuesSource = valuesSourceConfig.hasValues() ? (ValuesSource.Numeric) valuesSourceConfig.getValuesSource() : null;
-        if (valuesSource instanceof ValuesSource.Numeric.FieldData) {
+        if (valuesSource instanceof ValuesSource.Numeric.FieldData && cardinalityUpperBound.equals(CardinalityUpperBound.ONE)) {
             Long minimumKey = getMinimumKey(valuesSource, context, extendedBounds);
             if (minimumKey != null) {
                 // Close the default bucketOrds created by the parent class before creating a new one
