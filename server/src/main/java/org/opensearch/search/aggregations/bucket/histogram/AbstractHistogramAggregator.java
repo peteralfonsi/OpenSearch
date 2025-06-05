@@ -160,4 +160,9 @@ public abstract class AbstractHistogramAggregator extends BucketsAggregator {
     protected double mapLongBucketValueToDouble(long bucketValue) {
         return useNaturalBucketOrdering ? (double) bucketValue : Double.longBitsToDouble(bucketValue);
     }
+
+    // pkg-private for testing
+    LongKeyedBucketOrds getBucketOrds() {
+        return bucketOrds;
+    }
 }

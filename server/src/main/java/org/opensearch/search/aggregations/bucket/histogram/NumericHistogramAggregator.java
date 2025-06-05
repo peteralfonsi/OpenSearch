@@ -101,12 +101,14 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
         );
         // TODO: Stop using null here
         this.valuesSource = valuesSourceConfig.hasValues() ? (ValuesSource.Numeric) valuesSourceConfig.getValuesSource() : null;
-        if (valuesSource instanceof ValuesSource.Numeric.FieldData && cardinalityUpperBound.equals(CardinalityUpperBound.ONE)) {
+        if (valuesSource instanceof ValuesSource.Numeric.FieldData) { // TODO: In future also handle MissingValues impl of valuesSource.
             Long minimumKey = getMinimumKey(valuesSource, context, extendedBounds);
             if (minimumKey != null) {
                 // Close the default bucketOrds created by the parent class before creating a new one
                 this.bucketOrds.close();
-                this.bucketOrds = new LongKeyedBucketOrds.MinimumAwareBucketOrds(minimumKey, context.bigArrays());
+                this.bucketOrds = LongKeyedBucketOrds.build(context.bigArrays(), cardinalityUpperBound, minimumKey); // This method handles
+                                                                                                                     // cardinality bound
+                                                                                                                     // properly
                 useNaturalBucketOrdering = true;
             }
         }
@@ -121,11 +123,12 @@ public class NumericHistogramAggregator extends AbstractHistogramAggregator {
         List<LeafReaderContext> leafReaderContexts = searcher.getLeafContexts();
         if (leafReaderContexts == null || leafReaderContexts.isEmpty()) return null;
 
-        String fieldName = ((ValuesSource.Numeric.FieldData) valuesSource).getIndexFieldName(); // TODO: This cannot be the best way
+        String fieldName = ((ValuesSource.Numeric.FieldData) valuesSource).getIndexFieldName();
         MapperService mapperService = context.mapperService();
         if (mapperService == null) return null;
         MappedFieldType fieldType = mapperService.fieldType(fieldName);
-        if (!(fieldType instanceof NumberFieldMapper.NumberFieldType numberFieldType)) return null;
+        if (!(fieldType instanceof NumberFieldMapper.NumberFieldType numberFieldType)) return null; // TODO: For now only do this on number
+                                                                                                    // fields
 
         double overallMin = Double.MAX_VALUE;
         for (LeafReaderContext lrc : leafReaderContexts) {

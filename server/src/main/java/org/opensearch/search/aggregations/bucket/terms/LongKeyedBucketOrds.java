@@ -39,7 +39,6 @@ import org.opensearch.common.util.BigArrays;
 import org.opensearch.common.util.IntArray;
 import org.opensearch.common.util.LongLongHash;
 import org.opensearch.common.util.ReorganizingLongHash;
-import org.opensearch.core.common.util.ByteArray;
 import org.opensearch.search.aggregations.CardinalityUpperBound;
 
 /**
@@ -48,11 +47,19 @@ import org.opensearch.search.aggregations.CardinalityUpperBound;
  * @opensearch.internal
  */
 public abstract class LongKeyedBucketOrds implements Releasable {
+
     /**
      * Build a {@link LongKeyedBucketOrds}.
      */
     public static LongKeyedBucketOrds build(BigArrays bigArrays, CardinalityUpperBound cardinality) {
         return cardinality.map(estimate -> estimate < 2 ? new FromSingle(bigArrays) : new FromMany(bigArrays));
+    }
+
+    /**
+     * Build a {@link LongKeyedBucketOrds} when the minimum key for a histogram-type aggregation is known and you want to create MinimumAwareBucketOrds
+     */
+    public static LongKeyedBucketOrds build(BigArrays bigArrays, CardinalityUpperBound cardinality, long minimumKey) {
+        return cardinality.map(estimate -> estimate < 2 ? new MinimumAwareBucketOrds(minimumKey, bigArrays) : new FromMany(bigArrays));
     }
 
     private LongKeyedBucketOrds() {}
