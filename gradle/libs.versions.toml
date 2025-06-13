@@ -26,6 +26,7 @@ jakarta_annotation = "1.3.5"
 google_http_client = "1.44.1"
 google_auth       = "1.29.0"
 tdigest           = "3.3"
+apache_datasketches = "8.0.0"
 hdrhistogram      = "2.2.2"
 grpc              = "1.68.2"
 json_smart        = "2.5.2"
@@ -154,6 +155,7 @@ reactor-netty-http = { group = "io.projectreactor.netty", name = "reactor-netty-
 roaringbitmap = { group = "org.roaringbitmap", name = "RoaringBitmap", version.ref = "roaringbitmap" }
 spatial4j = { group = "org.locationtech.spatial4j", name = "spatial4j", version.ref = "spatial4j" }
 tdigest = { group = "com.tdunning", name = "t-digest", version.ref = "tdigest" }
+apache_datasketches = { group = "org.apache.datasketches", name = "datasketches-java", version.ref = "apache_datasketches"}
 
 [bundles]
 asm = [
