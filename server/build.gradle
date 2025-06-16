@@ -87,6 +87,7 @@ dependencies {
   // percentiles aggregation
   api libs.tdigest
   api "org.apache.datasketches:datasketches-java:8.0.0"
+  api "org.apache.datasketches:datasketches-memory:2.3.1"
   // percentile ranks aggregation
   api libs.hdrhistogram
 

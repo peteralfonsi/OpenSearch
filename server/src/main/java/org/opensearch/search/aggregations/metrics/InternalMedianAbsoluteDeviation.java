@@ -95,8 +95,9 @@ public class InternalMedianAbsoluteDeviation extends InternalNumericMetricsAggre
     public InternalAggregation reduce(List<InternalAggregation> aggregations, ReduceContext reduceContext) {
         final TDigestState valueMerged = new TDigestState(valuesSketch.compression());
         for (InternalAggregation aggregation : aggregations) {
-            final InternalMedianAbsoluteDeviation madAggregation = (InternalMedianAbsoluteDeviation) aggregation;
-            valueMerged.add(madAggregation.valuesSketch);
+            /*final InternalMedianAbsoluteDeviation madAggregation = (InternalMedianAbsoluteDeviation) aggregation;
+            valueMerged.add(madAggregation.valuesSketch);*/
+            // TODO: This breaks with apache impl.
         }
 
         return new InternalMedianAbsoluteDeviation(name, metadata, format, valueMerged);
