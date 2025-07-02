@@ -91,6 +91,7 @@ import static org.opensearch.rest.BytesRestResponse.TEXT_CONTENT_TYPE;
  * @opensearch.api
  */
 public class RestController implements HttpServerTransport.Dispatcher {
+    public static final String TRACEPARENT_HEADER = "traceparent";
 
     private static final Logger logger = LogManager.getLogger(RestController.class);
     private static final DeprecationLogger deprecationLogger = DeprecationLogger.getLogger(RestController.class);
@@ -284,7 +285,14 @@ public class RestController implements HttpServerTransport.Dispatcher {
     @Override
     public void dispatchRequest(RestRequest request, RestChannel channel, ThreadContext threadContext) {
         try {
+            List<String> traceparentHeader = request.getHeaders().get(TRACEPARENT_HEADER);
+            if (!(traceparentHeader == null || traceparentHeader.isEmpty())) {
+                logger.info("RestController got request with traceparent header = " + traceparentHeader.get(0));
+            }
             tryAllHandlers(request, channel, threadContext);
+            if (!(traceparentHeader == null || traceparentHeader.isEmpty())) {
+                logger.info("RestController finished processing request with traceparent header = " + traceparentHeader.get(0));
+            }
         } catch (Exception e) {
             try {
                 channel.sendResponse(new BytesRestResponse(channel, e));

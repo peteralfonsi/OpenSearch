@@ -21,6 +21,7 @@ import org.opensearch.common.util.MockPageCacheRecycler;
 import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.transport.TransportAddress;
+import org.opensearch.core.common.unit.ByteSizeUnit;
 import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.core.indices.breaker.NoneCircuitBreakerService;
 import org.opensearch.http.BindHttpException;
@@ -89,6 +90,9 @@ import static org.opensearch.core.rest.RestStatus.BAD_REQUEST;
 import static org.opensearch.core.rest.RestStatus.OK;
 import static org.opensearch.http.HttpTransportSettings.SETTING_CORS_ALLOW_ORIGIN;
 import static org.opensearch.http.HttpTransportSettings.SETTING_CORS_ENABLED;
+import static org.opensearch.http.HttpTransportSettings.SETTING_HTTP_MAX_CHUNK_SIZE;
+import static org.opensearch.http.netty4.Netty4HttpServerTransportTests.getDispatcher;
+import static org.opensearch.http.netty4.Netty4HttpServerTransportTests.runE2ETraceparentTest;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.instanceOf;
@@ -568,6 +572,38 @@ public class SecureNetty4HttpServerTransportTests extends OpenSearchTestCase {
 
         } finally {
             group.shutdownGracefully().await();
+        }
+    }
+
+    public void testE2ELogging() throws Exception {
+        int chunkSize = 128;
+        final Settings settings = createBuilderWithPort().put(
+            SETTING_HTTP_MAX_CHUNK_SIZE.getKey(),
+            new ByteSizeValue(chunkSize, ByteSizeUnit.BYTES)
+        ).build();
+        for (int responseLength : new int[] { 4, chunkSize * 5 }) {
+            // There should be only 1 output log msg regardless of number of chunks in the response
+            HttpServerTransport.Dispatcher dispatcher = getDispatcher(randomAlphaOfLength(responseLength), logger);
+            try (
+                SecureNetty4HttpServerTransport transport = new SecureNetty4HttpServerTransport(
+                    settings,
+                    networkService,
+                    bigArrays,
+                    threadPool,
+                    xContentRegistry(),
+                    dispatcher,
+                    clusterSettings,
+                    new SharedGroupFactory(settings),
+                    secureHttpTransportSettingsProvider,
+                    NoopTracer.INSTANCE
+                )
+            ) {
+                transport.start();
+                final TransportAddress remoteAddress = randomFrom(transport.boundAddress().boundAddresses());
+                try (Netty4HttpClient client = Netty4HttpClient.https()) {
+                    runE2ETraceparentTest(remoteAddress, chunkSize, client, false);
+                }
+            }
         }
     }
 

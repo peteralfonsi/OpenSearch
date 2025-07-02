@@ -37,6 +37,7 @@ import org.opensearch.OpenSearchException;
 import org.opensearch.common.bytes.ReleasableBytesReference;
 import org.opensearch.common.lease.Releasables;
 import org.opensearch.common.util.PageCacheRecycler;
+import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.InboundPipeline;
@@ -53,6 +54,8 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
+
+import static org.opensearch.rest.RestController.TRACEPARENT_HEADER;
 
 /**
  * A handler (must be the last one!) that does size based frame decoding and forwards the actual message
@@ -87,6 +90,9 @@ final class Netty4MessageChannelHandler extends ChannelDuplexHandler {
         assert Transports.assertDefaultThreadContext(transport.getThreadPool().getThreadContext());
         assert Transports.assertTransportThread();
         assert msg instanceof ByteBuf : "Expected message type ByteBuf, found: " + msg.getClass();
+        // TODO: Can we get headers from thread context here?
+        ThreadContext threadContext = transport.getThreadPool().getThreadContext();
+        String traceparent = threadContext.getHeader(TRACEPARENT_HEADER);
 
         final ByteBuf buffer = (ByteBuf) msg;
         Netty4TcpChannel channel = ctx.channel().attr(Netty4Transport.CHANNEL_KEY).get();

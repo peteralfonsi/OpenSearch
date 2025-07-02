@@ -52,6 +52,7 @@ import org.opensearch.http.HttpChannel;
 import org.opensearch.http.HttpHandlingSettings;
 import org.opensearch.http.HttpReadTimeoutException;
 import org.opensearch.http.HttpServerChannel;
+import org.opensearch.rest.RestController;
 import org.opensearch.telemetry.tracing.Tracer;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.NettyAllocator;
@@ -67,6 +68,7 @@ import java.util.concurrent.TimeUnit;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -74,6 +76,7 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
+import io.netty.channel.ChannelPromise;
 import io.netty.channel.FixedRecvByteBufAllocator;
 import io.netty.channel.RecvByteBufAllocator;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -85,6 +88,8 @@ import io.netty.handler.codec.compression.DeflateOptions;
 import io.netty.handler.codec.compression.GzipOptions;
 import io.netty.handler.codec.compression.StandardCompressionOptions;
 import io.netty.handler.codec.compression.ZstdEncoder;
+import io.netty.handler.codec.http.DefaultHttpRequest;
+import io.netty.handler.codec.http.DefaultHttpResponse;
 import io.netty.handler.codec.http.HttpContentCompressor;
 import io.netty.handler.codec.http.HttpContentDecompressor;
 import io.netty.handler.codec.http.HttpMessage;
@@ -95,6 +100,7 @@ import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.HttpServerUpgradeHandler;
 import io.netty.handler.codec.http.HttpServerUpgradeHandler.UpgradeCodec;
 import io.netty.handler.codec.http.HttpServerUpgradeHandler.UpgradeCodecFactory;
+import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.handler.codec.http2.CleartextHttp2ServerUpgradeHandler;
 import io.netty.handler.codec.http2.Http2CodecUtil;
 import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
@@ -442,7 +448,8 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                     final ChannelPipeline pipeline = ctx.pipeline();
                     pipeline.addAfter(ctx.name(), "handler", getRequestHandler());
                     pipeline.replace(this, "header_verifier", transport.createHeaderVerifier());
-                    pipeline.addAfter("header_verifier", "decoder_compress", transport.createDecompressor());
+                    pipeline.addAfter("header_verifier", "e2e_latency_logger", new E2ELatencyHttp1LoggerHandler());
+                    pipeline.addAfter("e2e_latency_logger", "decoder_compress", transport.createDecompressor());
                     pipeline.addAfter("decoder_compress", "aggregator", aggregator);
                     if (handlingSettings.isCompression()) {
                         pipeline.addAfter(
@@ -461,6 +468,7 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
         }
 
         protected void configureDefaultHttpPipeline(ChannelPipeline pipeline) {
+            // Used for SecureNetty4HttpServerTransport
             final HttpRequestDecoder decoder = new HttpRequestDecoder(
                 handlingSettings.getMaxInitialLineLength(),
                 handlingSettings.getMaxHeaderSize(),
@@ -468,9 +476,10 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
             );
             decoder.setCumulator(ByteToMessageDecoder.COMPOSITE_CUMULATOR);
             pipeline.addLast("decoder", decoder);
-            pipeline.addLast("header_verifier", transport.createHeaderVerifier());
-            pipeline.addLast("decoder_compress", transport.createDecompressor());
             pipeline.addLast("encoder", new HttpResponseEncoder());
+            pipeline.addLast("header_verifier", transport.createHeaderVerifier());
+            pipeline.addLast("e2e_latency_logger", new E2ELatencyHttp1LoggerHandler());
+            pipeline.addLast("decoder_compress", transport.createDecompressor());
             final HttpObjectAggregator aggregator = new HttpObjectAggregator(handlingSettings.getMaxContentLength());
             aggregator.setMaxCumulationBufferComponents(transport.maxCompositeBufferComponents);
             pipeline.addLast("aggregator", aggregator);
@@ -519,6 +528,7 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                         .addLast("byte_buf_sizer", byteBufSizer)
                         .addLast("read_timeout", new ReadTimeoutHandler(transport.readTimeoutMillis, TimeUnit.MILLISECONDS))
                         .addLast("header_verifier", transport.createHeaderVerifier())
+                        .addLast("e2e_latency_logger", new E2ELatencyHttp1LoggerHandler())
                         .addLast("decoder_decompress", transport.createDecompressor());
 
                     if (handlingSettings.isCompression()) {
@@ -632,4 +642,57 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
         return options.toArray(new CompressionOptions[0]);
     }
 
+    /**
+     * This class is intended to log traceparent-id and a timestamp, at the first moment when Netty has access to a single HTTP/1.1 request.
+     * It does the same on the last chunk of the outbound response. This captures the amount of time all of Netty's per-request handlers take.
+     * This class can also be used in the HTTP/2 pipeline as we set up child (per-stream) pipelines, and there is a Http2StreamFrameToHttpObjectCodec
+     * converting to HTTP/1.1 objects before this handler is reached.
+     */
+    public static class E2ELatencyHttp1LoggerHandler extends ChannelDuplexHandler {
+        private static final Logger logger = LogManager.getLogger(E2ELatencyHttp1LoggerHandler.class);
+        // Stash the last-seen traceparent header from a DefaultHttpResponse object.
+        // Then, when we see the next outbound LastHttpContent object, log the time for that header.
+        private String lastResponseTraceparentHeader;
+
+        E2ELatencyHttp1LoggerHandler() {
+            this.lastResponseTraceparentHeader = null;
+        }
+
+        @Override
+        public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+            if (msg instanceof DefaultHttpRequest request) { // The first message of an inbound request should be of this class
+                String traceparentHeader = request.headers().get(RestController.TRACEPARENT_HEADER);
+                String logMsg = getInboundLogMessage(traceparentHeader);
+                if (logMsg != null) logger.info(logMsg);
+            }
+            ctx.fireChannelRead(msg);
+        }
+
+        @Override
+        public void write(final ChannelHandlerContext ctx, final Object msg, final ChannelPromise promise) {
+            if (msg instanceof DefaultHttpResponse response) {
+                this.lastResponseTraceparentHeader = response.headers().get(RestController.TRACEPARENT_HEADER);
+            }
+            if (msg instanceof LastHttpContent) {
+                String logMsg = getOutboundLogMessage(lastResponseTraceparentHeader);
+                if (logMsg != null) logger.info(logMsg);
+            }
+            ctx.write(msg, promise);
+        }
+
+        // These classes are separated for testing
+        public static String getInboundLogMessage(String traceparentHeader) {
+            if (traceparentHeader == null || traceparentHeader.isEmpty()) return null;
+            else {
+                return "E2ELatencyLoggerHandler received HTTP request with traceparent header = " + traceparentHeader;
+            }
+        }
+
+        public static String getOutboundLogMessage(String traceparentHeader) {
+            if (traceparentHeader == null || traceparentHeader.isEmpty()) return null;
+            else {
+                return "E2ELatencyLoggerHandler finished processing HTTP response with traceparent header = " + traceparentHeader;
+            }
+        }
+    }
 }

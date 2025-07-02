@@ -587,7 +587,8 @@ public class ActionModule extends AbstractModule {
             actionPlugins.stream().flatMap(p -> p.getRestHeaders().stream()),
             Stream.of(
                 new RestHeaderDefinition(Task.X_OPAQUE_ID, false),
-                new RestHeaderDefinition(WorkloadGroupTask.WORKLOAD_GROUP_ID_HEADER, false)
+                new RestHeaderDefinition(WorkloadGroupTask.WORKLOAD_GROUP_ID_HEADER, false),
+                new RestHeaderDefinition(RestController.TRACEPARENT_HEADER, false)
             )
         ).collect(Collectors.toSet());
         UnaryOperator<RestHandler> restWrapper = null;
