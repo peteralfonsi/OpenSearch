@@ -91,6 +91,7 @@ import static org.opensearch.rest.BytesRestResponse.TEXT_CONTENT_TYPE;
  * @opensearch.api
  */
 public class RestController implements HttpServerTransport.Dispatcher {
+    public static final String TRACEPARENT_HEADER = "traceparent"; // TODO: Is this the right class for this definition?
 
     private static final Logger logger = LogManager.getLogger(RestController.class);
     private static final DeprecationLogger deprecationLogger = DeprecationLogger.getLogger(RestController.class);

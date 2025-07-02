@@ -44,6 +44,7 @@ import java.util.List;
 import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
+import org.opensearch.rest.RestController;
 
 /**
  * Implements HTTP pipelining ordering, ensuring that responses are completely served in the same order as their corresponding requests.
@@ -68,8 +69,20 @@ public class Netty4HttpPipeliningHandler extends ChannelDuplexHandler {
     @Override
     public void channelRead(final ChannelHandlerContext ctx, final Object msg) {
         assert msg instanceof Netty4HttpRequest : "Invalid message type: " + msg.getClass();
+        List<String> traceparentHeader = ((Netty4HttpRequest) msg).getHeaders().get(RestController.TRACEPARENT_HEADER);
+        if (traceparentHeader == null || traceparentHeader.isEmpty()) {
+            logger.info("Netty4HttpPipeliningHandler received HTTP request with no traceparent header");
+        } else {
+            logger.info("Netty4HttpPipeliningHandler received HTTP request with traceparent header = " + traceparentHeader.get(0)); // TODO: Not sure why its a list??
+        }
         HttpPipelinedRequest pipelinedRequest = aggregator.read(((Netty4HttpRequest) msg));
         ctx.fireChannelRead(pipelinedRequest);
+        // TODO: I believe, but am not sure, all Netty tasks for this request are done at this point
+        if (traceparentHeader == null || traceparentHeader.isEmpty()) {
+            logger.info("Netty4HttpPipeliningHandler finished processing HTTP request with no traceparent header");
+        } else {
+            logger.info("Netty4HttpPipeliningHandler finished processing HTTP request with traceparent header = " + traceparentHeader.get(0)); // TODO: Not sure why its a list??
+        }
     }
 
     @Override

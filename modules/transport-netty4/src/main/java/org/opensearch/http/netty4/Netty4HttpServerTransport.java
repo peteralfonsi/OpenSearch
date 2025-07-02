@@ -50,8 +50,10 @@ import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.http.AbstractHttpServerTransport;
 import org.opensearch.http.HttpChannel;
 import org.opensearch.http.HttpHandlingSettings;
+import org.opensearch.http.HttpPipelinedRequest;
 import org.opensearch.http.HttpReadTimeoutException;
 import org.opensearch.http.HttpServerChannel;
+import org.opensearch.rest.RestController;
 import org.opensearch.telemetry.tracing.Tracer;
 import org.opensearch.threadpool.ThreadPool;
 import org.opensearch.transport.NettyAllocator;
@@ -63,6 +65,7 @@ import java.net.InetSocketAddress;
 import java.net.SocketOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import io.netty.bootstrap.ServerBootstrap;
@@ -454,6 +457,8 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                     pipeline.addBefore("handler", "request_creator", requestCreator);
                     pipeline.addBefore("handler", "response_creator", responseCreator);
                     pipeline.addBefore("handler", "pipelining", new Netty4HttpPipeliningHandler(logger, transport.pipeliningMaxEvents));
+                    // TODO: This is just for testing - not sure this is the right place for it!!
+                    pipeline.addFirst("e2e_latency_logger", new E2ELatencyLoggerHandler(logger));
 
                     ctx.fireChannelRead(ReferenceCountUtil.retain(msg));
                 }
@@ -484,6 +489,8 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
             pipeline.addLast("response_creator", responseCreator);
             pipeline.addLast("pipelining", new Netty4HttpPipeliningHandler(logger, transport.pipeliningMaxEvents));
             pipeline.addLast("handler", requestHandler);
+            // TODO: This is just for testing - not sure this is the right place for it!!
+            pipeline.addFirst("e2e_latency_logger", new E2ELatencyLoggerHandler(logger));
         }
 
         protected void configureDefaultHttp2Pipeline(ChannelPipeline pipeline) {
@@ -534,7 +541,9 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                         .addLast("request_creator", requestCreator)
                         .addLast("response_creator", responseCreator)
                         .addLast("pipelining", new Netty4HttpPipeliningHandler(logger, transport.pipeliningMaxEvents))
-                        .addLast("handler", getRequestHandler());
+                        .addLast("handler", getRequestHandler())
+                        // TODO: This is just for testing - not sure this is the right place for it!!
+                        .addFirst("e2e_latency_logger", new E2ELatencyLoggerHandler(logger));
                 }
             };
         }
@@ -630,6 +639,23 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
         }
 
         return options.toArray(new CompressionOptions[0]);
+    }
+
+    static class E2ELatencyLoggerHandler extends SimpleChannelInboundHandler<HttpPipelinedRequest> {
+        private final Logger logger;
+        E2ELatencyLoggerHandler(Logger logger) {
+            this.logger = logger;
+        }
+
+        @Override
+        protected void channelRead0(ChannelHandlerContext ctx, HttpPipelinedRequest msg) throws Exception {
+            List<String> traceparentHeader = msg.getHeaders().get(RestController.TRACEPARENT_HEADER);
+            if (traceparentHeader == null || traceparentHeader.isEmpty()) {
+                logger.info("E2ELatencyLoggerHandler received HTTP request with no traceparent header");
+            } else {
+                logger.info("E2ELatencyLoggerHandler received HTTP request with traceparent header = " + traceparentHeader.get(0)); // TODO: Not sure why its a list??
+            }
+        }
     }
 
 }
