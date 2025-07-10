@@ -285,7 +285,18 @@ public class RestController implements HttpServerTransport.Dispatcher {
     @Override
     public void dispatchRequest(RestRequest request, RestChannel channel, ThreadContext threadContext) {
         try {
+            List<String> traceparentHeader = request.getHeaders().get(TRACEPARENT_HEADER);
+            if (traceparentHeader == null || traceparentHeader.isEmpty()) {
+                logger.info("RestController got request with no traceparent header");
+            } else {
+                logger.info("RestController got request with traceparent header = " + traceparentHeader.get(0));
+            }
             tryAllHandlers(request, channel, threadContext);
+            if (traceparentHeader == null || traceparentHeader.isEmpty()) {
+                logger.info("RestController finished processing request with no traceparent header");
+            } else {
+                logger.info("RestController finished processing request with traceparent header = " + traceparentHeader.get(0));
+            }
         } catch (Exception e) {
             try {
                 channel.sendResponse(new BytesRestResponse(channel, e));

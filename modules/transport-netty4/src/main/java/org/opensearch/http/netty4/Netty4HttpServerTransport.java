@@ -50,7 +50,6 @@ import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.http.AbstractHttpServerTransport;
 import org.opensearch.http.HttpChannel;
 import org.opensearch.http.HttpHandlingSettings;
-import org.opensearch.http.HttpPipelinedRequest;
 import org.opensearch.http.HttpReadTimeoutException;
 import org.opensearch.http.HttpServerChannel;
 import org.opensearch.rest.RestController;
@@ -65,11 +64,11 @@ import java.net.InetSocketAddress;
 import java.net.SocketOption;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
+import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
@@ -77,6 +76,7 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
 import io.netty.channel.ChannelPipeline;
+import io.netty.channel.ChannelPromise;
 import io.netty.channel.FixedRecvByteBufAllocator;
 import io.netty.channel.RecvByteBufAllocator;
 import io.netty.channel.SimpleChannelInboundHandler;
@@ -88,6 +88,8 @@ import io.netty.handler.codec.compression.DeflateOptions;
 import io.netty.handler.codec.compression.GzipOptions;
 import io.netty.handler.codec.compression.StandardCompressionOptions;
 import io.netty.handler.codec.compression.ZstdEncoder;
+import io.netty.handler.codec.http.DefaultHttpRequest;
+import io.netty.handler.codec.http.DefaultHttpResponse;
 import io.netty.handler.codec.http.HttpContentCompressor;
 import io.netty.handler.codec.http.HttpContentDecompressor;
 import io.netty.handler.codec.http.HttpMessage;
@@ -98,6 +100,7 @@ import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.codec.http.HttpServerUpgradeHandler;
 import io.netty.handler.codec.http.HttpServerUpgradeHandler.UpgradeCodec;
 import io.netty.handler.codec.http.HttpServerUpgradeHandler.UpgradeCodecFactory;
+import io.netty.handler.codec.http.LastHttpContent;
 import io.netty.handler.codec.http2.CleartextHttp2ServerUpgradeHandler;
 import io.netty.handler.codec.http2.Http2CodecUtil;
 import io.netty.handler.codec.http2.Http2FrameCodecBuilder;
@@ -445,8 +448,12 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                     final ChannelPipeline pipeline = ctx.pipeline();
                     pipeline.addAfter(ctx.name(), "handler", getRequestHandler());
                     pipeline.replace(this, "header_verifier", transport.createHeaderVerifier());
-                    pipeline.addAfter("header_verifier", "decoder_compress", transport.createDecompressor());
+                    pipeline.addAfter("header_verifier", "e2e_latency_logger", new E2ELatencyHttp1LoggerHandler());
+                    pipeline.addAfter("e2e_latency_logger", "decoder_compress", transport.createDecompressor());
                     pipeline.addAfter("decoder_compress", "aggregator", aggregator);
+                    // TODO: If we allowed ourselves to miss the latency on the aggregator, by swapping positions, we wouldnt have
+                    // to deal with the chunking cases and the logger would require no state...
+                    // but i think we cant bc wed miss both that and the decoder_compress
                     if (handlingSettings.isCompression()) {
                         pipeline.addAfter(
                             "aggregator",
@@ -457,8 +464,6 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                     pipeline.addBefore("handler", "request_creator", requestCreator);
                     pipeline.addBefore("handler", "response_creator", responseCreator);
                     pipeline.addBefore("handler", "pipelining", new Netty4HttpPipeliningHandler(logger, transport.pipeliningMaxEvents));
-                    // TODO: This is just for testing - not sure this is the right place for it!!
-                    pipeline.addFirst("e2e_latency_logger", new E2ELatencyLoggerHandler(logger));
 
                     ctx.fireChannelRead(ReferenceCountUtil.retain(msg));
                 }
@@ -472,10 +477,14 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                 handlingSettings.getMaxChunkSize()
             );
             decoder.setCumulator(ByteToMessageDecoder.COMPOSITE_CUMULATOR);
-            pipeline.addLast("decoder", decoder);
-            pipeline.addLast("header_verifier", transport.createHeaderVerifier());
-            pipeline.addLast("decoder_compress", transport.createDecompressor());
+            pipeline.addLast("decoder", decoder); // TODO: This should be converting ByteBuf --> HttpContent on inbound.
+            // TODO: Moved this up, as e2e_latency_logger must sit after it to see non-encrypted outbound response.
+            // Encoder is outobund only, and the other 3 are inbound only, so its position wrt them does not matter.
             pipeline.addLast("encoder", new HttpResponseEncoder());
+            pipeline.addLast("header_verifier", transport.createHeaderVerifier());
+            pipeline.addLast("e2e_latency_logger", new E2ELatencyHttp1LoggerHandler()); // TODO: This has to go after encoder, bc that is
+                                                                                        // the outbound httpContent --> ByteBuf.
+            pipeline.addLast("decoder_compress", transport.createDecompressor());
             final HttpObjectAggregator aggregator = new HttpObjectAggregator(handlingSettings.getMaxContentLength());
             aggregator.setMaxCumulationBufferComponents(transport.maxCompositeBufferComponents);
             pipeline.addLast("aggregator", aggregator);
@@ -489,8 +498,6 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
             pipeline.addLast("response_creator", responseCreator);
             pipeline.addLast("pipelining", new Netty4HttpPipeliningHandler(logger, transport.pipeliningMaxEvents));
             pipeline.addLast("handler", requestHandler);
-            // TODO: This is just for testing - not sure this is the right place for it!!
-            pipeline.addFirst("e2e_latency_logger", new E2ELatencyLoggerHandler(logger));
         }
 
         protected void configureDefaultHttp2Pipeline(ChannelPipeline pipeline) {
@@ -526,6 +533,7 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                         .addLast("byte_buf_sizer", byteBufSizer)
                         .addLast("read_timeout", new ReadTimeoutHandler(transport.readTimeoutMillis, TimeUnit.MILLISECONDS))
                         .addLast("header_verifier", transport.createHeaderVerifier())
+                        .addLast("e2e_latency_logger", new E2ELatencyHttp2LoggerHandler()) // TODO: Not functional yet
                         .addLast("decoder_decompress", transport.createDecompressor());
 
                     if (handlingSettings.isCompression()) {
@@ -541,9 +549,7 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                         .addLast("request_creator", requestCreator)
                         .addLast("response_creator", responseCreator)
                         .addLast("pipelining", new Netty4HttpPipeliningHandler(logger, transport.pipeliningMaxEvents))
-                        .addLast("handler", getRequestHandler())
-                        // TODO: This is just for testing - not sure this is the right place for it!!
-                        .addFirst("e2e_latency_logger", new E2ELatencyLoggerHandler(logger));
+                        .addLast("handler", getRequestHandler());
                 }
             };
         }
@@ -641,21 +647,66 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
         return options.toArray(new CompressionOptions[0]);
     }
 
-    static class E2ELatencyLoggerHandler extends SimpleChannelInboundHandler<HttpPipelinedRequest> {
-        private final Logger logger;
-        E2ELatencyLoggerHandler(Logger logger) {
-            this.logger = logger;
+    /**
+     * This class is intended to log traceparent-id and a timestamp, at the first moment when Netty has access to a single HTTP 1.1 request.
+     * It does the same on the last chunk of the outbound response. This captures the amount of time all of Netty's per-request handlers take.
+     * This class cannot be used with HTTP 2 as it assumes chunks of different responses on the same connection never arrive interleaved with each other.
+     */
+    public static class E2ELatencyHttp1LoggerHandler extends ChannelDuplexHandler {
+        private static final Logger logger = LogManager.getLogger(E2ELatencyHttp1LoggerHandler.class);
+        // Stash the last-seen traceparent header from a DefaultHttpResponse object.
+        // Then, when we see the next outbound LastHttpContent object, log the time for that header.
+        private String lastResponseTraceparentHeader;
+
+        E2ELatencyHttp1LoggerHandler() {
+            this.lastResponseTraceparentHeader = null;
         }
 
         @Override
-        protected void channelRead0(ChannelHandlerContext ctx, HttpPipelinedRequest msg) throws Exception {
-            List<String> traceparentHeader = msg.getHeaders().get(RestController.TRACEPARENT_HEADER);
+        public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+            if (msg instanceof DefaultHttpRequest request) { // The first message of an inbound request should be of this class
+                String traceparentHeader = request.headers().get(RestController.TRACEPARENT_HEADER);
+                String logMsg = getInboundLogMessage(traceparentHeader);
+                if (logMsg != null) logger.info(logMsg);
+            }
+            ctx.fireChannelRead(msg);
+        }
+
+        @Override
+        public void write(final ChannelHandlerContext ctx, final Object msg, final ChannelPromise promise) {
+            if (msg instanceof DefaultHttpResponse response) {
+                this.lastResponseTraceparentHeader = response.headers().get(RestController.TRACEPARENT_HEADER);
+            }
+            if (msg instanceof LastHttpContent) {
+                String logMsg = getOutboundLogMessage(lastResponseTraceparentHeader);
+                if (logMsg != null) logger.info(logMsg);
+            }
+            ctx.write(msg, promise);
+        }
+
+        // These classes are separated for testing
+        public static String getInboundLogMessage(String traceparentHeader) {
             if (traceparentHeader == null || traceparentHeader.isEmpty()) {
-                logger.info("E2ELatencyLoggerHandler received HTTP request with no traceparent header");
+                return "E2ELatencyLoggerHandler received HTTP request with no traceparent header"; // TODO: In actual use, we would probably
+                                                                                                   // not log anything in this case. Would
+                                                                                                   // return null
             } else {
-                logger.info("E2ELatencyLoggerHandler received HTTP request with traceparent header = " + traceparentHeader.get(0)); // TODO: Not sure why its a list??
+                return "E2ELatencyLoggerHandler received HTTP request with traceparent header = " + traceparentHeader;
+            }
+        }
+
+        public static String getOutboundLogMessage(String traceparentHeader) {
+            if (traceparentHeader == null || traceparentHeader.isEmpty()) {
+                return "E2ELatencyLoggerHandler finished processing HTTP response with no traceparent header"; // TODO: In actual use, we
+                                                                                                               // would probably not log
+                                                                                                               // anything in this case
+            } else {
+                return "E2ELatencyLoggerHandler finished processing HTTP response with traceparent header = " + traceparentHeader;
             }
         }
     }
+
+    // TODO: Map-based implementation for HTTP 2
+    static class E2ELatencyHttp2LoggerHandler extends ChannelDuplexHandler {}
 
 }

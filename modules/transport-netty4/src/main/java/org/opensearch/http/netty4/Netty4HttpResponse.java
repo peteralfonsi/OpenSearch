@@ -35,6 +35,7 @@ package org.opensearch.http.netty4;
 import org.opensearch.core.common.bytes.BytesReference;
 import org.opensearch.core.rest.RestStatus;
 import org.opensearch.http.HttpResponse;
+import org.opensearch.rest.RestController;
 import org.opensearch.transport.netty4.Netty4Utils;
 
 import io.netty.handler.codec.http.DefaultFullHttpResponse;
@@ -49,6 +50,10 @@ public class Netty4HttpResponse extends DefaultFullHttpResponse implements HttpR
     Netty4HttpResponse(HttpHeaders requestHeaders, HttpVersion version, RestStatus status, BytesReference content) {
         super(version, HttpResponseStatus.valueOf(status.getStatus()), Netty4Utils.toByteBuf(content));
         this.requestHeaders = requestHeaders;
+        if (requestHeaders.contains(RestController.TRACEPARENT_HEADER)) {
+            addHeader(RestController.TRACEPARENT_HEADER, requestHeaders.get(RestController.TRACEPARENT_HEADER));
+        }
+
     }
 
     @Override

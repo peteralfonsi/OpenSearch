@@ -32,6 +32,12 @@
 
 package org.opensearch.http.netty4;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.core.Appender;
+import org.apache.logging.log4j.core.Logger;
+import org.apache.logging.log4j.core.StringLayout;
+import org.apache.logging.log4j.core.appender.WriterAppender;
+import org.apache.logging.log4j.core.layout.PatternLayout;
 import org.apache.logging.log4j.message.ParameterizedMessage;
 import org.opensearch.OpenSearchException;
 import org.opensearch.common.network.NetworkAddress;
@@ -45,6 +51,7 @@ import org.opensearch.common.util.MockPageCacheRecycler;
 import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.core.common.bytes.BytesArray;
 import org.opensearch.core.common.transport.TransportAddress;
+import org.opensearch.core.common.unit.ByteSizeUnit;
 import org.opensearch.core.common.unit.ByteSizeValue;
 import org.opensearch.core.indices.breaker.NoneCircuitBreakerService;
 import org.opensearch.http.BindHttpException;
@@ -54,6 +61,7 @@ import org.opensearch.http.HttpTransportSettings;
 import org.opensearch.http.NullDispatcher;
 import org.opensearch.rest.BytesRestResponse;
 import org.opensearch.rest.RestChannel;
+import org.opensearch.rest.RestController;
 import org.opensearch.rest.RestRequest;
 import org.opensearch.telemetry.tracing.noop.NoopTracer;
 import org.opensearch.test.OpenSearchTestCase;
@@ -65,6 +73,7 @@ import org.opensearch.transport.SharedGroupFactory;
 import org.junit.After;
 import org.junit.Before;
 
+import java.io.CharArrayWriter;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -74,6 +83,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.PoolArenaMetric;
@@ -97,11 +107,15 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
+import io.netty.util.CharsetUtil;
 
 import static org.opensearch.core.rest.RestStatus.BAD_REQUEST;
 import static org.opensearch.core.rest.RestStatus.OK;
 import static org.opensearch.http.HttpTransportSettings.SETTING_CORS_ALLOW_ORIGIN;
 import static org.opensearch.http.HttpTransportSettings.SETTING_CORS_ENABLED;
+import static org.opensearch.http.HttpTransportSettings.SETTING_HTTP_MAX_CHUNK_SIZE;
+import static org.opensearch.http.netty4.Netty4HttpServerTransport.E2ELatencyHttp1LoggerHandler.getInboundLogMessage;
+import static org.opensearch.http.netty4.Netty4HttpServerTransport.E2ELatencyHttp1LoggerHandler.getOutboundLogMessage;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.instanceOf;
@@ -175,21 +189,7 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
         final int contentLength,
         final HttpResponseStatus expectedStatus
     ) throws InterruptedException {
-        final HttpServerTransport.Dispatcher dispatcher = new HttpServerTransport.Dispatcher() {
-            @Override
-            public void dispatchRequest(RestRequest request, RestChannel channel, ThreadContext threadContext) {
-                channel.sendResponse(new BytesRestResponse(OK, BytesRestResponse.TEXT_CONTENT_TYPE, new BytesArray("done")));
-            }
-
-            @Override
-            public void dispatchBadRequest(RestChannel channel, ThreadContext threadContext, Throwable cause) {
-                logger.error(
-                    new ParameterizedMessage("--> Unexpected bad request [{}]", FakeRestRequest.requestToString(channel.request())),
-                    cause
-                );
-                throw new AssertionError();
-            }
-        };
+        final HttpServerTransport.Dispatcher dispatcher = getDispatcher("done", logger);
         try (
             Netty4HttpServerTransport transport = new Netty4HttpServerTransport(
                 settings,
@@ -208,6 +208,10 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
             try (Netty4HttpClient client = Netty4HttpClient.http()) {
                 final FullHttpRequest request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.POST, "/");
                 request.headers().set(HttpHeaderNames.EXPECT, expectation);
+                // Randomly add a traceparent header to ensure special adding logic in Netty4HttpResponse is not interfering
+                if (usually()) {
+                    request.headers().add(RestController.TRACEPARENT_HEADER, "dummy_traceparent_value");
+                }
                 HttpUtil.setContentLength(request, contentLength);
 
                 final FullHttpResponse response = client.send(remoteAddress.address(), request);
@@ -397,6 +401,9 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
                 // and Brotly is not on classpath.
                 final String contentEncoding = randomFrom("deflate", "gzip", "snappy", "br", "zstd");
                 request.headers().add(HttpHeaderNames.ACCEPT_ENCODING, contentEncoding);
+                if (usually()) {
+                    request.headers().add(RestController.TRACEPARENT_HEADER, "dummy_traceparent_value");
+                }
                 long numOfHugeAllocations = getHugeAllocationCount();
                 final FullHttpResponse response = client.send(remoteAddress.address(), request);
                 try {
@@ -560,6 +567,132 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
         } finally {
             group.shutdownGracefully().await();
         }
+    }
+
+    public void testE2ELoggingHttp1() throws Exception {
+        int chunkSize = 128;
+        final Settings settings = createBuilderWithPort().put(
+            SETTING_HTTP_MAX_CHUNK_SIZE.getKey(),
+            new ByteSizeValue(chunkSize, ByteSizeUnit.BYTES)
+        ).build();
+        Logger e2eLogger = (Logger) LogManager.getLogger(Netty4HttpServerTransport.E2ELatencyHttp1LoggerHandler.class); // Cast to concrete
+                                                                                                                        // class rather than
+                                                                                                                        // interface to
+                                                                                                                        // allow adding
+                                                                                                                        // appender
+        // Setup code so we can inspect log output - see https://www.dontpanicblog.co.uk/2018/04/29/test-log4j2-with-junit/
+        final CharArrayWriter loggerOutput = new CharArrayWriter();
+        StringLayout layout = PatternLayout.newBuilder().withPattern("%-5level %msg").build();
+        Appender loggerAppender = WriterAppender.newBuilder().setTarget(loggerOutput).setLayout(layout).setName("appender").build();
+        loggerAppender.start();
+        e2eLogger.addAppender(loggerAppender);
+
+        for (int responseLength : new int[] { 4, chunkSize * 5 }) {
+            // There should be only 1 output log msg regardless of number of chunks in the response
+            HttpServerTransport.Dispatcher dispatcher = getDispatcher(randomAlphaOfLength(responseLength), logger);
+            try (
+                Netty4HttpServerTransport transport = new Netty4HttpServerTransport(
+                    settings,
+                    networkService,
+                    bigArrays,
+                    threadPool,
+                    xContentRegistry(),
+                    dispatcher,
+                    clusterSettings,
+                    new SharedGroupFactory(settings),
+                    NoopTracer.INSTANCE
+                )
+            ) {
+                transport.start();
+                final TransportAddress remoteAddress = randomFrom(transport.boundAddress().boundAddresses());
+                try (Netty4HttpClient client = Netty4HttpClient.http()) {
+                    for (String traceparentValue : new String[] { null, "", "test_traceparent_value" }) {
+                        sendRequestWithTraceparent(traceparentValue, client, remoteAddress, 0);
+                        String expectedLog = getExpectedE2ELogMessage(
+                            getInboundLogMessage(traceparentValue),
+                            getOutboundLogMessage(traceparentValue)
+                        );
+                        assertEquals(expectedLog, loggerOutput.toString());
+                        loggerOutput.reset();
+                    }
+                    // Test one where there are >1 chunks in the request, we still expect only 1 log statement for inbound and outbound
+                    String traceparentValue = "11";
+                    sendRequestWithTraceparent(traceparentValue, client, remoteAddress, chunkSize * 2);
+                    String expectedLog = getExpectedE2ELogMessage(
+                        getInboundLogMessage(traceparentValue),
+                        getOutboundLogMessage(traceparentValue)
+                    );
+                    assertEquals(expectedLog, loggerOutput.toString());
+                    loggerOutput.reset();
+                }
+            }
+        }
+        e2eLogger.removeAppender(loggerAppender);
+    }
+
+    // public + static so SecureNetty4HttpServerTransportTests can also use it
+    public static void sendRequestWithTraceparent(
+        String traceparent,
+        Netty4HttpClient client,
+        TransportAddress remoteAddress,
+        int contentLength
+    ) throws InterruptedException {
+        final FullHttpRequest request;
+        if (contentLength > 0) {
+            ByteBuf content = Unpooled.copiedBuffer(randomAlphaOfLength(contentLength), CharsetUtil.UTF_8);
+            request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/", content);
+            HttpUtil.setContentLength(request, contentLength);
+        } else {
+            request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/");
+        }
+        if (traceparent != null) {
+            request.headers().add(RestController.TRACEPARENT_HEADER, traceparent);
+        }
+
+        final FullHttpResponse response = client.send(remoteAddress.address(), request);
+        try {
+            assertEquals(HttpResponseStatus.OK, response.status());
+            if (traceparent != null) {
+                assertEquals(traceparent, response.headers().get(RestController.TRACEPARENT_HEADER));
+            } else {
+                assertFalse(response.headers().contains(RestController.TRACEPARENT_HEADER));
+            }
+        } finally {
+            response.release();
+        }
+    }
+
+    public static HttpServerTransport.Dispatcher getDispatcher(String response, org.apache.logging.log4j.Logger logger) {
+        return new HttpServerTransport.Dispatcher() {
+            @Override
+            public void dispatchRequest(RestRequest request, RestChannel channel, ThreadContext threadContext) {
+                channel.sendResponse(new BytesRestResponse(OK, BytesRestResponse.TEXT_CONTENT_TYPE, new BytesArray(response)));
+            }
+
+            @Override
+            public void dispatchBadRequest(RestChannel channel, ThreadContext threadContext, Throwable cause) {
+                logger.error(
+                    new ParameterizedMessage("--> Unexpected bad request [{}]", FakeRestRequest.requestToString(channel.request())),
+                    cause
+                );
+                throw new AssertionError();
+            }
+        };
+    }
+
+    public static String getExpectedE2ELogMessage(String... logMessages) {
+        StringBuilder sb = new StringBuilder();
+        for (String msg : logMessages) {
+            if (msg != null) {
+                sb.append("INFO  ");
+                sb.append(msg);
+            }
+        }
+        return sb.toString();
+    }
+
+    public void testE2ELoggingHttp2() {
+        // TODO
     }
 
     private Settings createSettings() {
