@@ -575,17 +575,6 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
             SETTING_HTTP_MAX_CHUNK_SIZE.getKey(),
             new ByteSizeValue(chunkSize, ByteSizeUnit.BYTES)
         ).build();
-        Logger e2eLogger = (Logger) LogManager.getLogger(Netty4HttpServerTransport.E2ELatencyHttp1LoggerHandler.class); // Cast to concrete
-                                                                                                                        // class rather than
-                                                                                                                        // interface to
-                                                                                                                        // allow adding
-                                                                                                                        // appender
-        // Setup code so we can inspect log output - see https://www.dontpanicblog.co.uk/2018/04/29/test-log4j2-with-junit/
-        final CharArrayWriter loggerOutput = new CharArrayWriter();
-        StringLayout layout = PatternLayout.newBuilder().withPattern("%-5level %msg").build();
-        Appender loggerAppender = WriterAppender.newBuilder().setTarget(loggerOutput).setLayout(layout).setName("appender").build();
-        loggerAppender.start();
-        e2eLogger.addAppender(loggerAppender);
 
         for (int responseLength : new int[] { 4, chunkSize * 5 }) {
             // There should be only 1 output log msg regardless of number of chunks in the response
@@ -606,31 +595,38 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
                 transport.start();
                 final TransportAddress remoteAddress = randomFrom(transport.boundAddress().boundAddresses());
                 try (Netty4HttpClient client = Netty4HttpClient.http()) {
-                    for (String traceparentValue : new String[] { null, "", "test_traceparent_value" }) {
-                        sendRequestWithTraceparent(traceparentValue, client, remoteAddress, 0);
-                        String expectedLog = getExpectedE2ELogMessage(
-                            getInboundLogMessage(traceparentValue),
-                            getOutboundLogMessage(traceparentValue)
-                        );
-                        assertEquals(expectedLog, loggerOutput.toString());
-                        loggerOutput.reset();
-                    }
-                    // Test one where there are >1 chunks in the request, we still expect only 1 log statement for inbound and outbound
-                    String traceparentValue = "11";
-                    sendRequestWithTraceparent(traceparentValue, client, remoteAddress, chunkSize * 2);
-                    String expectedLog = getExpectedE2ELogMessage(
-                        getInboundLogMessage(traceparentValue),
-                        getOutboundLogMessage(traceparentValue)
-                    );
-                    assertEquals(expectedLog, loggerOutput.toString());
-                    loggerOutput.reset();
+                    runE2EHttp1TraceparentTest(remoteAddress, chunkSize, client);
                 }
             }
         }
-        e2eLogger.removeAppender(loggerAppender);
     }
 
     // public + static so SecureNetty4HttpServerTransportTests can also use it
+    public static void runE2EHttp1TraceparentTest(TransportAddress remoteAddress, int chunkSize, Netty4HttpClient client) throws Exception {
+        // Cast to concrete class rather than interface to allow adding appender
+        Logger e2eLogger = (Logger) LogManager.getLogger(Netty4HttpServerTransport.E2ELatencyHttp1LoggerHandler.class);
+        // Setup code so we can inspect log output - see https://www.dontpanicblog.co.uk/2018/04/29/test-log4j2-with-junit/
+        final CharArrayWriter loggerOutput = new CharArrayWriter();
+        StringLayout layout = PatternLayout.newBuilder().withPattern("%-5level %msg").build();
+        Appender loggerAppender = WriterAppender.newBuilder().setTarget(loggerOutput).setLayout(layout).setName("appender").build();
+        loggerAppender.start();
+        e2eLogger.addAppender(loggerAppender);
+
+        for (String traceparentValue : new String[] { null, "", "test_traceparent_value" }) {
+            sendRequestWithTraceparent(traceparentValue, client, remoteAddress, 0);
+            String expectedLog = getExpectedE2ELogMessage(getInboundLogMessage(traceparentValue), getOutboundLogMessage(traceparentValue));
+            assertEquals(expectedLog, loggerOutput.toString());
+            loggerOutput.reset();
+        }
+        // Test one where there are >1 chunks in the request, we still expect only 1 log statement for inbound and outbound
+        String traceparentValue = "11";
+        sendRequestWithTraceparent(traceparentValue, client, remoteAddress, chunkSize * 2);
+        String expectedLog = getExpectedE2ELogMessage(getInboundLogMessage(traceparentValue), getOutboundLogMessage(traceparentValue));
+        assertEquals(expectedLog, loggerOutput.toString());
+        loggerOutput.reset();
+        e2eLogger.removeAppender(loggerAppender);
+    }
+
     public static void sendRequestWithTraceparent(
         String traceparent,
         Netty4HttpClient client,

@@ -8,12 +8,6 @@
 
 package org.opensearch.http.netty4.ssl;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.core.Appender;
-import org.apache.logging.log4j.core.Logger;
-import org.apache.logging.log4j.core.StringLayout;
-import org.apache.logging.log4j.core.appender.WriterAppender;
-import org.apache.logging.log4j.core.layout.PatternLayout;
 import org.apache.logging.log4j.message.ParameterizedMessage;
 import org.opensearch.OpenSearchException;
 import org.opensearch.common.network.NetworkAddress;
@@ -36,7 +30,6 @@ import org.opensearch.http.HttpServerTransport;
 import org.opensearch.http.HttpTransportSettings;
 import org.opensearch.http.NullDispatcher;
 import org.opensearch.http.netty4.Netty4HttpClient;
-import org.opensearch.http.netty4.Netty4HttpServerTransport;
 import org.opensearch.plugins.SecureHttpTransportSettingsProvider;
 import org.opensearch.plugins.TransportExceptionHandler;
 import org.opensearch.rest.BytesRestResponse;
@@ -56,7 +49,6 @@ import javax.net.ssl.KeyManagerFactory;
 import javax.net.ssl.SSLEngine;
 import javax.net.ssl.SSLException;
 
-import java.io.CharArrayWriter;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
@@ -99,11 +91,8 @@ import static org.opensearch.core.rest.RestStatus.OK;
 import static org.opensearch.http.HttpTransportSettings.SETTING_CORS_ALLOW_ORIGIN;
 import static org.opensearch.http.HttpTransportSettings.SETTING_CORS_ENABLED;
 import static org.opensearch.http.HttpTransportSettings.SETTING_HTTP_MAX_CHUNK_SIZE;
-import static org.opensearch.http.netty4.Netty4HttpServerTransport.E2ELatencyHttp1LoggerHandler.getInboundLogMessage;
-import static org.opensearch.http.netty4.Netty4HttpServerTransport.E2ELatencyHttp1LoggerHandler.getOutboundLogMessage;
 import static org.opensearch.http.netty4.Netty4HttpServerTransportTests.getDispatcher;
-import static org.opensearch.http.netty4.Netty4HttpServerTransportTests.getExpectedE2ELogMessage;
-import static org.opensearch.http.netty4.Netty4HttpServerTransportTests.sendRequestWithTraceparent;
+import static org.opensearch.http.netty4.Netty4HttpServerTransportTests.runE2EHttp1TraceparentTest;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.instanceOf;
@@ -592,18 +581,6 @@ public class SecureNetty4HttpServerTransportTests extends OpenSearchTestCase {
             SETTING_HTTP_MAX_CHUNK_SIZE.getKey(),
             new ByteSizeValue(chunkSize, ByteSizeUnit.BYTES)
         ).build();
-        Logger e2eLogger = (Logger) LogManager.getLogger(Netty4HttpServerTransport.E2ELatencyHttp1LoggerHandler.class); // Cast to concrete
-                                                                                                                        // class rather than
-                                                                                                                        // interface to
-                                                                                                                        // allow adding
-                                                                                                                        // appender
-        // Setup code so we can inspect log output - see https://www.dontpanicblog.co.uk/2018/04/29/test-log4j2-with-junit/
-        final CharArrayWriter loggerOutput = new CharArrayWriter();
-        StringLayout layout = PatternLayout.newBuilder().withPattern("%-5level %msg").build();
-        Appender loggerAppender = WriterAppender.newBuilder().setTarget(loggerOutput).setLayout(layout).setName("appender").build();
-        loggerAppender.start();
-        e2eLogger.addAppender(loggerAppender);
-
         for (int responseLength : new int[] { 4, chunkSize * 5 }) {
             // There should be only 1 output log msg regardless of number of chunks in the response
             HttpServerTransport.Dispatcher dispatcher = getDispatcher(randomAlphaOfLength(responseLength), logger);
@@ -624,33 +601,10 @@ public class SecureNetty4HttpServerTransportTests extends OpenSearchTestCase {
                 transport.start();
                 final TransportAddress remoteAddress = randomFrom(transport.boundAddress().boundAddresses());
                 try (Netty4HttpClient client = Netty4HttpClient.https()) {
-                    for (String traceparentValue : new String[] { null, "", "test_traceparent_value" }) {
-                        sendRequestWithTraceparent(traceparentValue, client, remoteAddress, 0);
-                        String expectedLog = getExpectedE2ELogMessage(
-                            getInboundLogMessage(traceparentValue),
-                            getOutboundLogMessage(traceparentValue)
-                        );
-                        String actual = loggerOutput.toString();
-                        // TODO: appears logger is not getting hit on outbound - msg is some other weird class AdvancedLeakAwareByteBuf.
-                        // This is happening bc SSL is happening *after* logger.
-                        // However... seems like ssl is first in pipeline, as we expect. What's going on here?
-                        assertEquals(expectedLog, loggerOutput.toString());
-                        loggerOutput.reset();
-                    }
-                    // Test one where there are >1 chunks in the request, we still expect only 1 log statement for inbound and outbound
-                    String traceparentValue = "11";
-                    sendRequestWithTraceparent(traceparentValue, client, remoteAddress, chunkSize * 2);
-                    String expectedLog = getExpectedE2ELogMessage(
-                        getInboundLogMessage(traceparentValue),
-                        getOutboundLogMessage(traceparentValue)
-                    );
-                    String actual = loggerOutput.toString();
-                    assertEquals(expectedLog, loggerOutput.toString());
-                    loggerOutput.reset();
+                    runE2EHttp1TraceparentTest(remoteAddress, chunkSize, client);
                 }
             }
         }
-        e2eLogger.removeAppender(loggerAppender);
     }
 
     private Settings createSettings() {

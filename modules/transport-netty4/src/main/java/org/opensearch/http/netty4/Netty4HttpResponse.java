@@ -53,7 +53,6 @@ public class Netty4HttpResponse extends DefaultFullHttpResponse implements HttpR
         if (requestHeaders.contains(RestController.TRACEPARENT_HEADER)) {
             addHeader(RestController.TRACEPARENT_HEADER, requestHeaders.get(RestController.TRACEPARENT_HEADER));
         }
-
     }
 
     @Override

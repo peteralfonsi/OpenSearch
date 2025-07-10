@@ -451,9 +451,6 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                     pipeline.addAfter("header_verifier", "e2e_latency_logger", new E2ELatencyHttp1LoggerHandler());
                     pipeline.addAfter("e2e_latency_logger", "decoder_compress", transport.createDecompressor());
                     pipeline.addAfter("decoder_compress", "aggregator", aggregator);
-                    // TODO: If we allowed ourselves to miss the latency on the aggregator, by swapping positions, we wouldnt have
-                    // to deal with the chunking cases and the logger would require no state...
-                    // but i think we cant bc wed miss both that and the decoder_compress
                     if (handlingSettings.isCompression()) {
                         pipeline.addAfter(
                             "aggregator",
@@ -471,19 +468,17 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
         }
 
         protected void configureDefaultHttpPipeline(ChannelPipeline pipeline) {
+            // Used for SecureNetty4HttpServerTransport
             final HttpRequestDecoder decoder = new HttpRequestDecoder(
                 handlingSettings.getMaxInitialLineLength(),
                 handlingSettings.getMaxHeaderSize(),
                 handlingSettings.getMaxChunkSize()
             );
             decoder.setCumulator(ByteToMessageDecoder.COMPOSITE_CUMULATOR);
-            pipeline.addLast("decoder", decoder); // TODO: This should be converting ByteBuf --> HttpContent on inbound.
-            // TODO: Moved this up, as e2e_latency_logger must sit after it to see non-encrypted outbound response.
-            // Encoder is outobund only, and the other 3 are inbound only, so its position wrt them does not matter.
+            pipeline.addLast("decoder", decoder);
             pipeline.addLast("encoder", new HttpResponseEncoder());
             pipeline.addLast("header_verifier", transport.createHeaderVerifier());
-            pipeline.addLast("e2e_latency_logger", new E2ELatencyHttp1LoggerHandler()); // TODO: This has to go after encoder, bc that is
-                                                                                        // the outbound httpContent --> ByteBuf.
+            pipeline.addLast("e2e_latency_logger", new E2ELatencyHttp1LoggerHandler());
             pipeline.addLast("decoder_compress", transport.createDecompressor());
             final HttpObjectAggregator aggregator = new HttpObjectAggregator(handlingSettings.getMaxContentLength());
             aggregator.setMaxCumulationBufferComponents(transport.maxCompositeBufferComponents);
@@ -686,21 +681,15 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
 
         // These classes are separated for testing
         public static String getInboundLogMessage(String traceparentHeader) {
-            if (traceparentHeader == null || traceparentHeader.isEmpty()) {
-                return "E2ELatencyLoggerHandler received HTTP request with no traceparent header"; // TODO: In actual use, we would probably
-                                                                                                   // not log anything in this case. Would
-                                                                                                   // return null
-            } else {
+            if (traceparentHeader == null || traceparentHeader.isEmpty()) return null;
+            else {
                 return "E2ELatencyLoggerHandler received HTTP request with traceparent header = " + traceparentHeader;
             }
         }
 
         public static String getOutboundLogMessage(String traceparentHeader) {
-            if (traceparentHeader == null || traceparentHeader.isEmpty()) {
-                return "E2ELatencyLoggerHandler finished processing HTTP response with no traceparent header"; // TODO: In actual use, we
-                                                                                                               // would probably not log
-                                                                                                               // anything in this case
-            } else {
+            if (traceparentHeader == null || traceparentHeader.isEmpty()) return null;
+            else {
                 return "E2ELatencyLoggerHandler finished processing HTTP response with traceparent header = " + traceparentHeader;
             }
         }
