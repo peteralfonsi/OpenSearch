@@ -528,7 +528,7 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                         .addLast("byte_buf_sizer", byteBufSizer)
                         .addLast("read_timeout", new ReadTimeoutHandler(transport.readTimeoutMillis, TimeUnit.MILLISECONDS))
                         .addLast("header_verifier", transport.createHeaderVerifier())
-                        .addLast("e2e_latency_logger", new E2ELatencyHttp2LoggerHandler()) // TODO: Not functional yet
+                        .addLast("e2e_latency_logger", new E2ELatencyHttp1LoggerHandler())
                         .addLast("decoder_decompress", transport.createDecompressor());
 
                     if (handlingSettings.isCompression()) {
@@ -643,9 +643,10 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
     }
 
     /**
-     * This class is intended to log traceparent-id and a timestamp, at the first moment when Netty has access to a single HTTP 1.1 request.
+     * This class is intended to log traceparent-id and a timestamp, at the first moment when Netty has access to a single HTTP/1.1 request.
      * It does the same on the last chunk of the outbound response. This captures the amount of time all of Netty's per-request handlers take.
-     * This class cannot be used with HTTP 2 as it assumes chunks of different responses on the same connection never arrive interleaved with each other.
+     * This class can also be used in the HTTP/2 pipeline as we set up child (per-stream) pipelines, and there is a Http2StreamFrameToHttpObjectCodec
+     * converting to HTTP/1.1 objects before this handler is reached.
      */
     public static class E2ELatencyHttp1LoggerHandler extends ChannelDuplexHandler {
         private static final Logger logger = LogManager.getLogger(E2ELatencyHttp1LoggerHandler.class);
@@ -694,8 +695,4 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
             }
         }
     }
-
-    // TODO: Map-based implementation for HTTP 2
-    static class E2ELatencyHttp2LoggerHandler extends ChannelDuplexHandler {}
-
 }

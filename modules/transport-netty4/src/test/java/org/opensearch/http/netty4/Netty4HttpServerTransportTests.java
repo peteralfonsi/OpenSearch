@@ -107,6 +107,7 @@ import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.codec.http.HttpResponseStatus;
 import io.netty.handler.codec.http.HttpUtil;
 import io.netty.handler.codec.http.HttpVersion;
+import io.netty.handler.codec.http2.HttpConversionUtil;
 import io.netty.util.CharsetUtil;
 
 import static org.opensearch.core.rest.RestStatus.BAD_REQUEST;
@@ -569,7 +570,7 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
         }
     }
 
-    public void testE2ELoggingHttp1() throws Exception {
+    public void testE2ELogging() throws Exception {
         int chunkSize = 128;
         final Settings settings = createBuilderWithPort().put(
             SETTING_HTTP_MAX_CHUNK_SIZE.getKey(),
@@ -594,15 +595,21 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
             ) {
                 transport.start();
                 final TransportAddress remoteAddress = randomFrom(transport.boundAddress().boundAddresses());
+                // Run with HTTP/1.1
                 try (Netty4HttpClient client = Netty4HttpClient.http()) {
-                    runE2EHttp1TraceparentTest(remoteAddress, chunkSize, client);
+                    runE2ETraceparentTest(remoteAddress, chunkSize, client, false);
+                }
+                // Run with HTTP/2
+                try (Netty4HttpClient client = Netty4HttpClient.http2()) {
+                    runE2ETraceparentTest(remoteAddress, chunkSize, client, true);
                 }
             }
         }
     }
 
     // public + static so SecureNetty4HttpServerTransportTests can also use it
-    public static void runE2EHttp1TraceparentTest(TransportAddress remoteAddress, int chunkSize, Netty4HttpClient client) throws Exception {
+    public static void runE2ETraceparentTest(TransportAddress remoteAddress, int chunkSize, Netty4HttpClient client, boolean useHttp2)
+        throws Exception {
         // Cast to concrete class rather than interface to allow adding appender
         Logger e2eLogger = (Logger) LogManager.getLogger(Netty4HttpServerTransport.E2ELatencyHttp1LoggerHandler.class);
         // Setup code so we can inspect log output - see https://www.dontpanicblog.co.uk/2018/04/29/test-log4j2-with-junit/
@@ -613,14 +620,14 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
         e2eLogger.addAppender(loggerAppender);
 
         for (String traceparentValue : new String[] { null, "", "test_traceparent_value" }) {
-            sendRequestWithTraceparent(traceparentValue, client, remoteAddress, 0);
+            sendRequestWithTraceparent(traceparentValue, client, remoteAddress, 0, useHttp2);
             String expectedLog = getExpectedE2ELogMessage(getInboundLogMessage(traceparentValue), getOutboundLogMessage(traceparentValue));
             assertEquals(expectedLog, loggerOutput.toString());
             loggerOutput.reset();
         }
         // Test one where there are >1 chunks in the request, we still expect only 1 log statement for inbound and outbound
         String traceparentValue = "11";
-        sendRequestWithTraceparent(traceparentValue, client, remoteAddress, chunkSize * 2);
+        sendRequestWithTraceparent(traceparentValue, client, remoteAddress, chunkSize * 2, useHttp2);
         String expectedLog = getExpectedE2ELogMessage(getInboundLogMessage(traceparentValue), getOutboundLogMessage(traceparentValue));
         assertEquals(expectedLog, loggerOutput.toString());
         loggerOutput.reset();
@@ -631,9 +638,10 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
         String traceparent,
         Netty4HttpClient client,
         TransportAddress remoteAddress,
-        int contentLength
+        int contentLength,
+        boolean addHttp2Headers
     ) throws InterruptedException {
-        final FullHttpRequest request;
+        DefaultFullHttpRequest request;
         if (contentLength > 0) {
             ByteBuf content = Unpooled.copiedBuffer(randomAlphaOfLength(contentLength), CharsetUtil.UTF_8);
             request = new DefaultFullHttpRequest(HttpVersion.HTTP_1_1, HttpMethod.GET, "/", content);
@@ -644,7 +652,10 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
         if (traceparent != null) {
             request.headers().add(RestController.TRACEPARENT_HEADER, traceparent);
         }
-
+        if (addHttp2Headers) {
+            request.headers().add(HttpConversionUtil.ExtensionHeaderNames.SCHEME.text(), "http");
+            request.headers().add(HttpHeaderNames.HOST, "localhost");
+        }
         final FullHttpResponse response = client.send(remoteAddress.address(), request);
         try {
             assertEquals(HttpResponseStatus.OK, response.status());
@@ -685,10 +696,6 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
             }
         }
         return sb.toString();
-    }
-
-    public void testE2ELoggingHttp2() {
-        // TODO
     }
 
     private Settings createSettings() {

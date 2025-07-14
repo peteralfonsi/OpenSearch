@@ -92,7 +92,7 @@ import static org.opensearch.http.HttpTransportSettings.SETTING_CORS_ALLOW_ORIGI
 import static org.opensearch.http.HttpTransportSettings.SETTING_CORS_ENABLED;
 import static org.opensearch.http.HttpTransportSettings.SETTING_HTTP_MAX_CHUNK_SIZE;
 import static org.opensearch.http.netty4.Netty4HttpServerTransportTests.getDispatcher;
-import static org.opensearch.http.netty4.Netty4HttpServerTransportTests.runE2EHttp1TraceparentTest;
+import static org.opensearch.http.netty4.Netty4HttpServerTransportTests.runE2ETraceparentTest;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.instanceOf;
@@ -575,7 +575,7 @@ public class SecureNetty4HttpServerTransportTests extends OpenSearchTestCase {
         }
     }
 
-    public void testE2ELoggingHttp1() throws Exception {
+    public void testE2ELogging() throws Exception {
         int chunkSize = 128;
         final Settings settings = createBuilderWithPort().put(
             SETTING_HTTP_MAX_CHUNK_SIZE.getKey(),
@@ -601,7 +601,7 @@ public class SecureNetty4HttpServerTransportTests extends OpenSearchTestCase {
                 transport.start();
                 final TransportAddress remoteAddress = randomFrom(transport.boundAddress().boundAddresses());
                 try (Netty4HttpClient client = Netty4HttpClient.https()) {
-                    runE2EHttp1TraceparentTest(remoteAddress, chunkSize, client);
+                    runE2ETraceparentTest(remoteAddress, chunkSize, client, false);
                 }
             }
         }
