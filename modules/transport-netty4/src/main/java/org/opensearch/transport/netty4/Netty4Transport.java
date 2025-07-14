@@ -382,6 +382,7 @@ public class Netty4Transport extends TcpTransport {
             NetUtils.tryEnsureReasonableKeepAliveConfig(((Netty4NioSocketChannel) ch).javaChannel());
             Netty4TcpChannel nettyTcpChannel = new Netty4TcpChannel(ch, true, name, ch.newSucceededFuture());
             ch.attr(CHANNEL_KEY).set(nettyTcpChannel);
+            // TODO: Should logging be out here via logger handler like in http? Is this chunked?
             ch.pipeline().addLast("byte_buf_sizer", sizer);
             ch.pipeline().addLast("logging", new OpenSearchLoggingHandler());
             ch.pipeline().addLast("dispatcher", new Netty4MessageChannelHandler(pageCacheRecycler, Netty4Transport.this));
