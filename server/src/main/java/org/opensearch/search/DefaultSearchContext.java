@@ -1009,8 +1009,6 @@ final class DefaultSearchContext extends SearchContext {
             && aggregations().factories() != null
             && !aggregations().factories().allFactoriesSupportConcurrentSearch()) {
                 requestShouldUseConcurrentSearch.set(false);
-            } else if (terminateAfter != DEFAULT_TERMINATE_AFTER) {
-                requestShouldUseConcurrentSearch.set(false);
             } else if (concurrentSearchMode.equals(CONCURRENT_SEGMENT_SEARCH_MODE_AUTO)) {
                 requestShouldUseConcurrentSearch.set(evaluateAutoMode());
             } else {
