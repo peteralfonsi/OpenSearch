@@ -97,6 +97,7 @@ public class RestController implements HttpServerTransport.Dispatcher {
     private static final String OPENSEARCH_PRODUCT_ORIGIN_HTTP_HEADER = "X-opensearch-product-origin";
 
     private static final BytesReference FAVICON_RESPONSE;
+    public static final String TRACEPARENT_HEADER = "traceparent"; // TODO: May be a better place for this
 
     static {
         try (InputStream stream = RestController.class.getResourceAsStream("/config/favicon.ico")) {
