@@ -1240,7 +1240,7 @@ public class Node implements Closeable {
             final Transport transport = networkModule.getTransportSupplier().get();
             Set<String> taskHeaders = Stream.concat(
                 pluginsService.filterPlugins(ActionPlugin.class).stream().flatMap(p -> p.getTaskHeaders().stream()),
-                Stream.of(Task.X_OPAQUE_ID)
+                Stream.of(Task.X_OPAQUE_ID, RestController.TRACEPARENT_HEADER) // TODO: Unsure if this is needed
             ).collect(Collectors.toSet());
             final TransportService transportService = newTransportService(
                 settings,
