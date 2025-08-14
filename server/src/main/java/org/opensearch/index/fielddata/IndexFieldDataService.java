@@ -46,8 +46,8 @@ import org.opensearch.threadpool.ThreadPool;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.function.Supplier;
 
 /**
@@ -78,9 +78,8 @@ public class IndexFieldDataService extends AbstractIndexComponent implements Clo
     private final CircuitBreakerService circuitBreakerService;
 
     private final IndicesFieldDataCache indicesFieldDataCache;
-    // the below map needs to be modified under a lock
-    // TODO: If we change this to ConcurrentHashMap, we can prob remove synchronized blocks, tho I'm not 100% sure.
-    private final Map<String, IndexFieldDataCache> fieldDataCaches = new HashMap<>();
+    // pkg-private for testing
+    final ConcurrentMap<String, IndexFieldDataCache> fieldDataCaches = new ConcurrentHashMap<>();
     private static final IndexFieldDataCache.Listener DEFAULT_NOOP_LISTENER = new IndexFieldDataCache.Listener() {
         @Override
         public void onCache(ShardId shardId, String fieldName, Accountable ramUsage) {}
@@ -102,18 +101,16 @@ public class IndexFieldDataService extends AbstractIndexComponent implements Clo
         this.threadPool = threadPool;
     }
 
-    public synchronized void clear() {
+    public void clear() {
         // Since IndexFieldDataCache implementation is now tied to a single node-level IndicesFieldDataCache, it's safe to clear using that
         // IndicesFieldDataCache.
-        indicesFieldDataCache.clear(index());
         fieldDataCaches.clear();
-        // TODO: Exception handling? Dont think we need it now as the purpose is to rethrow several exceptions as one runtime exception, but
-        // we can just have it thrown as normal.
+        indicesFieldDataCache.clear(index());
     }
 
-    public synchronized void clearField(final String fieldName) {
-        indicesFieldDataCache.clear(index(), fieldName);
+    public void clearField(final String fieldName) {
         fieldDataCaches.remove(fieldName);
+        indicesFieldDataCache.clear(index(), fieldName);
     }
 
     /**
@@ -128,22 +125,16 @@ public class IndexFieldDataService extends AbstractIndexComponent implements Clo
     ) {
         final String fieldName = fieldType.name();
         IndexFieldData.Builder builder = fieldType.fielddataBuilder(fullyQualifiedIndexName, searchLookup);
-
-        IndexFieldDataCache cache;
-        synchronized (this) {
-            cache = fieldDataCaches.get(fieldName);
-            if (cache == null) {
-                String cacheType = indexSettings.getValue(INDEX_FIELDDATA_CACHE_KEY);
-                if (FIELDDATA_CACHE_VALUE_NODE.equals(cacheType)) {
-                    cache = indicesFieldDataCache.buildIndexFieldDataCache(listener, index(), fieldName);
-                } else if ("none".equals(cacheType)) {
-                    cache = new IndexFieldDataCache.None();
-                } else {
-                    throw new IllegalArgumentException("cache type not supported [" + cacheType + "] for field [" + fieldName + "]");
-                }
-                fieldDataCaches.put(fieldName, cache);
+        IndexFieldDataCache cache = fieldDataCaches.computeIfAbsent(fieldName, (fn) -> {
+            String cacheType = indexSettings.getValue(INDEX_FIELDDATA_CACHE_KEY);
+            if (FIELDDATA_CACHE_VALUE_NODE.equals(cacheType)) {
+                return indicesFieldDataCache.buildIndexFieldDataCache(listener, index(), fn);
+            } else if ("none".equals(cacheType)) {
+                return new IndexFieldDataCache.None();
+            } else {
+                throw new IllegalArgumentException("cache type not supported [" + cacheType + "] for field [" + fieldName + "]");
             }
-        }
+        });
 
         return (IFD) builder.build(cache, circuitBreakerService);
     }

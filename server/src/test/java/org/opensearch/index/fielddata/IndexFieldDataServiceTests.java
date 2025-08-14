@@ -72,6 +72,8 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
@@ -185,6 +187,69 @@ public class IndexFieldDataServiceTests extends OpenSearchSingleNodeTestCase {
         writer.close();
     }
 
+    public void testClearAndSearchConcurrently() throws Exception {
+        // If we clear the FD cache and search for that index with getForField concurrently, the new value may or may not
+        // enter the cache in time to be cleared, but we should never have entries in the cache that lack a corresponding IFC in
+        // the IndexFieldDataService.fieldDataCaches map.
+
+        final IndexService indexService = createIndex("test");
+        final IndicesService indicesService = getInstanceFromNode(IndicesService.class);
+        final IndexFieldDataService ifdService = new IndexFieldDataService(
+            indexService.getIndexSettings(),
+            indicesService.getIndicesFieldDataCache(),
+            indicesService.getCircuitBreakerService(),
+            indexService.getThreadPool()
+        );
+
+        final BuilderContext ctx = new BuilderContext(indexService.getIndexSettings().getSettings(), new ContentPath(1));
+        final MappedFieldType mapper = new TextFieldMapper.Builder("field", createDefaultIndexAnalyzers()).fielddata(true)
+            .build(ctx)
+            .fieldType();
+        final IndexWriter writer = new IndexWriter(new ByteBuffersDirectory(), new IndexWriterConfig(new KeywordAnalyzer()));
+        Document doc = new Document();
+        doc.add(new StringField("field", "value", Store.NO));
+        writer.addDocument(doc);
+        final IndexReader reader = DirectoryReader.open(writer);
+
+        // First load a value into the cache so we can clear it later
+        IndexFieldData<?> ifd = ifdService.getForField(mapper, "test", () -> { throw new UnsupportedOperationException(); });
+        LeafReaderContext leafReaderContext = reader.getContext().leaves().get(0);
+        LeafFieldData loadField = ifd.load(leafReaderContext);
+        assertEquals(1, indicesService.getIndicesFieldDataCache().getCache().count());
+
+        // Concurrently clear the cache for this index and also mimic searching using the same FD again
+        Phaser phaser = new Phaser(3);
+        CountDownLatch countDownLatch = new CountDownLatch(2);
+
+        Thread clearThread = new Thread(() -> {
+            phaser.arriveAndAwaitAdvance();
+            ifdService.clear();
+            countDownLatch.countDown();
+        });
+        Thread searchThread = new Thread(() -> {
+            phaser.arriveAndAwaitAdvance();
+            IndexFieldData<?> newIfd = ifdService.getForField(mapper, "test", () -> { throw new UnsupportedOperationException(); });
+            newIfd.load(leafReaderContext);
+            countDownLatch.countDown();
+        });
+
+        clearThread.start();
+        searchThread.start();
+        phaser.arriveAndAwaitAdvance();
+        countDownLatch.await();
+
+        // There can be 0 or 1 entries, but 2 (for same field) would be incorrect
+        int cacheCount = indicesService.getIndicesFieldDataCache().getCache().count();
+        assertTrue(cacheCount <= 1);
+        if (cacheCount == 1) {
+            assertEquals(1, ifdService.fieldDataCaches.size());
+        }
+
+        reader.close();
+        loadField.close();
+        writer.close();
+    }
+
     public void testGetForFieldRuntimeField() {
         final IndexService indexService = createIndex("test");
         final IndicesService indicesService = getInstanceFromNode(IndicesService.class);
@@ -204,6 +269,7 @@ public class IndexFieldDataServiceTests extends OpenSearchSingleNodeTestCase {
             assertEquals(searchLookup.get().shardId(), shardId);
             return (IndexFieldData.Builder) (cache, breakerService) -> null;
         });
+        when(ft.name()).thenReturn("test_field_name");
         SearchLookup searchLookup = new SearchLookup(null, null, shardId);
         ifdService.getForField(ft, "qualified", () -> searchLookup);
         assertSame(searchLookup, searchLookupSetOnce.get().get());

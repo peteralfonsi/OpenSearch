@@ -111,10 +111,10 @@ public class FieldDataLoadingIT extends OpenSearchIntegTestCase {
             int finalI = i;
             threads[i] = new Thread(() -> {
                 try {
+                    phaser.arriveAndAwaitAdvance();
                     ClearIndicesCacheRequest clearCacheRequest = new ClearIndicesCacheRequest().fieldDataCache(true)
                         .indices(indexPrefix + finalI);
                     client().admin().indices().clearCache(clearCacheRequest).actionGet();
-                    phaser.arriveAndAwaitAdvance();
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
@@ -171,11 +171,11 @@ public class FieldDataLoadingIT extends OpenSearchIntegTestCase {
                 int finalJ = j;
                 threads[i * numFieldsPerIndex + j] = new Thread(() -> {
                     try {
+                        phaser.arriveAndAwaitAdvance();
                         ClearIndicesCacheRequest clearCacheRequest = new ClearIndicesCacheRequest().fieldDataCache(true)
                             .indices(indexPrefix + finalI)
                             .fields(fieldPrefix + finalJ);
                         client().admin().indices().clearCache(clearCacheRequest).actionGet();
-                        phaser.arriveAndAwaitAdvance();
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
@@ -192,5 +192,4 @@ public class FieldDataLoadingIT extends OpenSearchIntegTestCase {
         assertEquals(0, response.getIndicesStats().getFieldData().getMemorySizeInBytes());
 
     }
-
 }
