@@ -188,6 +188,10 @@ public class ClusterStatsIndices implements ToXContentFragment {
     }
 
     public FieldDataStats getFieldData() {
+        if (fieldData.getMemorySizeInBytes() > 0) {
+            // TODO: Debug only
+            int k = 0;
+        }
         return fieldData;
     }
 

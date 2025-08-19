@@ -34,13 +34,18 @@ package org.opensearch.index.fielddata;
 
 import org.opensearch.action.admin.cluster.stats.ClusterStatsResponse;
 import org.opensearch.action.admin.indices.cache.clear.ClearIndicesCacheRequest;
+import org.opensearch.cluster.node.DiscoveryNode;
 import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.index.query.MatchAllQueryBuilder;
+import org.opensearch.indices.IndicesService;
+import org.opensearch.indices.fielddata.cache.IndicesFieldDataCache;
 import org.opensearch.search.sort.SortOrder;
 import org.opensearch.test.OpenSearchIntegTestCase;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
 
@@ -110,10 +115,11 @@ public class FieldDataLoadingIT extends OpenSearchIntegTestCase {
         assertEquals(0, response.getIndicesStats().getFieldData().getMemorySizeInBytes());
     }
 
+    // TODO: Move these to UT
     public void testFieldDataCacheClearConcurrentFields() throws Exception {
         // Check concurrently clearing multiple indices + fields from the FD cache correctly removes all expected keys.
-        int numIndices = 10;
-        int numFieldsPerIndex = 5;
+        int numIndices = 40;
+        int numFieldsPerIndex = 50;
         String indexPrefix = "test";
         String fieldPrefix = "field";
         createAndSearchIndices(numIndices, numFieldsPerIndex, indexPrefix, fieldPrefix);
@@ -147,7 +153,15 @@ public class FieldDataLoadingIT extends OpenSearchIntegTestCase {
 
         // Cache size should be 0
         ClusterStatsResponse response = client().admin().cluster().prepareClusterStats().get();
-        assertEquals(0, response.getIndicesStats().getFieldData().getMemorySizeInBytes());
+        long bytes = response.getIndicesStats().getFieldData().getMemorySizeInBytes();
+        if (bytes > 0) {
+            Set<IndicesFieldDataCache> caches = new HashSet<>();
+            for (IndicesService is : internalCluster().getDataNodeInstances(IndicesService.class)) {
+                caches.add(is.getIndicesFieldDataCache());
+            }
+            int k = 0;
+        }
+        assertEquals(0, response.getIndicesStats().getFieldData().getMemorySizeInBytes()); // TODO: Flaky!!
     }
 
     private void createAndSearchIndices(int numIndices, int numFieldsPerIndex, String indexPrefix, String fieldPrefix) throws Exception {

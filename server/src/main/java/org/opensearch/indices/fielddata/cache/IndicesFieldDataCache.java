@@ -43,6 +43,7 @@ import org.opensearch.common.Nullable;
 import org.opensearch.common.annotation.PublicApi;
 import org.opensearch.common.cache.Cache;
 import org.opensearch.common.cache.CacheBuilder;
+import org.opensearch.common.cache.ICacheKey;
 import org.opensearch.common.cache.RemovalListener;
 import org.opensearch.common.cache.RemovalNotification;
 import org.opensearch.common.cache.RemovalReason;
@@ -58,10 +59,12 @@ import org.opensearch.index.fielddata.IndexFieldData;
 import org.opensearch.index.fielddata.IndexFieldDataCache;
 import org.opensearch.index.fielddata.LeafFieldData;
 import org.opensearch.index.shard.ShardUtils;
+import org.opensearch.indices.IndicesRequestCache;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.function.ToLongBiFunction;
 
@@ -133,9 +136,13 @@ public class IndicesFieldDataCache implements RemovalListener<IndicesFieldDataCa
      */
     public void clear(Index index) {
         // TODO: In a future PR, this method will instead the index for cleanup and a scheduled thread will actually invalidate
-        for (Key key : cache.keys()) {
+
+        //for (Key key : cache.keys()) {
+        for (Iterator<Key> iterator = cache.keys().iterator(); iterator.hasNext();) {
+            Key key = iterator.next();
             if (key.indexCache.index.equals(index)) {
-                cache.invalidate(key);
+                //cache.invalidate(key);
+                iterator.remove();
             }
         }
         // force eviction
@@ -149,10 +156,13 @@ public class IndicesFieldDataCache implements RemovalListener<IndicesFieldDataCa
      */
     public void clear(Index index, String field) {
         // TODO: In a future PR, this method will instead the index+field for cleanup and a scheduled thread will actually invalidate
-        for (Key key : cache.keys()) {
+        //for (Key key : cache.keys()) {
+        for (Iterator<Key> iterator = cache.keys().iterator(); iterator.hasNext();) {
+            Key key = iterator.next();
             if (key.indexCache.index.equals(index)) {
                 if (key.indexCache.fieldName.equals(field)) {
-                    cache.invalidate(key);
+                    iterator.remove();
+                    //cache.invalidate(key);
                 }
             }
         }

@@ -43,10 +43,13 @@ import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.util.Accountable;
+import org.opensearch.action.admin.cluster.stats.ClusterStatsResponse;
+import org.opensearch.action.admin.indices.cache.clear.ClearIndicesCacheRequest;
 import org.opensearch.common.SetOnce;
 import org.opensearch.common.lucene.index.OpenSearchDirectoryReader;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.core.index.shard.ShardId;
+import org.opensearch.core.xcontent.XContentBuilder;
 import org.opensearch.index.IndexService;
 import org.opensearch.index.fielddata.plain.SortedNumericIndexFieldData;
 import org.opensearch.index.fielddata.plain.SortedSetOrdinalsIndexFieldData;
@@ -57,11 +60,13 @@ import org.opensearch.index.mapper.MappedFieldType;
 import org.opensearch.index.mapper.Mapper.BuilderContext;
 import org.opensearch.index.mapper.NumberFieldMapper;
 import org.opensearch.index.mapper.TextFieldMapper;
+import org.opensearch.index.query.MatchAllQueryBuilder;
 import org.opensearch.indices.IndicesService;
 import org.opensearch.indices.cluster.IndicesClusterStateService;
 import org.opensearch.indices.fielddata.cache.IndicesFieldDataCache;
 import org.opensearch.plugins.Plugin;
 import org.opensearch.search.lookup.SearchLookup;
+import org.opensearch.search.sort.SortOrder;
 import org.opensearch.test.IndexSettingsModule;
 import org.opensearch.test.InternalSettingsPlugin;
 import org.opensearch.test.OpenSearchSingleNodeTestCase;
@@ -69,9 +74,15 @@ import org.opensearch.threadpool.TestThreadPool;
 import org.opensearch.threadpool.ThreadPool;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -82,6 +93,8 @@ import org.mockito.Mockito;
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.opensearch.common.xcontent.XContentFactory.jsonBuilder;
+import static org.opensearch.test.hamcrest.OpenSearchAssertions.assertAcked;
 
 public class IndexFieldDataServiceTests extends OpenSearchSingleNodeTestCase {
 
@@ -185,6 +198,86 @@ public class IndexFieldDataServiceTests extends OpenSearchSingleNodeTestCase {
         loadField1.close();
         loadField2.close();
         writer.close();
+    }
+
+    private List<IndexService> createAndSearchIndices(int numIndices, int numFieldsPerIndex, String indexPrefix, String fieldPrefix) throws Exception {
+        List<IndexService> ret = new ArrayList<>();
+        for (int i = 0; i < numIndices; i++) {
+            String index = indexPrefix + i;
+            XContentBuilder req = jsonBuilder().startObject().startObject("properties");
+            for (int j = 0; j < numFieldsPerIndex; j++) {
+                req.startObject(fieldPrefix + j).field("type", "text").field("fielddata", true).endObject();
+            }
+            req.endObject().endObject();
+            IndexService indexService = createIndex(index, Settings.EMPTY, "text", req); // TODO: Set mapping?
+            ret.add(indexService);
+            //assertAcked(prepareCreate(index).setMapping(req));
+            Map<String, String> source = new HashMap<>();
+            for (int j = 0; j < numFieldsPerIndex; j++) {
+                source.put(fieldPrefix + j, "value");
+            }
+            client().prepareIndex(index).setId("1").setSource(source).get();
+            client().admin().indices().prepareRefresh(index).get();
+            // Search on each index to fill the cache
+            for (int j = 0; j < numFieldsPerIndex; j++) {
+                client().prepareSearch(index).setQuery(new MatchAllQueryBuilder()).addSort(fieldPrefix + j, SortOrder.ASC).get();
+            }
+        }
+        ensureGreen();
+        ClusterStatsResponse response = client().admin().cluster().prepareClusterStats().get();
+        assertTrue(response.getIndicesStats().getFieldData().getMemorySizeInBytes() > 0L);
+        return ret;
+    }
+
+    public void testFieldDataCacheClearConcurrentFields() throws Exception {
+        // Check concurrently clearing multiple indices + fields from the FD cache correctly removes all expected keys.
+        int numIndices = 40;
+        int numFieldsPerIndex = 50;
+        String indexPrefix = "test";
+        String fieldPrefix = "field";
+        List<IndexService> indexServices = createAndSearchIndices(numIndices, numFieldsPerIndex, indexPrefix, fieldPrefix);
+
+        // Concurrently clear multiple indices+fields from FD cache
+        Thread[] threads = new Thread[numIndices * numFieldsPerIndex];
+        Phaser phaser = new Phaser(numIndices * numFieldsPerIndex + 1);
+        CountDownLatch countDownLatch = new CountDownLatch(numIndices * numFieldsPerIndex);
+
+        for (int i = 0; i < numIndices; i++) {
+            int finalI = i;
+            IndexFieldDataService ifdService = indexServices.get(i).getIndexFieldDataService();
+            for (int j = 0; j < numFieldsPerIndex; j++) {
+                int finalJ = j;
+                threads[i * numFieldsPerIndex + j] = new Thread(() -> {
+                    try {
+                        phaser.arriveAndAwaitAdvance();
+                        /*ClearIndicesCacheRequest clearCacheRequest = new ClearIndicesCacheRequest().fieldDataCache(true)
+                            .indices(indexPrefix + finalI)
+                            .fields(fieldPrefix + finalJ);
+                        client().admin().indices().clearCache(clearCacheRequest).actionGet();*/
+                        ifdService.clearField(fieldPrefix + finalJ);
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                    countDownLatch.countDown();
+                });
+                threads[i * numFieldsPerIndex + j].start();
+            }
+        }
+        phaser.arriveAndAwaitAdvance();
+        countDownLatch.await();
+
+        // Cache size should be 0
+        ClusterStatsResponse response = client().admin().cluster().prepareClusterStats().get();
+        long bytes = response.getIndicesStats().getFieldData().getMemorySizeInBytes();
+        if (bytes > 0) {
+            /*Set<IndicesFieldDataCache> caches = new HashSet<>();
+            for (IndicesService is : internalCluster().getDataNodeInstances(IndicesService.class)) {
+                caches.add(is.getIndicesFieldDataCache());
+            }*/
+            IndicesFieldDataCache cache = getInstanceFromNode(IndicesService.class).getIndicesFieldDataCache();
+            int k = 0;
+        }
+        assertEquals(0, response.getIndicesStats().getFieldData().getMemorySizeInBytes()); // TODO: Flaky!!
     }
 
     public void testClearAndSearchConcurrently() throws Exception {
