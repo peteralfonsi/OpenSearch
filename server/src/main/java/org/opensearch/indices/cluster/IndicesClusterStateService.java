@@ -674,14 +674,41 @@ public class IndicesClusterStateService extends AbstractLifecycleComponent imple
         IndexMetadata currentIndexMetadata,
         MapperService mapperService
     ) {
-        Diff<MappingMetadata> metadataDiff = newIndexMetadata.mapping().diff(currentIndexMetadata.mapping());
-        Map<String, Object> parsedDiffMap = metadataDiff.apply(MappingMetadata.EMPTY_MAPPINGS).sourceAsMap();
-        Map<String, Object> parsedOriginalMap = null;
+        //Diff<MappingMetadata> metadataDiff = newIndexMetadata.mapping().diff(currentIndexMetadata.mapping());
+        //Map<String, Object> parsedDiffMap = metadataDiff.apply(MappingMetadata.EMPTY_MAPPINGS).sourceAsMap();
+        Map<String, Object> parsedCurrentMap = null;
         if (currentIndexMetadata.mapping() != null) {
-            parsedOriginalMap = currentIndexMetadata.mapping().sourceAsMap();
+            parsedCurrentMap = currentIndexMetadata.mapping().sourceAsMap();
         }
+        Map<String, Object> parsedNewMap = null;
+        if (newIndexMetadata.mapping() != null) {
+            parsedNewMap = newIndexMetadata.mapping().sourceAsMap();
+        }
+        if (parsedNewMap == null || parsedCurrentMap == null) {
+            return false;
+        }
+        // TODO: Instead of relying on diff which does not work, manually check before + after for each field.
 
         for (MappedFieldType ft : mapperService.fieldTypes()) {
+            String field = ft.name();
+            if (!mapperService.isMetadataField(field)) {
+                String fieldTypeName = ft.typeName();
+                Set<String> affectingParamsForField = parametersAffectingQueryResults.get(fieldTypeName);
+                if (affectingParamsForField == null) {
+                    continue;
+                }
+                Set<String> sourcePaths = mapperService.sourcePath(field);
+                for (String sourcePath : sourcePaths) {
+                    // Need to insert "properties." ahead of each field, including for nested fields
+                    String sourcePathWithProperties = getSourceFieldWithProperties(sourcePath);
+                    Object currentValuesForField = XContentMapValues.extractValue(sourcePathWithProperties, parsedCurrentMap);
+                    Object newValuesForField = XContentMapValues.extractValue(sourcePathWithProperties, parsedNewMap);
+                }
+
+            }
+        }
+
+        /*for (MappedFieldType ft : mapperService.fieldTypes()) {
             String field = ft.name();
             if (!mapperService.isMetadataField(field)) {
                 String fieldTypeName = ft.typeName();
@@ -712,7 +739,7 @@ public class IndicesClusterStateService extends AbstractLifecycleComponent imple
                         }
                     }
                 }
-            }
+            }*/
         }
         return false;
     }
