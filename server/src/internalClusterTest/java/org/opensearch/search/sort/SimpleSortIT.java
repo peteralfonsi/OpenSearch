@@ -37,10 +37,15 @@ import com.carrotsearch.randomizedtesting.annotations.ParametersFactory;
 import org.opensearch.action.index.IndexRequestBuilder;
 import org.opensearch.action.search.SearchResponse;
 import org.opensearch.action.search.ShardSearchFailure;
+import org.opensearch.client.Client;
 import org.opensearch.common.geo.GeoPoint;
 import org.opensearch.common.geo.GeoUtils;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
+import org.opensearch.index.IndexSettings;
 import org.opensearch.index.fielddata.ScriptDocValues;
+import org.opensearch.index.query.QueryBuilders;
+import org.opensearch.indices.IndicesRequestCache;
 import org.opensearch.plugins.Plugin;
 import org.opensearch.script.MockScriptPlugin;
 import org.opensearch.script.Script;
@@ -48,6 +53,7 @@ import org.opensearch.script.ScriptType;
 import org.opensearch.search.SearchHit;
 import org.opensearch.search.sort.ScriptSortBuilder.ScriptSortType;
 import org.opensearch.test.InternalSettingsPlugin;
+import org.opensearch.test.OpenSearchIntegTestCase;
 import org.opensearch.test.ParameterizedStaticSettingsOpenSearchIntegTestCase;
 
 import java.io.IOException;
@@ -61,6 +67,8 @@ import java.util.Map;
 import java.util.Random;
 import java.util.function.Function;
 
+import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_NUMBER_OF_REPLICAS;
+import static org.opensearch.cluster.metadata.IndexMetadata.SETTING_NUMBER_OF_SHARDS;
 import static org.opensearch.common.xcontent.XContentFactory.jsonBuilder;
 import static org.opensearch.index.query.QueryBuilders.matchAllQuery;
 import static org.opensearch.index.query.QueryBuilders.termQuery;
@@ -74,6 +82,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.not;
 
+@OpenSearchIntegTestCase.ClusterScope(scope = OpenSearchIntegTestCase.Scope.TEST, numDataNodes = 3, supportsDedicatedMasters = false)
 public class SimpleSortIT extends ParameterizedStaticSettingsOpenSearchIntegTestCase {
 
     private static final String DOUBLE_APOSTROPHE = "\u0027\u0027";
@@ -482,5 +491,38 @@ public class SimpleSortIT extends ParameterizedStaticSettingsOpenSearchIntegTest
             .setSize(10)
             .get();
         assertNoFailures(searchResponse);
+    }
+
+    public void testDateNanosSortIssue() throws Exception {
+        Client client = client();
+        String index = "test";
+        String field = "date";
+        assertAcked(
+            client.admin()
+                .indices()
+                .prepareCreate(index)
+                .setMapping(field, "type=date_nanos,format=strict_date_optional_time_nanos")
+                .setSettings(
+                    Settings.builder()
+                        .put(SETTING_NUMBER_OF_SHARDS, 5)
+                        .put(SETTING_NUMBER_OF_REPLICAS, 2)
+                ).get()
+        );
+        ensureGreen();
+
+        indexRandom(
+            true,
+            client.prepareIndex(index).setId("001").setSource(field, "2025-08-05T16:17:28.896245041Z"),
+            client.prepareIndex(index).setId("002").setSource(field, "2025-08-05T16:17:28.896245042Z"),
+            client.prepareIndex(index).setId("003").setSource(field, "2025-08-05T16:17:28.896245043Z")
+        );
+        ensureSearchable(index);
+
+        SearchResponse resp = client.prepareSearch(index)
+            .setQuery(QueryBuilders.matchAllQuery())
+            .addSort(field, SortOrder.ASC)
+            .get();
+        int k = 0;
+        // TODO: For three nodes - it reproduces !
     }
 }
