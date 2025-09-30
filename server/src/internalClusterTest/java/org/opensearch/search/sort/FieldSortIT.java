@@ -2313,7 +2313,7 @@ public class FieldSortIT extends ParameterizedOpenSearchIntegTestCase {
             previousLong = currentLong;
         }
     }
-    
+
     public void testSimpleSortsPoints() throws Exception {
         final int docs = 100;
 
@@ -2400,7 +2400,7 @@ public class FieldSortIT extends ParameterizedOpenSearchIntegTestCase {
 
         }
         refresh();
-        indexRandomForConcurrentSearch("test");
+        indexRandomGeneratingSource("test");
 
         final int size = 2;
         // HALF_FLOAT
