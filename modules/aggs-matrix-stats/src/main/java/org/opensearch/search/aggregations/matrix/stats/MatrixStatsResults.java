@@ -166,7 +166,8 @@ class MatrixStatsResults implements Writeable {
 
     /** return the covariances as a map - not public, used for getProperty() */
     protected Map<String, HashMap<String, Double>> getCovariances() {
-        return Collections.unmodifiableMap(results.covariances);
+        //return Collections.unmodifiableMap(results.covariances);
+        return Collections.unmodifiableMap(results.convertNestedDoubleArrayToMap(results.covariances));
     }
 
     /** return the covariance between two fields */
@@ -176,7 +177,9 @@ class MatrixStatsResults implements Writeable {
             checkField(fieldX, variances);
             return variances.get(fieldX);
         }
-        return getValFromUpperTriangularMatrix(results.covariances, fieldX, fieldY);
+        // TODO: Anyway not in hot path
+        Map<String, HashMap<String, Double>> covariances = results.convertNestedDoubleArrayToMap(results.covariances);
+        return getValFromUpperTriangularMatrix(covariances, fieldX, fieldY);
     }
 
     /** return the correlations as a map - not public, used for getProperty() */
@@ -244,25 +247,31 @@ class MatrixStatsResults implements Writeable {
         // compute final covariances and correlation
         double cor;
         Map<String, Double> variances = getVariances(); // TODO: Below will be changed anyway
-        for (Map.Entry<String, HashMap<String, Double>> row : results.covariances.entrySet()) {
-            final String rowName = row.getKey();
-            final HashMap<String, Double> covRow = row.getValue();
+        //for (Map.Entry<String, HashMap<String, Double>> row : results.covariances.entrySet()) {
+        for (int i = 0; i < results.fieldNames.length; i++) {
+            //final String rowName = row.getKey();
+            final String rowName = results.fieldNames[i];
+            //final HashMap<String, Double> covRow = row.getValue(); // equivalent to covariances[i] slice
             final HashMap<String, Double> corRow = new HashMap<>();
-            for (Map.Entry<String, Double> col : covRow.entrySet()) {
-                final String colName = col.getKey();
+            //for (Map.Entry<String, Double> col : covRow.entrySet()) {
+            // TODO: Top right entry already NaN before this method runs
+            for (int j = i+1; j < results.fieldNames.length; j++) {
+                //final String colName = col.getKey();
+                final String colName = results.fieldNames[j];
                 // update covariance
-                covRow.put(colName, covRow.get(colName) / nM1);
+                //covRow.put(colName, covRow.get(colName) / nM1);
+                results.covariances[i][j] /= nM1;
                 // update correlation
                 // if there is no variance in the data then correlation is NaN
                 if (variances.get(rowName) == 0d || variances.get(colName) == 0d) {
                     cor = Double.NaN;
                 } else {
                     final double corDen = Math.sqrt(variances.get(rowName)) * Math.sqrt(variances.get(colName));
-                    cor = covRow.get(colName) / corDen;
+                    cor = results.covariances[i][j] / corDen; //covRow.get(colName) / corDen;
                 }
                 corRow.put(colName, cor);
             }
-            results.covariances.put(rowName, covRow);
+            //results.covariances.put(rowName, covRow);
             correlation.put(rowName, corRow);
         }
     }

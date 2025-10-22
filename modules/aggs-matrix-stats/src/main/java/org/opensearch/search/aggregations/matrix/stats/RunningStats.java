@@ -73,7 +73,9 @@ public class RunningStats implements Writeable, Cloneable {
     //protected HashMap<String, Double> kurtosis;
     protected double[] kurtosis;
     /** covariance values */
-    protected HashMap<String, HashMap<String, Double>> covariances; // TODO: This can maybe be double[][] but do the others first
+    //protected HashMap<String, HashMap<String, Double>> covariances; // TODO: This can maybe be double[][] but do the others first
+    // first index = outer key, second = inner key
+    protected double[][] covariances;
     final String[] fieldNames;
 
     RunningStats(final String[] fieldNames) {
@@ -97,7 +99,7 @@ public class RunningStats implements Writeable, Cloneable {
         skewness = new double[fieldNames.length];
         kurtosis = new double[fieldNames.length];
         variances = new double[fieldNames.length];
-        covariances = new HashMap<>(); // TODO
+        covariances = new double[fieldNames.length][fieldNames.length];
     }
 
     /** Ctor to create an instance of running statistics */
@@ -117,7 +119,7 @@ public class RunningStats implements Writeable, Cloneable {
         variances = convertFieldDoubleMap((Map<String, Double>) in.readGenericValue());
         skewness = convertFieldDoubleMap((Map<String, Double>) in.readGenericValue());
         kurtosis = convertFieldDoubleMap((Map<String, Double>) in.readGenericValue());
-        covariances = convertIfNeeded((Map<String, HashMap<String, Double>>) in.readGenericValue()); // TODO
+        covariances = convertNestedDoubleMap((Map<String, HashMap<String, Double>>) in.readGenericValue());
         // read doc count
         /*docCount = (Long) in.readGenericValue();
         // read fieldSum
@@ -164,6 +166,17 @@ public class RunningStats implements Writeable, Cloneable {
         return result;
     }
 
+    double[][] convertNestedDoubleMap(Map<String, HashMap<String, Double>> serializedMap) {
+        assert serializedMap.keySet().equals(new HashSet<>(Arrays.asList(fieldNames)));
+        double[][] result = new double[fieldNames.length][fieldNames.length];
+        for (int i = 0; i < fieldNames.length; i++) {
+            for (int j = i+1; j < fieldNames.length; j++) {
+                result[i][j] = serializedMap.get(fieldNames[i]).get(fieldNames[j]);
+            }
+        }
+        return result;
+    }
+
     // TODO: These are probably just for PoC and can be removed once MatrixStatsResults/InternalMatrixStats are fixed
     Map<String, Double> convertDoubleArrayToMap(double[] stats) {
         Map<String, Double> result = new HashMap<>();
@@ -181,8 +194,21 @@ public class RunningStats implements Writeable, Cloneable {
         return result;
     }
 
+    Map<String, HashMap<String, Double>> convertNestedDoubleArrayToMap(double[][] stats){
+        Map<String, HashMap<String, Double>> result = new HashMap<>();
+        for (int i = 0; i < fieldNames.length; i++) {
+            HashMap<String, Double> innerMap = new HashMap<>();
+            result.put(fieldNames[i], innerMap);
+            for (int j = i+1; j < fieldNames.length; j++) {
+                innerMap.put(fieldNames[j], stats[i][j]);
+            }
+        }
+        return result;
+    }
+
     @Override
     public void writeTo(StreamOutput out) throws IOException {
+        // TODO: These don't work yet! They should write maps too oops
         out.writeStringArray(fieldNames);
         // marshall doc count
         out.writeGenericValue(docCount);
@@ -219,7 +245,8 @@ public class RunningStats implements Writeable, Cloneable {
         double m2, m3; // moments
         //double m1, m2, m3, m4;  // moments
         double d, dn, dn2, t1;
-        final HashMap<String, Double> deltas = new HashMap<>(); // TODO: Can maybe also be array-ed
+        //final HashMap<String, Double> deltas = new HashMap<>(); // TODO: Can maybe also be array-ed
+        final double[] deltas = new double[fieldNames.length];
         for (int i = 0; i < fieldNames.length; ++i) {
             //fieldName = fieldNames[i];
             fieldValue = fieldVals[i];
@@ -232,7 +259,8 @@ public class RunningStats implements Writeable, Cloneable {
             fieldSum[i] += fieldValue;
             // update running deltas
             //deltas.put(fieldName, fieldValue * docCount - fieldSum.get(fieldName));
-            deltas.put(fieldNames[i], fieldValue * docCount - fieldSum[i]);
+            //deltas.put(fieldNames[i], fieldValue * docCount - fieldSum[i]);
+            deltas[i] = fieldValue * docCount - fieldSum[i];
 
             // update running mean, variance, skewness, kurtosis
             if (docCount == 1) {
@@ -281,27 +309,36 @@ public class RunningStats implements Writeable, Cloneable {
     }
 
     /** Update covariance matrix */
-    private void updateCovariance(final String[] fieldNames, final Map<String, Double> deltas) {
+    private void updateCovariance(final String[] fieldNames, final double[] deltas) {
         // deep copy of hash keys (field names)
-        ArrayList<String> cFieldNames = new ArrayList<>(Arrays.asList(fieldNames));
-        String fieldName;
-        double dR, newVal;
-        for (int i = 0; i < fieldNames.length; ++i) {
-            fieldName = fieldNames[i];
-            cFieldNames.remove(fieldName);
-            // update running covariances
-            dR = deltas.get(fieldName);
-            HashMap<String, Double> cFieldVals = (covariances.get(fieldName) != null) ? covariances.get(fieldName) : new HashMap<>();
-            for (String cFieldName : cFieldNames) {
-                if (cFieldVals.containsKey(cFieldName)) {
-                    newVal = cFieldVals.get(cFieldName) + 1.0 / (docCount * (docCount - 1.0)) * dR * deltas.get(cFieldName);
-                    cFieldVals.put(cFieldName, newVal);
-                } else {
+        //ArrayList<String> cFieldNames = new ArrayList<>(Arrays.asList(fieldNames));
+        //String fieldName;
+        //double dR, newVal;
+        if (docCount > 1) {
+            for (int i = 0; i < fieldNames.length; ++i) {
+                //fieldName = fieldNames[i]; // TODO: fieldName = i = outer loop
+                //cFieldNames.remove(fieldName);
+                // update running covariances
+                //dR = deltas.get(fieldName);
+                // TODO: equivalent to covariances[i]
+                //HashMap<String, Double> cFieldVals = (covariances.get(fieldName) != null) ? covariances.get(fieldName) : new HashMap<>();
+                //for (String cFieldName : cFieldNames) {
+                for (int j = i + 1; j < fieldNames.length; j++) { // TODO: Can remove j == i check and also force only triangular by starting at j = i+1
+                    // TODO: if check would always have been true unless this is the first doc and docCount is therefore 1.
+                    //    Move this outside both loops.
+                    //if (cFieldVals.containsKey(cFieldName)) {
+                    //newVal = cFieldVals.get(cFieldName) + 1.0 / (docCount * (docCount - 1.0)) * dR * deltas.get(cFieldName);
+                    //newVal = cFieldVals.get(cFieldName) + 1.0 / (docCount * (docCount - 1.0)) * deltas[i] * deltas.get(cFieldName);
+                    //cFieldVals.put(cFieldName, newVal);
+                    double intermediate = 1.0 / (docCount * (docCount - 1.0)) * deltas[i] * deltas[j];
+                    covariances[i][j] += intermediate;
+                /*} else {
                     cFieldVals.put(cFieldName, 0.0);
+                }*/
                 }
-            }
-            if (cFieldVals.size() > 0) {
+            /*if (cFieldVals.size() > 0) {
                 covariances.put(fieldName, cFieldVals);
+            }*/
             }
         }
     }
@@ -348,7 +385,8 @@ public class RunningStats implements Writeable, Cloneable {
         // merge count
         docCount += other.docCount;
 
-        final HashMap<String, Double> deltas = new HashMap<>();
+        //final HashMap<String, Double> deltas = new HashMap<>();
+        final double[] deltas = new double[fieldNames.length];
         double meanA, varA, skewA, kurtA, meanB, varB, skewB, kurtB;
         double d, d2, d3, d4, n2, nA2, nB2;
         double newSkew, nk;
@@ -384,7 +422,8 @@ public class RunningStats implements Writeable, Cloneable {
 
             // merge deltas
             //deltas.put(fieldName, other.fieldSum.get(fieldName) / nB - fieldSum.get(fieldName) / nA);
-            deltas.put(fieldName, other.fieldSum[i] / nB - fieldSum[i] / nA); // TODO: Make deltas not a map?
+            //deltas.put(fieldName, other.fieldSum[i] / nB - fieldSum[i] / nA); // TODO: Make deltas not a map?
+            deltas[i] = other.fieldSum[i] / nB - fieldSum[i] / nA;
 
             // merge totals
             //fieldSum.put(fieldName, fieldSum.get(fieldName) + other.fieldSum.get(fieldName));
@@ -415,31 +454,35 @@ public class RunningStats implements Writeable, Cloneable {
     }
 
     /** Merges two covariance matrices */
-    private void mergeCovariance(final RunningStats other, final Map<String, Double> deltas) {
-        final double countA = docCount - other.docCount;
-        double f, dR, newVal;
+    private void mergeCovariance(final RunningStats other, final double[] deltas) {
+        //final double countA = docCount - other.docCount;
+        double f = ((double)(docCount - other.docCount)) * other.docCount / this.docCount; //, dR, newVal;
         //for (Map.Entry<String, Double> fs : other.means.entrySet()) {
-        for (String fieldName : fieldNames) {
+        //for (String fieldName : fieldNames) {
+        for (int i = 0; i < fieldNames.length; i++) {
             //final String fieldName = fs.getKey();
             // merge covariances of two sets
-            f = countA * other.docCount / this.docCount;
-            dR = deltas.get(fieldName);
+            //f = countA * other.docCount / this.docCount;
+            //dR = deltas.get(fieldName);
+            //dR = deltas[i];
             // merge covariances
-            if (covariances.containsKey(fieldName)) {
-                HashMap<String, Double> cFieldVals = covariances.get(fieldName);
-                for (String cFieldName : cFieldVals.keySet()) {
-                    newVal = cFieldVals.get(cFieldName);
+            //if (covariances.containsKey(fieldName)) {
+                //HashMap<String, Double> cFieldVals = covariances.get(fieldName); // equivalent to slice covariances[i]
+                //for (String cFieldName : cFieldVals.keySet()) {
+                for (int j = i+1; j < fieldNames.length; j++) {
+                    /*newVal = cFieldVals.get(cFieldName); // covariances[i][j]
+                    // TODO: Should be no need for this 2-case setup as the order should be consistent across RunningStats for the same agg
                     if (other.covariances.containsKey(fieldName) && other.covariances.get(fieldName).containsKey(cFieldName)) {
                         newVal += other.covariances.get(fieldName).get(cFieldName) + f * dR * deltas.get(cFieldName);
                     } else {
                         newVal += other.covariances.get(cFieldName).get(fieldName) + f * dR * deltas.get(cFieldName);
                     }
-                    cFieldVals.put(cFieldName, newVal);
+                    cFieldVals.put(cFieldName, newVal);*/
+                    covariances[i][j] += other.covariances[i][j] + f * deltas[i] * deltas[j];
                 }
-                covariances.put(fieldName, cFieldVals);
+                // covariances.put(fieldName, cFieldVals);
             }
         }
-    }
 
     @Override
     public RunningStats clone() {
