@@ -40,8 +40,10 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * Descriptive stats gathered per shard. Coordinating node computes final correlation and covariance stats
@@ -53,25 +55,34 @@ public class RunningStats implements Writeable, Cloneable {
     /** count of observations (same number of observations per field) */
     protected long docCount = 0;
     /** per field sum of observations */
-    protected HashMap<String, Double> fieldSum;
+    //protected HashMap<String, Double> fieldSum;
+    protected double[] fieldSum;
     /** counts */
-    protected HashMap<String, Long> counts;
+    //protected HashMap<String, Long> counts;
+    protected long[] counts;
     /** mean values (first moment) */
-    protected HashMap<String, Double> means;
+    //protected HashMap<String, Double> means;
+    protected double[] means;
     /** variance values (second moment) */
-    protected HashMap<String, Double> variances;
+    //protected HashMap<String, Double> variances;
+    protected double[] variances;
     /** skewness values (third moment) */
-    protected HashMap<String, Double> skewness;
+    //protected HashMap<String, Double> skewness;
+    protected double[] skewness;
     /** kurtosis values (fourth moment) */
-    protected HashMap<String, Double> kurtosis;
+    //protected HashMap<String, Double> kurtosis;
+    protected double[] kurtosis;
     /** covariance values */
-    protected HashMap<String, HashMap<String, Double>> covariances;
+    protected HashMap<String, HashMap<String, Double>> covariances; // TODO: This can maybe be double[][] but do the others first
+    final String[] fieldNames;
 
-    RunningStats() {
+    RunningStats(final String[] fieldNames) {
+        this.fieldNames = fieldNames;
         init();
     }
 
     RunningStats(final String[] fieldNames, final double[] fieldVals) {
+        this.fieldNames = fieldNames;
         if (fieldVals != null && fieldVals.length > 0) {
             init();
             this.add(fieldNames, fieldVals);
@@ -79,21 +90,36 @@ public class RunningStats implements Writeable, Cloneable {
     }
 
     private void init() {
-        counts = new HashMap<>();
-        fieldSum = new HashMap<>();
-        means = new HashMap<>();
-        skewness = new HashMap<>();
-        kurtosis = new HashMap<>();
-        covariances = new HashMap<>();
-        variances = new HashMap<>();
+        assert fieldNames != null;
+        counts = new long[fieldNames.length];
+        fieldSum = new double[fieldNames.length];
+        means = new double[fieldNames.length];
+        skewness = new double[fieldNames.length];
+        kurtosis = new double[fieldNames.length];
+        variances = new double[fieldNames.length];
+        covariances = new HashMap<>(); // TODO
     }
 
     /** Ctor to create an instance of running statistics */
     @SuppressWarnings("unchecked")
     public RunningStats(StreamInput in) throws IOException {
-        this();
-        // read doc count
+        // TODO: Ensure we sort any field names we read from wire
+
+        // TODO: What if we get a StreamInput from an older version which doesn't publish fieldNames?
+        //  we could maybe just take the union of all the keysets of the maps, but that technically might be insufficient
+        //  (if we plan on adding more docs at least)
+        //this();
+        fieldNames = in.readStringArray();
         docCount = (Long) in.readGenericValue();
+        fieldSum = convertFieldDoubleMap((Map<String, Double>) in.readGenericValue()); // TODO: Getting weird cast errors
+        counts = convertFieldLongMap((Map<String, Long>) in.readGenericValue());
+        means = convertFieldDoubleMap((Map<String, Double>) in.readGenericValue());
+        variances = convertFieldDoubleMap((Map<String, Double>) in.readGenericValue());
+        skewness = convertFieldDoubleMap((Map<String, Double>) in.readGenericValue());
+        kurtosis = convertFieldDoubleMap((Map<String, Double>) in.readGenericValue());
+        covariances = convertIfNeeded((Map<String, HashMap<String, Double>>) in.readGenericValue()); // TODO
+        // read doc count
+        /*docCount = (Long) in.readGenericValue();
         // read fieldSum
         fieldSum = convertIfNeeded((Map<String, Double>) in.readGenericValue());
         // counts
@@ -107,7 +133,7 @@ public class RunningStats implements Writeable, Cloneable {
         // kurtosis
         kurtosis = convertIfNeeded((Map<String, Double>) in.readGenericValue());
         // read covariances
-        covariances = convertIfNeeded((Map<String, HashMap<String, Double>>) in.readGenericValue());
+        covariances = convertIfNeeded((Map<String, HashMap<String, Double>>) in.readGenericValue());*/
     }
 
     // Convert Map to HashMap if it isn't
@@ -119,8 +145,45 @@ public class RunningStats implements Writeable, Cloneable {
         }
     }
 
+    double[] convertFieldDoubleMap(Map<String, Double> serializedMap) {
+        assert serializedMap.keySet().equals(new HashSet<>(Arrays.asList(fieldNames)));
+        double[] result = new double[fieldNames.length];
+        for (int i = 0; i < fieldNames.length; i++) {
+            result[i] = serializedMap.get(fieldNames[i]);
+        }
+        return result;
+    }
+
+    // TODO: Any good way to combine these?
+    long[] convertFieldLongMap(Map<String, Long> serializedMap) {
+        assert serializedMap.keySet().equals(new HashSet<>(Arrays.asList(fieldNames)));
+        long[] result = new long[fieldNames.length];
+        for (int i = 0; i < fieldNames.length; i++) {
+            result[i] = serializedMap.get(fieldNames[i]);
+        }
+        return result;
+    }
+
+    // TODO: These are probably just for PoC and can be removed once MatrixStatsResults/InternalMatrixStats are fixed
+    Map<String, Double> convertDoubleArrayToMap(double[] stats) {
+        Map<String, Double> result = new HashMap<>();
+        for (int i = 0; i < fieldNames.length; i++) {
+            result.put(fieldNames[i], stats[i]);
+        }
+        return result;
+    }
+
+    Map<String, Long> convertLongArrayToMap(long[] stats) {
+        Map<String, Long> result = new HashMap<>();
+        for (int i = 0; i < fieldNames.length; i++) {
+            result.put(fieldNames[i], stats[i]);
+        }
+        return result;
+    }
+
     @Override
     public void writeTo(StreamOutput out) throws IOException {
+        out.writeStringArray(fieldNames);
         // marshall doc count
         out.writeGenericValue(docCount);
         // marshall fieldSum
@@ -140,7 +203,7 @@ public class RunningStats implements Writeable, Cloneable {
     }
 
     /** updates running statistics with a documents field values **/
-    public void add(final String[] fieldNames, final double[] fieldVals) {
+    public void add(final String[] fn, final double[] fieldVals) { // TODO: For now dont remove argument, but use only this.fieldNames
         if (fieldNames == null) {
             throw new IllegalArgumentException("Cannot add statistics without field names.");
         } else if (fieldVals == null) {
@@ -151,24 +214,47 @@ public class RunningStats implements Writeable, Cloneable {
 
         // update total, mean, and variance
         ++docCount;
-        String fieldName;
+        //String fieldName;
         double fieldValue;
-        double m1, m2, m3, m4;  // moments
+        double m2, m3; // moments
+        //double m1, m2, m3, m4;  // moments
         double d, dn, dn2, t1;
-        final HashMap<String, Double> deltas = new HashMap<>();
+        final HashMap<String, Double> deltas = new HashMap<>(); // TODO: Can maybe also be array-ed
         for (int i = 0; i < fieldNames.length; ++i) {
-            fieldName = fieldNames[i];
+            //fieldName = fieldNames[i];
             fieldValue = fieldVals[i];
 
             // update counts
-            counts.put(fieldName, 1 + (counts.containsKey(fieldName) ? counts.get(fieldName) : 0));
+            //counts.put(fieldName, 1 + (counts.containsKey(fieldName) ? counts.get(fieldName) : 0));
+            counts[i]++;
             // update running sum
-            fieldSum.put(fieldName, fieldValue + (fieldSum.containsKey(fieldName) ? fieldSum.get(fieldName) : 0));
+            //fieldSum.put(fieldName, fieldValue + (fieldSum.containsKey(fieldName) ? fieldSum.get(fieldName) : 0));
+            fieldSum[i] += fieldValue;
             // update running deltas
-            deltas.put(fieldName, fieldValue * docCount - fieldSum.get(fieldName));
+            //deltas.put(fieldName, fieldValue * docCount - fieldSum.get(fieldName));
+            deltas.put(fieldNames[i], fieldValue * docCount - fieldSum[i]);
 
             // update running mean, variance, skewness, kurtosis
-            if (means.containsKey(fieldName)) {
+            if (docCount == 1) {
+                means[i] = fieldValue;
+                // TODO: variances, skewness, kurtosis already init-ed to 0
+            } else {
+                // update running means
+                d = fieldValue - means[i];
+                dn = d / docCount;
+                means[i] += dn;
+                // update running variances
+                m2 = variances[i]; // TODO: I assume this is by value, not reference...?
+                t1 = d * dn * (docCount - 1);
+                variances[i] += t1;
+                // update running skewnesses
+                m3 = skewness[i];
+                skewness[i] += (t1 * dn * (docCount - 2D) - 3D * dn * m2);
+                dn2 = dn * dn;
+                kurtosis[i] += t1 * dn2 * (docCount * docCount - 3D * docCount + 3D) + 6D * dn2 * m2 - 4D * dn * m3;
+            }
+
+            /*if (means.containsKey(fieldName)) {
                 // update running means
                 m1 = means.get(fieldName);
                 d = fieldValue - m1;
@@ -188,7 +274,7 @@ public class RunningStats implements Writeable, Cloneable {
                 variances.put(fieldName, 0.0);
                 skewness.put(fieldName, 0.0);
                 kurtosis.put(fieldName, 0.0);
-            }
+            }*/
         }
 
         this.updateCovariance(fieldNames, deltas);
@@ -225,11 +311,24 @@ public class RunningStats implements Writeable, Cloneable {
      * <p>
      * running computations taken from: http://prod.sandia.gov/techlib/access-control.cgi/2008/086212.pdf
      **/
+    // TODO: Ahh ... technically, different shards may have different field names (imagine 1 doc per shard where 1 doc is missing a field)
+    //    (or else in different orders), making merging tricky.
+    //    Need to confirm that in practice, this is hardcoded from the `fields` argument fed to the agg - otherwise this doesn't work
     public void merge(final RunningStats other) {
         if (other == null) {
             return;
+        } else if (!Arrays.equals(other.fieldNames, fieldNames)) {
+            throw new IllegalArgumentException("Cannot merge RunningStats with different fieldNames");
         } else if (this.docCount == 0) {
-            for (Map.Entry<String, Double> fs : other.means.entrySet()) {
+            this.means = other.means;
+            this.counts = other.counts;
+            this.fieldSum = other.fieldSum;
+            this.variances = other.variances;
+            this.skewness = other.skewness;
+            this.kurtosis = other.kurtosis;
+            this.covariances = other.covariances;
+            this.docCount = other.docCount;
+            /*for (Map.Entry<String, Double> fs : other.means.entrySet()) {
                 final String fieldName = fs.getKey();
                 this.means.put(fieldName, fs.getValue().doubleValue());
                 this.counts.put(fieldName, other.counts.get(fieldName).longValue());
@@ -241,7 +340,7 @@ public class RunningStats implements Writeable, Cloneable {
                     this.covariances.put(fieldName, other.covariances.get(fieldName));
                 }
                 this.docCount = other.docCount;
-            }
+            }*/
             return;
         }
         final double nA = docCount;
@@ -254,28 +353,42 @@ public class RunningStats implements Writeable, Cloneable {
         double d, d2, d3, d4, n2, nA2, nB2;
         double newSkew, nk;
         // across fields
-        for (Map.Entry<String, Double> fs : other.means.entrySet()) {
-            final String fieldName = fs.getKey();
-            meanA = means.get(fieldName);
+        //for (Map.Entry<String, Double> fs : other.means.entrySet()) {
+        for (int i = 0; i < fieldNames.length; i++) {
+            //final String fieldName = fs.getKey();
+            final String fieldName = fieldNames[i];
+            /*meanA = means.get(fieldName);
             varA = variances.get(fieldName);
             skewA = skewness.get(fieldName);
             kurtA = kurtosis.get(fieldName);
             meanB = other.means.get(fieldName);
             varB = other.variances.get(fieldName);
             skewB = other.skewness.get(fieldName);
-            kurtB = other.kurtosis.get(fieldName);
+            kurtB = other.kurtosis.get(fieldName);*/
+            meanA = means[i];
+            varA = variances[i];
+            skewA = skewness[i];
+            kurtA = kurtosis[i];
+            meanB = other.means[i];
+            varB = other.variances[i];
+            skewB = other.skewness[i];
+            kurtB = other.kurtosis[i];
 
             // merge counts of two sets
-            counts.put(fieldName, counts.get(fieldName) + other.counts.get(fieldName));
+            //counts.put(fieldName, counts.get(fieldName) + other.counts.get(fieldName));
+            counts[i] += other.counts[i];
 
             // merge means of two sets
-            means.put(fieldName, (nA * means.get(fieldName) + nB * other.means.get(fieldName)) / (nA + nB));
+            //means.put(fieldName, (nA * means.get(fieldName) + nB * other.means.get(fieldName)) / (nA + nB));
+            means[i] = (nA * means[i] + nB * other.means[i]) / (nA + nB);
 
             // merge deltas
-            deltas.put(fieldName, other.fieldSum.get(fieldName) / nB - fieldSum.get(fieldName) / nA);
+            //deltas.put(fieldName, other.fieldSum.get(fieldName) / nB - fieldSum.get(fieldName) / nA);
+            deltas.put(fieldName, other.fieldSum[i] / nB - fieldSum[i] / nA); // TODO: Make deltas not a map?
 
             // merge totals
-            fieldSum.put(fieldName, fieldSum.get(fieldName) + other.fieldSum.get(fieldName));
+            //fieldSum.put(fieldName, fieldSum.get(fieldName) + other.fieldSum.get(fieldName));
+            fieldSum[i] += other.fieldSum[i];
 
             // merge variances, skewness, and kurtosis of two sets
             d = meanB - meanA;          // delta mean
@@ -286,13 +399,16 @@ public class RunningStats implements Writeable, Cloneable {
             nA2 = nA * nA;              // doc A num samples squared
             nB2 = nB * nB;              // doc B num samples squared
             // variance
-            variances.put(fieldName, varA + varB + d2 * nA * other.docCount / docCount);
+            //variances.put(fieldName, varA + varB + d2 * nA * other.docCount / docCount);
+            variances[i] = varA + varB + d2 * nA * other.docCount / docCount;
             // skeewness
             newSkew = skewA + skewB + d3 * nA * nB * (nA - nB) / n2;
-            skewness.put(fieldName, newSkew + 3D * d * (nA * varB - nB * varA) / docCount);
+            //skewness.put(fieldName, newSkew + 3D * d * (nA * varB - nB * varA) / docCount);
+            skewness[i] = newSkew + 3D * d * (nA * varB - nB * varA) / docCount;
             // kurtosis
             nk = kurtA + kurtB + d4 * nA * nB * (nA2 - nA * nB + nB2) / (n2 * docCount);
-            kurtosis.put(fieldName, nk + 6D * d2 * (nA2 * varB + nB2 * varA) / n2 + 4D * d * (nA * skewB - nB * skewA) / docCount);
+            //kurtosis.put(fieldName, nk + 6D * d2 * (nA2 * varB + nB2 * varA) / n2 + 4D * d * (nA * skewB - nB * skewA) / docCount);
+            kurtosis[i] = nk + 6D * d2 * (nA2 * varB + nB2 * varA) / n2 + 4D * d * (nA * skewB - nB * skewA) / docCount;
         }
 
         this.mergeCovariance(other, deltas);
@@ -302,8 +418,9 @@ public class RunningStats implements Writeable, Cloneable {
     private void mergeCovariance(final RunningStats other, final Map<String, Double> deltas) {
         final double countA = docCount - other.docCount;
         double f, dR, newVal;
-        for (Map.Entry<String, Double> fs : other.means.entrySet()) {
-            final String fieldName = fs.getKey();
+        //for (Map.Entry<String, Double> fs : other.means.entrySet()) {
+        for (String fieldName : fieldNames) {
+            //final String fieldName = fs.getKey();
             // merge covariances of two sets
             f = countA * other.docCount / this.docCount;
             dR = deltas.get(fieldName);
