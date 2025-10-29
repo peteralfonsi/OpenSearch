@@ -211,6 +211,19 @@ public abstract class Rounding implements Writeable {
          */
         public abstract long roundFloor(long utcMillis);
 
+        // TODO: Try replacing this with a static method taking in the unit and using a switch statement
+
+        public static long roundFloor(DateTimeUnit unit, long utcMillis) {
+            return switch (unit) {
+                case SECOND_OF_MINUTE, MINUTES_OF_HOUR, HOUR_OF_DAY, DAY_OF_MONTH
+                    -> DateUtils.roundFloor(utcMillis, unit.ratio);
+                case WEEK_OF_WEEKYEAR -> DateUtils.roundWeekOfWeekYear(utcMillis);
+                case MONTH_OF_YEAR    -> DateUtils.roundMonthOfYear(utcMillis);
+                case QUARTER_OF_YEAR  -> DateUtils.roundQuarterOfYear(utcMillis);
+                case YEAR_OF_CENTURY  -> DateUtils.roundYear(utcMillis);
+            };
+        }
+
         /**
          * When looking up {@link LocalTimeOffset} go this many milliseconds
          * in the past from the minimum millis since epoch that we plan to
@@ -668,7 +681,8 @@ public abstract class Rounding implements Writeable {
 
             @Override
             public long round(long utcMillis) {
-                return offset.localToUtcInThisOffset(unit.roundFloor(offset.utcToLocalTime(utcMillis)));
+                return offset.localToUtcInThisOffset(DateTimeUnit.roundFloor(unit, utcMillis));
+                //return offset.localToUtcInThisOffset(unit.roundFloor(offset.utcToLocalTime(utcMillis)));
             }
 
             @Override
@@ -688,7 +702,8 @@ public abstract class Rounding implements Writeable {
 
             @Override
             public long round(long utcMillis) {
-                return offset.localToUtcInThisOffset(unit.roundFloor(offset.utcToLocalTime(utcMillis)));
+                return offset.localToUtcInThisOffset(DateTimeUnit.roundFloor(unit, offset.utcToLocalTime(utcMillis)));
+                //return offset.localToUtcInThisOffset(unit.roundFloor(offset.utcToLocalTime(utcMillis)));
             }
 
             @Override
@@ -709,7 +724,8 @@ public abstract class Rounding implements Writeable {
             @Override
             public long round(long utcMillis) {
                 LocalTimeOffset offset = lookup.lookup(utcMillis);
-                return offset.localToUtc(unit.roundFloor(offset.utcToLocalTime(utcMillis)), this);
+                return offset.localToUtc(DateTimeUnit.roundFloor(unit, offset.utcToLocalTime(utcMillis)), this);
+                //return offset.localToUtc(unit.roundFloor(offset.utcToLocalTime(utcMillis)), this);
             }
 
             @Override
@@ -757,14 +773,16 @@ public abstract class Rounding implements Writeable {
             @Override
             public long round(long utcMillis) {
                 LocalTimeOffset offset = lookup.lookup(utcMillis);
-                long roundedLocalMillis = unit.roundFloor(offset.utcToLocalTime(utcMillis));
+                long roundedLocalMillis = DateTimeUnit.roundFloor(unit, offset.utcToLocalTime(utcMillis));
+                //long roundedLocalMillis = unit.roundFloor(offset.utcToLocalTime(utcMillis));
                 return offset.localToUtc(roundedLocalMillis, this);
             }
 
             @Override
             public long inGap(long localMillis, Gap gap) {
                 // Round from just before the start of the gap
-                return gap.previous().localToUtc(unit.roundFloor(gap.firstMissingLocalTime() - 1), this);
+                return gap.previous().localToUtc(DateTimeUnit.roundFloor(unit, gap.firstMissingLocalTime() - 1), this);
+                //return gap.previous().localToUtc(unit.roundFloor(gap.firstMissingLocalTime() - 1), this);
             }
 
             @Override

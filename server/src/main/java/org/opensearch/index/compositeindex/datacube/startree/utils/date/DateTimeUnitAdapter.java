@@ -31,7 +31,8 @@ public class DateTimeUnitAdapter implements DateTimeUnitRounding {
 
     @Override
     public long roundFloor(long utcMillis) {
-        return dateTimeUnit.roundFloor(utcMillis);
+        return Rounding.DateTimeUnit.roundFloor(dateTimeUnit, utcMillis);
+        //return dateTimeUnit.roundFloor(utcMillis);
     }
 
     /**
