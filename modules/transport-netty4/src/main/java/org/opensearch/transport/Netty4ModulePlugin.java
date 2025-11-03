@@ -33,6 +33,8 @@
 package org.opensearch.transport;
 
 import org.opensearch.Version;
+import org.opensearch.cluster.metadata.IndexNameExpressionResolver;
+import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.SetOnce;
 import org.opensearch.common.network.NetworkModule;
 import org.opensearch.common.network.NetworkService;
@@ -44,6 +46,8 @@ import org.opensearch.common.util.PageCacheRecycler;
 import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
 import org.opensearch.core.indices.breaker.CircuitBreakerService;
 import org.opensearch.core.xcontent.NamedXContentRegistry;
+import org.opensearch.env.Environment;
+import org.opensearch.env.NodeEnvironment;
 import org.opensearch.http.HttpServerTransport;
 import org.opensearch.http.netty4.Netty4HttpServerTransport;
 import org.opensearch.http.netty4.ssl.SecureNetty4HttpServerTransport;
@@ -51,16 +55,24 @@ import org.opensearch.plugins.NetworkPlugin;
 import org.opensearch.plugins.Plugin;
 import org.opensearch.plugins.SecureHttpTransportSettingsProvider;
 import org.opensearch.plugins.SecureTransportSettingsProvider;
+import org.opensearch.repositories.RepositoriesService;
+import org.opensearch.script.ScriptService;
 import org.opensearch.telemetry.tracing.Tracer;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.transport.client.Client;
 import org.opensearch.transport.netty4.Netty4Transport;
 import org.opensearch.transport.netty4.ssl.SecureNetty4Transport;
+import org.opensearch.watcher.ResourceWatcherService;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Supplier;
+
+import static org.opensearch.http.netty4.Netty4HttpServerTransport.NettyInboundLatencyHandler.NETTY_INBOUND_TOOKTIME_LOG_THRESHOLD_SETTING;
+import static org.opensearch.http.netty4.Netty4HttpServerTransport.NettyOutboundLatencyHandler.NETTY_OUTBOUND_TOOKTIME_LOG_THRESHOLD_SETTING;
 
 public class Netty4ModulePlugin extends Plugin implements NetworkPlugin {
 
@@ -81,7 +93,9 @@ public class Netty4ModulePlugin extends Plugin implements NetworkPlugin {
             Netty4Transport.NETTY_RECEIVE_PREDICTOR_SIZE,
             Netty4Transport.NETTY_RECEIVE_PREDICTOR_MIN,
             Netty4Transport.NETTY_RECEIVE_PREDICTOR_MAX,
-            Netty4Transport.NETTY_BOSS_COUNT
+            Netty4Transport.NETTY_BOSS_COUNT,
+            NETTY_INBOUND_TOOKTIME_LOG_THRESHOLD_SETTING,
+            NETTY_OUTBOUND_TOOKTIME_LOG_THRESHOLD_SETTING
         );
     }
 
@@ -218,5 +232,36 @@ public class Netty4ModulePlugin extends Plugin implements NetworkPlugin {
             this.groupFactory.set(new SharedGroupFactory(settings));
             return this.groupFactory.get();
         }
+    }
+
+    @Override
+    public Collection<Object> createComponents(
+        Client client,
+        ClusterService clusterService,
+        ThreadPool threadPool,
+        ResourceWatcherService resourceWatcherService,
+        ScriptService scriptService,
+        NamedXContentRegistry xContentRegistry,
+        Environment environment,
+        NodeEnvironment nodeEnvironment,
+        NamedWriteableRegistry namedWriteableRegistry,
+        IndexNameExpressionResolver indexNameExpressionResolver,
+        Supplier<RepositoriesService> repositoriesServiceSupplier
+    ) {
+        // HttpCompressionState.state().initialize(clusterService, environment.settings());
+        Netty4HttpServerTransport.setupDynamicSettings(clusterService, environment.settings());
+        return super.createComponents(
+            client,
+            clusterService,
+            threadPool,
+            resourceWatcherService,
+            scriptService,
+            xContentRegistry,
+            environment,
+            nodeEnvironment,
+            namedWriteableRegistry,
+            indexNameExpressionResolver,
+            repositoriesServiceSupplier
+        );
     }
 }

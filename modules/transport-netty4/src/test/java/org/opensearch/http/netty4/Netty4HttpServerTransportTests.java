@@ -115,8 +115,8 @@ import static org.opensearch.core.rest.RestStatus.OK;
 import static org.opensearch.http.HttpTransportSettings.SETTING_CORS_ALLOW_ORIGIN;
 import static org.opensearch.http.HttpTransportSettings.SETTING_CORS_ENABLED;
 import static org.opensearch.http.HttpTransportSettings.SETTING_HTTP_MAX_CHUNK_SIZE;
-import static org.opensearch.http.netty4.Netty4HttpServerTransport.E2ELatencyHttp1LoggerHandler.getInboundLogMessage;
-import static org.opensearch.http.netty4.Netty4HttpServerTransport.E2ELatencyHttp1LoggerHandler.getOutboundLogMessage;
+import static org.opensearch.http.netty4.Netty4HttpServerTransport.NettyInboundLatencyHandler.getInboundLogMessage;
+import static org.opensearch.http.netty4.Netty4HttpServerTransport.NettyOutboundLatencyHandler.getOutboundLogMessage;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.instanceOf;
@@ -611,27 +611,101 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
     public static void runE2ETraceparentTest(TransportAddress remoteAddress, int chunkSize, Netty4HttpClient client, boolean useHttp2)
         throws Exception {
         // Cast to concrete class rather than interface to allow adding appender
-        Logger e2eLogger = (Logger) LogManager.getLogger(Netty4HttpServerTransport.E2ELatencyHttp1LoggerHandler.class);
+        Logger e2eLoggerInbound = (Logger) LogManager.getLogger(Netty4HttpServerTransport.NettyInboundLatencyHandler.class);
+        Logger e2eLoggerOutbound = (Logger) LogManager.getLogger(Netty4HttpServerTransport.NettyOutboundLatencyHandler.class);
         // Setup code so we can inspect log output - see https://www.dontpanicblog.co.uk/2018/04/29/test-log4j2-with-junit/
-        final CharArrayWriter loggerOutput = new CharArrayWriter();
+        final CharArrayWriter loggerOutputInbound = new CharArrayWriter();
+        final CharArrayWriter loggerOutputOutbound = new CharArrayWriter();
         StringLayout layout = PatternLayout.newBuilder().withPattern("%-5level %msg").build();
-        Appender loggerAppender = WriterAppender.newBuilder().setTarget(loggerOutput).setLayout(layout).setName("appender").build();
-        loggerAppender.start();
-        e2eLogger.addAppender(loggerAppender);
+        Appender loggerAppenderInbound = WriterAppender.newBuilder()
+            .setTarget(loggerOutputInbound)
+            .setLayout(layout)
+            .setName("appenderInbound")
+            .build();
+        Appender loggerAppenderOutbound = WriterAppender.newBuilder()
+            .setTarget(loggerOutputOutbound)
+            .setLayout(layout)
+            .setName("appenderOutbound")
+            .build();
+        loggerAppenderInbound.start();
+        loggerAppenderOutbound.start();
+        e2eLoggerInbound.addAppender(loggerAppenderInbound);
+        e2eLoggerOutbound.addAppender(loggerAppenderOutbound);
+
+        // Test first with a threshold of zero so we always see the logs
+        Netty4HttpServerTransport.NettyInboundLatencyHandler.setInboundLogThreshold(TimeValue.ZERO);
+        Netty4HttpServerTransport.NettyOutboundLatencyHandler.setOutboundLogThreshold(TimeValue.ZERO);
 
         for (String traceparentValue : new String[] { null, "", "test_traceparent_value" }) {
             sendRequestWithTraceparent(traceparentValue, client, remoteAddress, 0, useHttp2);
-            String expectedLog = getExpectedE2ELogMessage(getInboundLogMessage(traceparentValue), getOutboundLogMessage(traceparentValue));
-            assertEquals(expectedLog, loggerOutput.toString());
-            loggerOutput.reset();
+            // Can't check exact equality since we don't know how long it took, check for the correct starting string + traceparent header
+            long dummyTookTime = 1000;
+            boolean containsInboundMessage = loggerOutputInbound.toString()
+                .contains("Netty processed inbound HTTP request with traceparent header = " + traceparentValue);
+            boolean containsOutboundMessage = loggerOutputOutbound.toString()
+                .contains("Netty processed outbound HTTP request with traceparent header = " + traceparentValue);
+
+            if (getInboundLogMessage(traceparentValue, dummyTookTime) == null) {
+                assertFalse(containsInboundMessage);
+            } else {
+                assertTrue(containsInboundMessage);
+            }
+            if (getOutboundLogMessage(traceparentValue, dummyTookTime) == null) {
+                assertFalse(containsOutboundMessage);
+            } else {
+                assertTrue(containsOutboundMessage);
+            }
+            loggerOutputInbound.reset();
+            loggerOutputOutbound.reset();
         }
         // Test one where there are >1 chunks in the request, we still expect only 1 log statement for inbound and outbound
         String traceparentValue = "11";
         sendRequestWithTraceparent(traceparentValue, client, remoteAddress, chunkSize * 2, useHttp2);
-        String expectedLog = getExpectedE2ELogMessage(getInboundLogMessage(traceparentValue), getOutboundLogMessage(traceparentValue));
-        assertEquals(expectedLog, loggerOutput.toString());
-        loggerOutput.reset();
-        e2eLogger.removeAppender(loggerAppender);
+        // Get count of the expected log fragment and check it's 1
+        assertEquals(
+            1,
+            countOfSubstring(
+                loggerOutputInbound.toString(),
+                "Netty processed inbound HTTP request with traceparent header = " + traceparentValue
+            )
+        );
+        assertEquals(
+            1,
+            countOfSubstring(
+                loggerOutputOutbound.toString(),
+                "Netty processed outbound HTTP request with traceparent header = " + traceparentValue
+            )
+        );
+
+        loggerOutputInbound.reset();
+        loggerOutputOutbound.reset();
+
+        // Now with a threshold of some very long value we shouldn't see any logs
+        TimeValue longTimeValue = new TimeValue(1, TimeUnit.DAYS);
+        Netty4HttpServerTransport.NettyInboundLatencyHandler.setInboundLogThreshold(longTimeValue);
+        Netty4HttpServerTransport.NettyOutboundLatencyHandler.setOutboundLogThreshold(longTimeValue);
+        sendRequestWithTraceparent(traceparentValue, client, remoteAddress, 0, useHttp2);
+        boolean containsInboundMessage = loggerOutputInbound.toString()
+            .contains("Netty processed inbound HTTP request with traceparent header = " + traceparentValue);
+        boolean containsOutboundMessage = loggerOutputOutbound.toString()
+            .contains("Netty processed outbound HTTP request with traceparent header = " + traceparentValue);
+        assertFalse(containsInboundMessage);
+        assertFalse(containsOutboundMessage);
+
+        loggerOutputInbound.reset();
+        loggerOutputOutbound.reset();
+        e2eLoggerInbound.removeAppender(loggerAppenderInbound);
+        e2eLoggerOutbound.removeAppender(loggerAppenderOutbound);
+    }
+
+    private static int countOfSubstring(String output, String substring) {
+        int count = 0;
+        int pos = output.indexOf(substring);
+        while (pos >= 0) {
+            count++;
+            pos = output.indexOf(substring, pos + 1);
+        }
+        return count;
     }
 
     public static void sendRequestWithTraceparent(

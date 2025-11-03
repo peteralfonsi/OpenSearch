@@ -35,11 +35,13 @@ package org.opensearch.http.netty4;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.opensearch.ExceptionsHelper;
+import org.opensearch.cluster.service.ClusterService;
 import org.opensearch.common.network.NetworkService;
 import org.opensearch.common.settings.ClusterSettings;
 import org.opensearch.common.settings.Setting;
 import org.opensearch.common.settings.Setting.Property;
 import org.opensearch.common.settings.Settings;
+import org.opensearch.common.unit.TimeValue;
 import org.opensearch.common.util.BigArrays;
 import org.opensearch.common.util.concurrent.OpenSearchExecutors;
 import org.opensearch.common.util.io.IOUtils;
@@ -50,7 +52,9 @@ import org.opensearch.core.xcontent.NamedXContentRegistry;
 import org.opensearch.http.AbstractHttpServerTransport;
 import org.opensearch.http.HttpChannel;
 import org.opensearch.http.HttpHandlingSettings;
+import org.opensearch.http.HttpPipelinedResponse;
 import org.opensearch.http.HttpReadTimeoutException;
+import org.opensearch.http.HttpResponse;
 import org.opensearch.http.HttpServerChannel;
 import org.opensearch.rest.RestController;
 import org.opensearch.telemetry.tracing.Tracer;
@@ -68,13 +72,13 @@ import java.util.concurrent.TimeUnit;
 
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
-import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelFuture;
 import io.netty.channel.ChannelHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelOption;
+import io.netty.channel.ChannelOutboundHandlerAdapter;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.ChannelPromise;
 import io.netty.channel.FixedRecvByteBufAllocator;
@@ -89,7 +93,6 @@ import io.netty.handler.codec.compression.GzipOptions;
 import io.netty.handler.codec.compression.StandardCompressionOptions;
 import io.netty.handler.codec.compression.ZstdEncoder;
 import io.netty.handler.codec.http.DefaultHttpRequest;
-import io.netty.handler.codec.http.DefaultHttpResponse;
 import io.netty.handler.codec.http.HttpContentCompressor;
 import io.netty.handler.codec.http.HttpContentDecompressor;
 import io.netty.handler.codec.http.HttpMessage;
@@ -129,6 +132,10 @@ import static org.opensearch.http.HttpTransportSettings.SETTING_HTTP_TCP_RECEIVE
 import static org.opensearch.http.HttpTransportSettings.SETTING_HTTP_TCP_REUSE_ADDRESS;
 import static org.opensearch.http.HttpTransportSettings.SETTING_HTTP_TCP_SEND_BUFFER_SIZE;
 import static org.opensearch.http.HttpTransportSettings.SETTING_PIPELINING_MAX_EVENTS;
+import static org.opensearch.http.netty4.Netty4HttpServerTransport.NettyInboundLatencyHandler.NETTY_INBOUND_TOOKTIME_LOG_THRESHOLD_SETTING;
+import static org.opensearch.http.netty4.Netty4HttpServerTransport.NettyInboundLatencyHandler.setInboundLogThreshold;
+import static org.opensearch.http.netty4.Netty4HttpServerTransport.NettyOutboundLatencyHandler.NETTY_OUTBOUND_TOOKTIME_LOG_THRESHOLD_SETTING;
+import static org.opensearch.http.netty4.Netty4HttpServerTransport.NettyOutboundLatencyHandler.setOutboundLogThreshold;
 
 /**
  * The HTTP transport implementations based on Netty 4.
@@ -448,8 +455,8 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                     final ChannelPipeline pipeline = ctx.pipeline();
                     pipeline.addAfter(ctx.name(), "handler", getRequestHandler());
                     pipeline.replace(this, "header_verifier", transport.createHeaderVerifier());
-                    pipeline.addAfter("header_verifier", "e2e_latency_logger", new E2ELatencyHttp1LoggerHandler());
-                    pipeline.addAfter("e2e_latency_logger", "decoder_compress", transport.createDecompressor());
+                    pipeline.addAfter("header_verifier", "e2e_latency_logger_inbound", new NettyInboundLatencyHandler());
+                    pipeline.addAfter("e2e_latency_logger_inbound", "decoder_compress", transport.createDecompressor());
                     pipeline.addAfter("decoder_compress", "aggregator", aggregator);
                     if (handlingSettings.isCompression()) {
                         pipeline.addAfter(
@@ -461,6 +468,7 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                     pipeline.addBefore("handler", "request_creator", requestCreator);
                     pipeline.addBefore("handler", "response_creator", responseCreator);
                     pipeline.addBefore("handler", "pipelining", new Netty4HttpPipeliningHandler(logger, transport.pipeliningMaxEvents));
+                    pipeline.addBefore("handler", "e2e_latency_logger_outbound", new NettyOutboundLatencyHandler());
 
                     ctx.fireChannelRead(ReferenceCountUtil.retain(msg));
                 }
@@ -478,7 +486,7 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
             pipeline.addLast("decoder", decoder);
             pipeline.addLast("encoder", new HttpResponseEncoder());
             pipeline.addLast("header_verifier", transport.createHeaderVerifier());
-            pipeline.addLast("e2e_latency_logger", new E2ELatencyHttp1LoggerHandler());
+            pipeline.addLast("e2e_latency_logger_inbound", new NettyInboundLatencyHandler());
             pipeline.addLast("decoder_compress", transport.createDecompressor());
             final HttpObjectAggregator aggregator = new HttpObjectAggregator(handlingSettings.getMaxContentLength());
             aggregator.setMaxCumulationBufferComponents(transport.maxCompositeBufferComponents);
@@ -492,6 +500,7 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
             pipeline.addLast("request_creator", requestCreator);
             pipeline.addLast("response_creator", responseCreator);
             pipeline.addLast("pipelining", new Netty4HttpPipeliningHandler(logger, transport.pipeliningMaxEvents));
+            pipeline.addLast("e2e_latency_logger_outbound", new NettyOutboundLatencyHandler());
             pipeline.addLast("handler", requestHandler);
         }
 
@@ -528,7 +537,7 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                         .addLast("byte_buf_sizer", byteBufSizer)
                         .addLast("read_timeout", new ReadTimeoutHandler(transport.readTimeoutMillis, TimeUnit.MILLISECONDS))
                         .addLast("header_verifier", transport.createHeaderVerifier())
-                        .addLast("e2e_latency_logger", new E2ELatencyHttp1LoggerHandler())
+                        .addLast("e2e_latency_logger_inbound", new NettyInboundLatencyHandler())
                         .addLast("decoder_decompress", transport.createDecompressor());
 
                     if (handlingSettings.isCompression()) {
@@ -544,6 +553,7 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
                         .addLast("request_creator", requestCreator)
                         .addLast("response_creator", responseCreator)
                         .addLast("pipelining", new Netty4HttpPipeliningHandler(logger, transport.pipeliningMaxEvents))
+                        .addLast("e2e_latency_logger_outbound", new NettyOutboundLatencyHandler())
                         .addLast("handler", getRequestHandler());
                 }
             };
@@ -642,56 +652,134 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
         return options.toArray(new CompressionOptions[0]);
     }
 
+    public static void setupDynamicSettings(ClusterService clusterService, Settings settings) {
+        setInboundLogThreshold(NETTY_INBOUND_TOOKTIME_LOG_THRESHOLD_SETTING.get(settings));
+        setOutboundLogThreshold(NETTY_OUTBOUND_TOOKTIME_LOG_THRESHOLD_SETTING.get(settings));
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(NETTY_INBOUND_TOOKTIME_LOG_THRESHOLD_SETTING, NettyInboundLatencyHandler::setInboundLogThreshold);
+        clusterService.getClusterSettings()
+            .addSettingsUpdateConsumer(NETTY_OUTBOUND_TOOKTIME_LOG_THRESHOLD_SETTING, NettyOutboundLatencyHandler::setOutboundLogThreshold);
+    }
+
     /**
      * This class is intended to log traceparent-id and a timestamp, at the first moment when Netty has access to a single HTTP/1.1 request.
      * It does the same on the last chunk of the outbound response. This captures the amount of time all of Netty's per-request handlers take.
      * This class can also be used in the HTTP/2 pipeline as we set up child (per-stream) pipelines, and there is a Http2StreamFrameToHttpObjectCodec
      * converting to HTTP/1.1 objects before this handler is reached.
      */
-    public static class E2ELatencyHttp1LoggerHandler extends ChannelDuplexHandler {
-        private static final Logger logger = LogManager.getLogger(E2ELatencyHttp1LoggerHandler.class);
-        // Stash the last-seen traceparent header from a DefaultHttpResponse object.
-        // Then, when we see the next outbound LastHttpContent object, log the time for that header.
-        private String lastResponseTraceparentHeader;
+    public static class NettyInboundLatencyHandler extends ChannelInboundHandlerAdapter { // ChannelDuplexHandler {
+        /**
+         * TODO: Goals of this class:
+         * We want to count all time spent on various handlers in the Netty IO thread, but NOT:
+         * - time spent waiting for the next chunk of a message to arrive
+         * - time spent in the actual OS process (ie, any RestHandler which is run asynchronously on another thread)
+         */
 
-        E2ELatencyHttp1LoggerHandler() {
-            this.lastResponseTraceparentHeader = null;
+        private static TimeValue inboundLogThreshold = new TimeValue(1, TimeUnit.SECONDS);
+        public static final Setting<TimeValue> NETTY_INBOUND_TOOKTIME_LOG_THRESHOLD_SETTING = Setting.timeSetting(
+            "http.netty.log_threshold.inbound",
+            inboundLogThreshold,
+            Property.NodeScope,
+            Property.Dynamic
+        );
+        private static final Logger logger = LogManager.getLogger(NettyInboundLatencyHandler.class);
+
+        // Stash the last-seen traceparent header from a DefaultHttpRequest object.
+        // Then, when we see the next outbound LastHttpContent object, log the total elapsed time for that header.
+        private String lastInboundTraceparentHeader;
+        private long elapsedInbound; // A running total for elapsed time for the current inbound message, potentially chunked
+
+        NettyInboundLatencyHandler() {
+            this.lastInboundTraceparentHeader = null;
+            this.elapsedInbound = 0;
+        }
+
+        static void setInboundLogThreshold(TimeValue newThreshold) {
+            inboundLogThreshold = newThreshold;
         }
 
         @Override
         public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
-            if (msg instanceof DefaultHttpRequest request) { // The first message of an inbound request should be of this class
-                String traceparentHeader = request.headers().get(RestController.TRACEPARENT_HEADER);
-                String logMsg = getInboundLogMessage(traceparentHeader);
-                if (logMsg != null) logger.info(logMsg);
+            long inboundStartTime = System.nanoTime();
+            if (msg instanceof DefaultHttpRequest request) { // The first message of an inbound request is of this class
+                lastInboundTraceparentHeader = request.headers().get(RestController.TRACEPARENT_HEADER);
             }
-            ctx.fireChannelRead(msg);
+
+            ctx.fireChannelRead(msg); // Runs following handlers in the pipeline
+
+            elapsedInbound += System.nanoTime() - inboundStartTime;
+            if (msg instanceof LastHttpContent) { // The last message of an inbound request is of this class
+                String logMsg = getInboundLogMessage(lastInboundTraceparentHeader, elapsedInbound);
+                if (logMsg != null) logger.info(logMsg);
+                lastInboundTraceparentHeader = null;
+                elapsedInbound = 0;
+            }
+        }
+
+        // Method separated for testing
+        public static String getInboundLogMessage(String traceparentHeader, long elapsedInbound) {
+            if (traceparentHeader == null || traceparentHeader.isEmpty() || elapsedInbound < inboundLogThreshold.getNanos()) return null;
+            else {
+                return "Netty processed inbound HTTP request with traceparent header = "
+                    + traceparentHeader
+                    + " in "
+                    + elapsedInbound
+                    + "ns";
+            }
+        }
+    }
+
+    public static class NettyOutboundLatencyHandler extends ChannelOutboundHandlerAdapter {
+        private static TimeValue outboundLogThreshold = new TimeValue(250, TimeUnit.MILLISECONDS);
+        public static final Setting<TimeValue> NETTY_OUTBOUND_TOOKTIME_LOG_THRESHOLD_SETTING = Setting.timeSetting(
+            "http.netty.log_threshold.outbound",
+            outboundLogThreshold,
+            Property.NodeScope,
+            Property.Dynamic
+        );
+        private static final Logger logger = LogManager.getLogger(NettyOutboundLatencyHandler.class);
+
+        static void setOutboundLogThreshold(TimeValue newThreshold) {
+            outboundLogThreshold = newThreshold;
         }
 
         @Override
         public void write(final ChannelHandlerContext ctx, final Object msg, final ChannelPromise promise) {
-            if (msg instanceof DefaultHttpResponse response) {
-                this.lastResponseTraceparentHeader = response.headers().get(RestController.TRACEPARENT_HEADER);
+            long outboundStartTime = System.nanoTime();
+            String traceparentHeader = null;
+            if (msg instanceof HttpPipelinedResponse response) { // TODO: This should always be the case (pipelining handler asserts it)
+                HttpResponse delegatedResponse = response.getDelegateRequest();
+                if (delegatedResponse instanceof Netty4HttpResponse nettyResponse) { // TODO: Seems like this should always be the case, but
+                                                                                     // less sure
+                    traceparentHeader = nettyResponse.headers().get(RestController.TRACEPARENT_HEADER);
+                } else { // TODO: Will remove these in final?
+                    logger.warn(
+                        "Unexpected outbound response instance type "
+                            + response.getClass().getName()
+                            + " is instanceof HttpPipelinedResponse but does not wrap Netty4HttpResponse"
+                    );
+                }
+            } else {
+                logger.warn(
+                    "Unexpected outbound response instance type " + msg.getClass().getName() + " is not instanceof HttpPipelinedResponse"
+                );
             }
-            if (msg instanceof LastHttpContent) {
-                String logMsg = getOutboundLogMessage(lastResponseTraceparentHeader);
-                if (logMsg != null) logger.info(logMsg);
-            }
+
             ctx.write(msg, promise);
+
+            // TODO: Should be able to unconditionally do this, there aren't chunks at this point
+            String logMsg = getOutboundLogMessage(traceparentHeader, System.nanoTime() - outboundStartTime);
+            if (logMsg != null) logger.info(logMsg);
         }
 
-        // These classes are separated for testing
-        public static String getInboundLogMessage(String traceparentHeader) {
-            if (traceparentHeader == null || traceparentHeader.isEmpty()) return null;
+        public static String getOutboundLogMessage(String traceparentHeader, long elapsedOutbound) {
+            if (traceparentHeader == null || traceparentHeader.isEmpty() || elapsedOutbound < outboundLogThreshold.getNanos()) return null;
             else {
-                return "E2ELatencyLoggerHandler received HTTP request with traceparent header = " + traceparentHeader;
-            }
-        }
-
-        public static String getOutboundLogMessage(String traceparentHeader) {
-            if (traceparentHeader == null || traceparentHeader.isEmpty()) return null;
-            else {
-                return "E2ELatencyLoggerHandler finished processing HTTP response with traceparent header = " + traceparentHeader;
+                return "Netty processed outbound HTTP request with traceparent header = "
+                    + traceparentHeader
+                    + " in "
+                    + elapsedOutbound
+                    + "ns";
             }
         }
     }
