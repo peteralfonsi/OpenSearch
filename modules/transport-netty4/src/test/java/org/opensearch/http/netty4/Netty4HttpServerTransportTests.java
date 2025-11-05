@@ -35,6 +35,7 @@ package org.opensearch.http.netty4;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.Appender;
 import org.apache.logging.log4j.core.Logger;
+import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.StringLayout;
 import org.apache.logging.log4j.core.appender.WriterAppender;
 import org.apache.logging.log4j.core.layout.PatternLayout;
@@ -610,10 +611,10 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
     // public + static so SecureNetty4HttpServerTransportTests can also use it
     public static void runE2ETraceparentTest(TransportAddress remoteAddress, int chunkSize, Netty4HttpClient client, boolean useHttp2)
         throws Exception {
-        // Cast to concrete class rather than interface to allow adding appender
-        Logger e2eLoggerInbound = (Logger) LogManager.getLogger(Netty4HttpServerTransport.NettyInboundLatencyHandler.class);
-        Logger e2eLoggerOutbound = (Logger) LogManager.getLogger(Netty4HttpServerTransport.NettyOutboundLatencyHandler.class);
         // Setup code so we can inspect log output - see https://www.dontpanicblog.co.uk/2018/04/29/test-log4j2-with-junit/
+        LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
+        Logger e2eLoggerInbound = ctx.getLogger(LogManager.getLogger(Netty4HttpServerTransport.NettyInboundLatencyHandler.class).getName());
+        Logger e2eLoggerOutbound = ctx.getLogger(LogManager.getLogger(Netty4HttpServerTransport.NettyOutboundLatencyHandler.class).getName());
         final CharArrayWriter loggerOutputInbound = new CharArrayWriter();
         final CharArrayWriter loggerOutputOutbound = new CharArrayWriter();
         StringLayout layout = PatternLayout.newBuilder().withPattern("%-5level %msg").build();
