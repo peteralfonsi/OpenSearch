@@ -683,6 +683,7 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
             Property.Dynamic
         );
         private static final Logger logger = LogManager.getLogger(NettyInboundLatencyHandler.class);
+        static final String BASE_END_TO_END_LOGGING_STRING = "Netty processed inbound HTTP request";
 
         // Stash the last-seen traceparent header from a DefaultHttpRequest object.
         // Then, when we see the next outbound LastHttpContent object, log the total elapsed time for that header.
@@ -718,13 +719,11 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
 
         // Method separated for testing
         public static String getInboundLogMessage(String traceparentHeader, long elapsedInbound) {
-            if (traceparentHeader == null || traceparentHeader.isEmpty() || elapsedInbound < inboundLogThreshold.getNanos()) return null;
-            else {
-                return "Netty processed inbound HTTP request with traceparent header = "
-                    + traceparentHeader
-                    + " in "
-                    + elapsedInbound
-                    + "ns";
+            if (elapsedInbound < inboundLogThreshold.getNanos()) return null;
+            else if (traceparentHeader == null || traceparentHeader.isEmpty()) {
+                return BASE_END_TO_END_LOGGING_STRING + " with no traceparent header in " + elapsedInbound + "ns";
+            } else {
+                return BASE_END_TO_END_LOGGING_STRING + " with traceparent header = " + traceparentHeader + " in " + elapsedInbound + "ns";
             }
         }
     }
@@ -738,6 +737,7 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
             Property.Dynamic
         );
         private static final Logger logger = LogManager.getLogger(NettyOutboundLatencyHandler.class);
+        static final String BASE_END_TO_END_LOGGING_STRING = "Netty processed outbound HTTP request";
 
         static void setOutboundLogThreshold(TimeValue newThreshold) {
             outboundLogThreshold = newThreshold;
@@ -773,13 +773,11 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
         }
 
         public static String getOutboundLogMessage(String traceparentHeader, long elapsedOutbound) {
-            if (traceparentHeader == null || traceparentHeader.isEmpty() || elapsedOutbound < outboundLogThreshold.getNanos()) return null;
-            else {
-                return "Netty processed outbound HTTP request with traceparent header = "
-                    + traceparentHeader
-                    + " in "
-                    + elapsedOutbound
-                    + "ns";
+            if (elapsedOutbound < outboundLogThreshold.getNanos()) return null;
+            else if (traceparentHeader == null || traceparentHeader.isEmpty()) {
+                return BASE_END_TO_END_LOGGING_STRING + " with no traceparent header in " + elapsedOutbound + "ns";
+            } else {
+                return BASE_END_TO_END_LOGGING_STRING + " with traceparent header = " + traceparentHeader + " in " + elapsedOutbound + "ns";
             }
         }
     }

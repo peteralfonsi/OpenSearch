@@ -116,8 +116,6 @@ import static org.opensearch.core.rest.RestStatus.OK;
 import static org.opensearch.http.HttpTransportSettings.SETTING_CORS_ALLOW_ORIGIN;
 import static org.opensearch.http.HttpTransportSettings.SETTING_CORS_ENABLED;
 import static org.opensearch.http.HttpTransportSettings.SETTING_HTTP_MAX_CHUNK_SIZE;
-import static org.opensearch.http.netty4.Netty4HttpServerTransport.NettyInboundLatencyHandler.getInboundLogMessage;
-import static org.opensearch.http.netty4.Netty4HttpServerTransport.NettyOutboundLatencyHandler.getOutboundLogMessage;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.instanceOf;
@@ -614,7 +612,9 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
         // Setup code so we can inspect log output - see https://www.dontpanicblog.co.uk/2018/04/29/test-log4j2-with-junit/
         LoggerContext ctx = (LoggerContext) LogManager.getContext(false);
         Logger e2eLoggerInbound = ctx.getLogger(LogManager.getLogger(Netty4HttpServerTransport.NettyInboundLatencyHandler.class).getName());
-        Logger e2eLoggerOutbound = ctx.getLogger(LogManager.getLogger(Netty4HttpServerTransport.NettyOutboundLatencyHandler.class).getName());
+        Logger e2eLoggerOutbound = ctx.getLogger(
+            LogManager.getLogger(Netty4HttpServerTransport.NettyOutboundLatencyHandler.class).getName()
+        );
         final CharArrayWriter loggerOutputInbound = new CharArrayWriter();
         final CharArrayWriter loggerOutputOutbound = new CharArrayWriter();
         StringLayout layout = PatternLayout.newBuilder().withPattern("%-5level %msg").build();
@@ -637,30 +637,49 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
         Netty4HttpServerTransport.NettyInboundLatencyHandler.setInboundLogThreshold(TimeValue.ZERO);
         Netty4HttpServerTransport.NettyOutboundLatencyHandler.setOutboundLogThreshold(TimeValue.ZERO);
 
-        for (String traceparentValue : new String[] { null, "", "test_traceparent_value" }) {
+        // Null or empty traceparent should show logging, but not have any traceparent info in it
+        for (String traceparentValue : new String[] { null, "" }) {
             sendRequestWithTraceparent(traceparentValue, client, remoteAddress, 0, useHttp2);
             // Can't check exact equality since we don't know how long it took, check for the correct starting string + traceparent header
-            long dummyTookTime = 1000;
             boolean containsInboundMessage = loggerOutputInbound.toString()
-                .contains("Netty processed inbound HTTP request with traceparent header = " + traceparentValue);
+                .contains(
+                    Netty4HttpServerTransport.NettyInboundLatencyHandler.BASE_END_TO_END_LOGGING_STRING + " with no traceparent header"
+                );
             boolean containsOutboundMessage = loggerOutputOutbound.toString()
-                .contains("Netty processed outbound HTTP request with traceparent header = " + traceparentValue);
+                .contains(
+                    Netty4HttpServerTransport.NettyOutboundLatencyHandler.BASE_END_TO_END_LOGGING_STRING + " with no traceparent header"
+                );
 
-            if (getInboundLogMessage(traceparentValue, dummyTookTime) == null) {
-                assertFalse(containsInboundMessage);
-            } else {
-                assertTrue(containsInboundMessage);
-            }
-            if (getOutboundLogMessage(traceparentValue, dummyTookTime) == null) {
-                assertFalse(containsOutboundMessage);
-            } else {
-                assertTrue(containsOutboundMessage);
-            }
+            assertTrue(containsInboundMessage);
+            assertTrue(containsOutboundMessage);
+
             loggerOutputInbound.reset();
             loggerOutputOutbound.reset();
         }
+
+        // If the traceparent header has a value it should be logged
+        String traceparentValue = "test_traceparent_value";
+        sendRequestWithTraceparent(traceparentValue, client, remoteAddress, 0, useHttp2);
+        boolean containsInboundMessage = loggerOutputInbound.toString()
+            .contains(
+                Netty4HttpServerTransport.NettyInboundLatencyHandler.BASE_END_TO_END_LOGGING_STRING
+                    + " with traceparent header = "
+                    + traceparentValue
+            );
+        boolean containsOutboundMessage = loggerOutputOutbound.toString()
+            .contains(
+                Netty4HttpServerTransport.NettyOutboundLatencyHandler.BASE_END_TO_END_LOGGING_STRING
+                    + " with traceparent header = "
+                    + traceparentValue
+            );
+        assertTrue(containsInboundMessage);
+        assertTrue(containsOutboundMessage);
+
+        loggerOutputInbound.reset();
+        loggerOutputOutbound.reset();
+
         // Test one where there are >1 chunks in the request, we still expect only 1 log statement for inbound and outbound
-        String traceparentValue = "11";
+        traceparentValue = "11";
         sendRequestWithTraceparent(traceparentValue, client, remoteAddress, chunkSize * 2, useHttp2);
         // Get count of the expected log fragment and check it's 1
         assertEquals(
@@ -686,9 +705,9 @@ public class Netty4HttpServerTransportTests extends OpenSearchTestCase {
         Netty4HttpServerTransport.NettyInboundLatencyHandler.setInboundLogThreshold(longTimeValue);
         Netty4HttpServerTransport.NettyOutboundLatencyHandler.setOutboundLogThreshold(longTimeValue);
         sendRequestWithTraceparent(traceparentValue, client, remoteAddress, 0, useHttp2);
-        boolean containsInboundMessage = loggerOutputInbound.toString()
+        containsInboundMessage = loggerOutputInbound.toString()
             .contains("Netty processed inbound HTTP request with traceparent header = " + traceparentValue);
-        boolean containsOutboundMessage = loggerOutputOutbound.toString()
+        containsOutboundMessage = loggerOutputOutbound.toString()
             .contains("Netty processed outbound HTTP request with traceparent header = " + traceparentValue);
         assertFalse(containsInboundMessage);
         assertFalse(containsOutboundMessage);
