@@ -37,13 +37,11 @@ import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 /**
  * Descriptive stats gathered per shard. Coordinating node computes final correlation and covariance stats
@@ -102,9 +100,9 @@ public class RunningStats implements Writeable, Cloneable {
         // TODO: Ensure we sort any field names we read from wire
 
         // TODO: What if we get a StreamInput from an older version which doesn't publish fieldNames?
-        //  we could maybe just take the union of all the keysets of the maps, but that technically might be insufficient
-        //  (if we plan on adding more docs at least)
-        //this();
+        // we could maybe just take the union of all the keysets of the maps, but that technically might be insufficient
+        // (if we plan on adding more docs at least)
+        // this();
         fieldNames = in.readStringArray();
         docCount = (Long) in.readGenericValue();
         fieldSum = convertFieldDoubleMap((Map<String, Double>) in.readGenericValue()); // TODO: Getting weird cast errors
@@ -164,14 +162,15 @@ public class RunningStats implements Writeable, Cloneable {
         assert serializedMap.keySet().equals(new HashSet<>(Arrays.asList(fieldNames)));
         double[][] result = new double[fieldNames.length][fieldNames.length];
         for (int i = 0; i < fieldNames.length; i++) {
-            for (int j = i+1; j < fieldNames.length; j++) {
+            for (int j = i + 1; j < fieldNames.length; j++) {
                 result[i][j] = serializedMap.get(fieldNames[i]).get(fieldNames[j]);
             }
         }
         return result;
     }
 
-    // TODO: These are probably just for PoC and can be removed once MatrixStatsResults/InternalMatrixStats are fixed (esp bc going to dump map impl entirely)
+    // TODO: These are probably just for PoC and can be removed once MatrixStatsResults/InternalMatrixStats are fixed (esp bc going to dump
+    // map impl entirely)
     Map<String, Double> convertDoubleArrayToMap(double[] stats) {
         Map<String, Double> result = new HashMap<>();
         for (int i = 0; i < fieldNames.length; i++) {
@@ -188,12 +187,12 @@ public class RunningStats implements Writeable, Cloneable {
         return result;
     }
 
-    Map<String, HashMap<String, Double>> convertNestedDoubleArrayToMap(double[][] stats){
+    Map<String, HashMap<String, Double>> convertNestedDoubleArrayToMap(double[][] stats) {
         Map<String, HashMap<String, Double>> result = new HashMap<>();
         for (int i = 0; i < fieldNames.length; i++) {
             HashMap<String, Double> innerMap = new HashMap<>();
             result.put(fieldNames[i], innerMap);
-            for (int j = i+1; j < fieldNames.length; j++) {
+            for (int j = i + 1; j < fieldNames.length; j++) {
                 innerMap.put(fieldNames[j], stats[i][j]);
             }
         }
@@ -359,13 +358,13 @@ public class RunningStats implements Writeable, Cloneable {
 
     /** Merges two covariance matrices */
     private void mergeCovariance(final RunningStats other, final double[] deltas) {
-        double f = ((double)(docCount - other.docCount)) * other.docCount / this.docCount; //, dR, newVal;
+        double f = ((double) (docCount - other.docCount)) * other.docCount / this.docCount; // , dR, newVal;
         for (int i = 0; i < fieldNames.length; i++) {
-                for (int j = i+1; j < fieldNames.length; j++) {
-                    covariances[i][j] += other.covariances[i][j] + f * deltas[i] * deltas[j];
-                }
+            for (int j = i + 1; j < fieldNames.length; j++) {
+                covariances[i][j] += other.covariances[i][j] + f * deltas[i] * deltas[j];
             }
         }
+    }
 
     @Override
     public RunningStats clone() {
@@ -382,17 +381,26 @@ public class RunningStats implements Writeable, Cloneable {
         if (o == null || getClass() != o.getClass()) return false;
         RunningStats that = (RunningStats) o;
         return docCount == that.docCount
-            && Objects.equals(fieldSum, that.fieldSum)
-            && Objects.equals(counts, that.counts)
-            && Objects.equals(means, that.means)
-            && Objects.equals(variances, that.variances)
-            && Objects.equals(skewness, that.skewness)
-            && Objects.equals(kurtosis, that.kurtosis)
-            && Objects.equals(covariances, that.covariances);
+            && Arrays.equals(fieldSum, that.fieldSum)
+            && Arrays.equals(counts, that.counts)
+            && Arrays.equals(means, that.means)
+            && Arrays.equals(variances, that.variances)
+            && Arrays.equals(skewness, that.skewness)
+            && Arrays.equals(kurtosis, that.kurtosis)
+            && Arrays.deepEquals(covariances, that.covariances);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(docCount, fieldSum, counts, means, variances, skewness, kurtosis, covariances);
+        return Objects.hash(
+            docCount,
+            Arrays.hashCode(fieldSum),
+            Arrays.hashCode(counts),
+            Arrays.hashCode(means),
+            Arrays.hashCode(variances),
+            Arrays.hashCode(skewness),
+            Arrays.hashCode(kurtosis),
+            Arrays.deepHashCode(covariances)
+        );
     }
 }
