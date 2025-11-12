@@ -68,6 +68,7 @@ import java.net.InetSocketAddress;
 import java.net.SocketOption;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
 import io.netty.bootstrap.ServerBootstrap;
@@ -710,20 +711,19 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
 
             elapsedInbound += System.nanoTime() - inboundStartTime;
             if (msg instanceof LastHttpContent) { // The last message of an inbound request is of this class
-                String logMsg = getInboundLogMessage(lastInboundTraceparentHeader, elapsedInbound);
-                if (logMsg != null) logger.info(logMsg);
+                getInboundLogMessage(elapsedInbound).ifPresent(logger::info);
                 lastInboundTraceparentHeader = null;
                 elapsedInbound = 0;
             }
         }
 
         // Method separated for testing
-        public static String getInboundLogMessage(String traceparentHeader, long elapsedInbound) {
-            if (elapsedInbound < inboundLogThreshold.getNanos()) return null;
-            else if (traceparentHeader == null || traceparentHeader.isEmpty()) {
-                return BASE_END_TO_END_LOGGING_STRING + " with no traceparent header in " + elapsedInbound + "ns";
+        public Optional<String> getInboundLogMessage(long elapsedInbound) {
+            if (elapsedInbound < inboundLogThreshold.getNanos()) return Optional.empty();
+            else if (lastInboundTraceparentHeader == null || lastInboundTraceparentHeader.isEmpty()) {
+                return Optional.of(BASE_END_TO_END_LOGGING_STRING + " with no traceparent header in " + elapsedInbound + "ns");
             } else {
-                return BASE_END_TO_END_LOGGING_STRING + " with traceparent header = " + traceparentHeader + " in " + elapsedInbound + "ns";
+                return Optional.of(BASE_END_TO_END_LOGGING_STRING + " with traceparent header = " + lastInboundTraceparentHeader + " in " + elapsedInbound + "ns");
             }
         }
     }
@@ -768,16 +768,15 @@ public class Netty4HttpServerTransport extends AbstractHttpServerTransport {
             ctx.write(msg, promise);
 
             // TODO: Should be able to unconditionally do this, there aren't chunks at this point
-            String logMsg = getOutboundLogMessage(traceparentHeader, System.nanoTime() - outboundStartTime);
-            if (logMsg != null) logger.info(logMsg);
+            getOutboundLogMessage(traceparentHeader, System.nanoTime() - outboundStartTime).ifPresent(logger::info);
         }
 
-        public static String getOutboundLogMessage(String traceparentHeader, long elapsedOutbound) {
-            if (elapsedOutbound < outboundLogThreshold.getNanos()) return null;
+        public Optional<String> getOutboundLogMessage(String traceparentHeader, long elapsedOutbound) {
+            if (elapsedOutbound < outboundLogThreshold.getNanos()) return Optional.empty();
             else if (traceparentHeader == null || traceparentHeader.isEmpty()) {
-                return BASE_END_TO_END_LOGGING_STRING + " with no traceparent header in " + elapsedOutbound + "ns";
+                return Optional.of(BASE_END_TO_END_LOGGING_STRING + " with no traceparent header in " + elapsedOutbound + "ns");
             } else {
-                return BASE_END_TO_END_LOGGING_STRING + " with traceparent header = " + traceparentHeader + " in " + elapsedOutbound + "ns";
+                return Optional.of(BASE_END_TO_END_LOGGING_STRING + " with traceparent header = " + traceparentHeader + " in " + elapsedOutbound + "ns");
             }
         }
     }
