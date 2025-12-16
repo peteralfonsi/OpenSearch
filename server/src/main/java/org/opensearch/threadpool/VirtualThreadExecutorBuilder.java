@@ -41,6 +41,11 @@ public class VirtualThreadExecutorBuilder extends ExecutorBuilder<VirtualThreadE
     @Override
     ThreadPool.ExecutorHolder build(VirtualThreadExecutorSettings settings, ThreadContext threadContext) {
         // Create virtual thread executor - each task gets its own virtual thread
+        // TODO: Maybe wrap this in some ExecutorService that additionally has a queue before reaching Executors.newVirtualThreadPerTaskExecutor()?
+        //   We want to rate limit total inflight requests 
+        //   Maybe this is already supported by Java... maybe it isn't
+        //   In other opensearch threadpools, java is handling the queue + polling from the queue etc...
+        //   Ideally,
         final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
         final ThreadPool.Info info = new ThreadPool.Info(
