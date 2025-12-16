@@ -49,6 +49,7 @@ import org.opensearch.common.util.io.IOUtils;
 import org.opensearch.index.IndexModule;
 import org.opensearch.index.IndexSettings;
 import org.opensearch.index.shard.ShardPath;
+import org.opensearch.lucene.cache.ForcedDirectIODirectory;
 import org.opensearch.plugins.IndexStorePlugin;
 
 import java.io.IOException;
@@ -94,7 +95,13 @@ public class FsDirectoryFactory implements IndexStorePlugin.DirectoryFactory {
             type = IndexModule.Type.fromSettingsKey(storeType);
         }
         Set<String> preLoadExtensions = new HashSet<>(indexSettings.getValue(IndexModule.INDEX_STORE_PRE_LOAD_SETTING));
-        switch (type) {
+
+        // For testing, always use forced direct IO.
+        System.out.println("Using forced direct IO");
+        FSDirectory primaryDirectory2 = FSDirectory.open(location, lockFactory);
+        return new ForcedDirectIODirectory(primaryDirectory2);
+
+        /*switch (type) {
             case HYBRIDFS:
                 // Use Lucene defaults
                 final FSDirectory primaryDirectory = FSDirectory.open(location, lockFactory);
@@ -112,7 +119,7 @@ public class FsDirectoryFactory implements IndexStorePlugin.DirectoryFactory {
                 return new NIOFSDirectory(location, lockFactory);
             default:
                 throw new AssertionError("unexpected built-in store type [" + type + "]");
-        }
+        }*/
     }
 
     public static MMapDirectory setPreload(MMapDirectory mMapDirectory, Set<String> preLoadExtensions) throws IOException {
