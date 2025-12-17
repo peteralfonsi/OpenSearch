@@ -30,6 +30,11 @@ public class ForcedDirectIODirectory extends DirectIODirectory {
     }
 
     protected boolean useDirectIO(String name, IOContext context, OptionalLong fileLength) {
+        // If MERGE, fall back to logic used in DirectIODirectory. Otherwise return true (DirectIODirectory would have returned false)
+        if (context.context().equals(IOContext.Context.MERGE)) {
+            return context.mergeInfo().estimatedMergeBytes() >= minBytesDirect
+                && fileLength.orElse(minBytesDirect) >= minBytesDirect; 
+        }
         return true;
     }
 
