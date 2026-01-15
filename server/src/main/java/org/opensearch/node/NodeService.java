@@ -64,6 +64,7 @@ import org.opensearch.search.backpressure.SearchBackpressureService;
 import org.opensearch.search.pipeline.SearchPipelineService;
 import org.opensearch.tasks.TaskCancellationMonitoringService;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.threadpool.VirtualThreadSchedulerStats;
 import org.opensearch.transport.TransportService;
 
 import java.io.Closeable;
@@ -243,7 +244,8 @@ public class NodeService implements Closeable {
         boolean repositoriesStats,
         boolean admissionControl,
         boolean cacheService,
-        boolean remoteStoreNodeStats
+        boolean remoteStoreNodeStats,
+        boolean virtualThreadSchedulerStats
     ) {
         // for indices stats we want to include previous allocated shards stats as well (it will
         // only be applied to the sensible ones to use, like refresh/merge/flush/indexing stats)
@@ -277,7 +279,8 @@ public class NodeService implements Closeable {
             repositoriesStats ? this.repositoriesService.getRepositoriesStats() : null,
             admissionControl ? this.admissionControlService.stats() : null,
             cacheService ? this.cacheService.stats(indices) : null,
-            remoteStoreNodeStats ? new RemoteStoreNodeStats() : null
+            remoteStoreNodeStats ? new RemoteStoreNodeStats() : null,
+            virtualThreadSchedulerStats ? VirtualThreadSchedulerStats.readStats() : null
         );
     }
 

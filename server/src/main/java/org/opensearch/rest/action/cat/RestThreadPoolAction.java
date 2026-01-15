@@ -155,11 +155,8 @@ public class RestThreadPoolAction extends AbstractCatAction {
         table.addCell("ip", "default:false;alias:i;desc:ip address");
         table.addCell("port", "default:false;alias:po;desc:bound transport port");
         table.addCell("name", "default:true;alias:n;desc:thread pool name");
-        table.addCell("type", "alias:t;default:false;desc:thread pool type");
         table.addCell("active", "alias:a;default:true;text-align:right;desc:number of active threads");
-        table.addCell("pool_size", "alias:psz;default:false;text-align:right;desc:number of threads");
         table.addCell("queue", "alias:q;default:true;text-align:right;desc:number of tasks currently in queue");
-        table.addCell("queue_size", "alias:qs;default:false;text-align:right;desc:maximum number of tasks permitted in queue");
         table.addCell("rejected", "alias:r;default:true;text-align:right;desc:number of rejected tasks");
         table.addCell("largest", "alias:l;default:false;text-align:right;desc:highest number of seen active threads");
         table.addCell("completed", "alias:c;default:false;text-align:right;desc:number of completed tasks");
@@ -172,6 +169,10 @@ public class RestThreadPoolAction extends AbstractCatAction {
         table.addCell("size", "alias:sz;default:false;text-align:right;desc:number of threads in a fixed thread pool");
         table.addCell("keep_alive", "alias:ka;default:false;text-align:right;desc:thread keep alive time");
         table.addCell("parallelism", "alias:pl;default:false;text-align:right;desc:number of worker threads in a fork_join thread pool");
+        table.addCell("type", "alias:t;default:true;desc:thread pool type");
+        table.addCell("pool_size", "alias:psz;default:true;text-align:right;desc:number of threads");
+        table.addCell("max_size", "alias:msz;default:true;text-align:right;desc:maximum number of threads");
+        table.addCell("queue_size", "alias:qs;default:true;text-align:right;desc:maximum number of tasks permitted in queue");
         table.endHeaders();
         return table;
     }
@@ -203,11 +204,8 @@ public class RestThreadPoolAction extends AbstractCatAction {
 
         if (isForkJoin) {
             table.addCell(poolName);
-            table.addCell(poolInfo.getThreadPoolType().getType());
             table.addCell(0);   // active
-            table.addCell(0);   // pool_size
             table.addCell(0);   // queue
-            table.addCell(-1);  // queue_size
             table.addCell(0);   // rejected
             table.addCell(0);   // largest
             table.addCell(0);   // completed
@@ -217,12 +215,17 @@ public class RestThreadPoolAction extends AbstractCatAction {
             table.addCell(null); // size
             table.addCell(null); // keep_alive
             table.addCell(poolInfo.getMax()); // parallelism
+            table.addCell(poolInfo.getThreadPoolType().getType());
+            table.addCell(0);   // pool_size
+            table.addCell(poolInfo.getMax()); // max_size
+            table.addCell(-1);  // queue_size
         } else {
             Long maxQueueSize = null;
             String keepAlive = null;
             Integer core = null;
             Integer max = null;
             Integer size = null;
+            Integer maxSize = null;
 
             if (poolInfo != null) {
                 if (poolInfo.getQueueSize() != null) {
@@ -236,18 +239,17 @@ public class RestThreadPoolAction extends AbstractCatAction {
                     core = poolInfo.getMin();
                     assert poolInfo.getMax() > 0;
                     max = poolInfo.getMax();
+                    maxSize = max;
                 } else {
                     assert poolInfo.getMin() == poolInfo.getMax() && poolInfo.getMax() > 0;
                     size = poolInfo.getMax();
+                    maxSize = size;
                 }
             }
 
             table.addCell(poolName);
-            table.addCell(poolInfo == null ? null : poolInfo.getThreadPoolType().getType());
             table.addCell(poolStats == null ? null : poolStats.getActive());
-            table.addCell(poolStats == null ? null : poolStats.getThreads());
             table.addCell(poolStats == null ? null : poolStats.getQueue());
-            table.addCell(maxQueueSize == null ? -1 : maxQueueSize);
             table.addCell(poolStats == null ? null : poolStats.getRejected());
             table.addCell(poolStats == null ? null : poolStats.getLargest());
             table.addCell(poolStats == null ? null : poolStats.getCompleted());
@@ -257,6 +259,10 @@ public class RestThreadPoolAction extends AbstractCatAction {
             table.addCell(size);
             table.addCell(keepAlive);
             table.addCell(null); // parallelism
+            table.addCell(poolInfo == null ? null : poolInfo.getThreadPoolType().getType());
+            table.addCell(poolStats == null ? null : poolStats.getThreads());
+            table.addCell(maxSize);
+            table.addCell(maxQueueSize == null ? -1 : maxQueueSize);
         }
 
         table.endRow();
