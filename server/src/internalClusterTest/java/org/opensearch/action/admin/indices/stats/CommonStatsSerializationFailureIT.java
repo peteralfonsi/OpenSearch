@@ -6,7 +6,7 @@
  * compatible open source license.
  */
 
-package org.opensearch.nodestats;
+package org.opensearch.action.admin.indices.stats;
 
 import org.opensearch.Version;
 import org.opensearch.action.admin.cluster.node.stats.NodeStats;
@@ -16,7 +16,8 @@ import org.opensearch.common.util.concurrent.ThreadContext;
 import org.opensearch.core.common.io.stream.NamedWriteableRegistry;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.transport.TransportResponse;
-import org.opensearch.monitor.os.OsStats;
+import org.opensearch.index.fielddata.FieldDataStats;
+import org.opensearch.indices.NodeIndicesStats;
 import org.opensearch.plugins.NetworkPlugin;
 import org.opensearch.plugins.Plugin;
 import org.opensearch.test.OpenSearchIntegTestCase;
@@ -27,27 +28,33 @@ import org.opensearch.transport.TransportRequestHandler;
 import java.util.Collection;
 import java.util.List;
 
+import static java.util.Collections.emptyMap;
 import static org.opensearch.test.hamcrest.OpenSearchAssertions.assertAcked;
 
 @OpenSearchIntegTestCase.ClusterScope(scope = OpenSearchIntegTestCase.Scope.TEST, numDataNodes = 0)
-public class NodeStatsSerializationFailureIT extends OpenSearchIntegTestCase {
+public class CommonStatsSerializationFailureIT extends OpenSearchIntegTestCase {
 
     @Override
     protected Collection<Class<? extends Plugin>> nodePlugins() {
-        return List.of(BadStatsInjectorPlugin.class);
+        return List.of(BadCommonStatsInjectorPlugin.class);
     }
 
-    private void assertNodeCounts(NodesStatsResponse response, int expectedOs) {
-        int nodesWithOs = 0;
+    private void assertNodeCounts(NodesStatsResponse response, int expectedIndices, int expectedFieldData) {
+        int nodesWithIndices = 0;
+        int nodesWithFieldData = 0;
         for (NodeStats nodeStats : response.getNodes()) {
-            if (nodeStats.getOs() != null) {
-                nodesWithOs++;
+            if (nodeStats.getIndices() != null) {
+                nodesWithIndices++;
+                if (nodeStats.getIndices().getFieldData() != null) {
+                    nodesWithFieldData++;
+                }
             }
         }
-        assertEquals(expectedOs, nodesWithOs);
+        assertEquals(expectedIndices, nodesWithIndices);
+        assertEquals(expectedFieldData, nodesWithFieldData);
     }
 
-    public static class BadStatsInjectorPlugin extends Plugin implements NetworkPlugin {
+    public static class BadCommonStatsInjectorPlugin extends Plugin implements NetworkPlugin {
 
         @Override
         public List<TransportInterceptor> getTransportInterceptors(
@@ -85,19 +92,24 @@ public class NodeStatsSerializationFailureIT extends OpenSearchIntegTestCase {
                                     if (response instanceof NodeStats) {
                                         NodeStats nodeStats = (NodeStats) response;
                                         String nodeName = nodeStats.getNode().getName();
-                                        if (nodeName.contains("0") && nodeStats.getOs() != null) {
-                                            OsStats badOs = new OsStats.Builder().timestamp(-100L)
-                                                .cpu(nodeStats.getOs().getCpu())
-                                                .mem(nodeStats.getOs().getMem())
-                                                .swap(nodeStats.getOs().getSwap())
-                                                .cgroup(nodeStats.getOs().getCgroup())
+                                        if (nodeName.contains("0") && nodeStats.getIndices() != null) {
+                                            CommonStats badCommonStats = new CommonStats();
+                                            badCommonStats.fieldData = new FieldDataStats.Builder().memorySize(-100L)
+                                                .evictions(10L)
                                                 .build();
+                                            NodeIndicesStats badIndices = new NodeIndicesStats(
+                                                badCommonStats,
+                                                emptyMap(),
+                                                null,
+                                                null,
+                                                null
+                                            );
 
                                             response = new NodeStats(
                                                 nodeStats.getNode(),
                                                 nodeStats.getTimestamp(),
-                                                nodeStats.getIndices(),
-                                                badOs,
+                                                badIndices,
+                                                nodeStats.getOs(),
                                                 nodeStats.getProcess(),
                                                 nodeStats.getJvm(),
                                                 nodeStats.getThreadPool(),
@@ -147,10 +159,8 @@ public class NodeStatsSerializationFailureIT extends OpenSearchIntegTestCase {
         }
     }
 
-    public void testClusterReturnsNodeStatsWithBadData() throws Exception {
-        String firstNodeName = internalCluster().startNode();
-        internalCluster().startNode();
-        internalCluster().startNode();
+    public void testClusterReturnsCommonStatsWithBadFieldData() throws Exception {
+        internalCluster().startNodes(3);
 
         assertAcked(
             prepareCreate("test-index").setSettings(
@@ -164,12 +174,12 @@ public class NodeStatsSerializationFailureIT extends OpenSearchIntegTestCase {
         }
         refresh();
 
-        NodesStatsResponse response = client().admin().cluster().prepareNodesStats().addMetric("os").execute().actionGet();
+        NodesStatsResponse response = client().admin().cluster().prepareNodesStats().setIndices(true).execute().actionGet();
         assertFalse(response.hasFailures());
         assertEquals(3, response.getNodes().size());
 
-        // Response already has bad stats handled (first node has null os)
-        assertNodeCounts(response, 2);
+        // Response already has bad stats handled (node 0 has null fieldData)
+        assertNodeCounts(response, 3, 2);
 
         try (BytesStreamOutput out = new BytesStreamOutput()) {
             response.writeTo(out);
@@ -178,7 +188,7 @@ public class NodeStatsSerializationFailureIT extends OpenSearchIntegTestCase {
                 NodesStatsResponse deserialized = new NodesStatsResponse(in);
                 assertEquals(3, deserialized.getNodes().size());
                 // Should still have same counts after round-trip
-                assertNodeCounts(deserialized, 2);
+                assertNodeCounts(deserialized, 3, 2);
             }
         }
     }

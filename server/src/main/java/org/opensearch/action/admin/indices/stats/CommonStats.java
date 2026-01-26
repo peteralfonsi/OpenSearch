@@ -32,9 +32,12 @@
 
 package org.opensearch.action.admin.indices.stats;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.store.AlreadyClosedException;
 import org.opensearch.common.Nullable;
 import org.opensearch.common.annotation.PublicApi;
+import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.common.io.stream.Writeable;
@@ -73,6 +76,8 @@ import java.util.stream.Stream;
  */
 @PublicApi(since = "1.0.0")
 public class CommonStats implements Writeable, ToXContentFragment {
+
+    private static final Logger logger = LogManager.getLogger(CommonStats.class);
 
     @Nullable
     public DocsStats docs;
@@ -268,22 +273,23 @@ public class CommonStats implements Writeable, ToXContentFragment {
 
     @Override
     public void writeTo(StreamOutput out) throws IOException {
-        out.writeOptionalWriteable(docs);
-        out.writeOptionalWriteable(store);
-        out.writeOptionalWriteable(indexing);
-        out.writeOptionalWriteable(get);
-        out.writeOptionalWriteable(search);
-        out.writeOptionalWriteable(merge);
-        out.writeOptionalWriteable(refresh);
-        out.writeOptionalWriteable(flush);
-        out.writeOptionalWriteable(warmer);
-        out.writeOptionalWriteable(queryCache);
-        out.writeOptionalWriteable(fieldData);
-        out.writeOptionalWriteable(completion);
-        out.writeOptionalWriteable(segments);
-        out.writeOptionalWriteable(translog);
-        out.writeOptionalWriteable(requestCache);
-        out.writeOptionalWriteable(recoveryStats);
+        BytesStreamOutput buffer = new BytesStreamOutput();
+        out.writeOptionalWriteableSafely(buffer, docs, logger);
+        out.writeOptionalWriteableSafely(buffer, store, logger);
+        out.writeOptionalWriteableSafely(buffer, indexing, logger);
+        out.writeOptionalWriteableSafely(buffer, get, logger);
+        out.writeOptionalWriteableSafely(buffer, search, logger);
+        out.writeOptionalWriteableSafely(buffer, merge, logger);
+        out.writeOptionalWriteableSafely(buffer, refresh, logger);
+        out.writeOptionalWriteableSafely(buffer, flush, logger);
+        out.writeOptionalWriteableSafely(buffer, warmer, logger);
+        out.writeOptionalWriteableSafely(buffer, queryCache, logger);
+        out.writeOptionalWriteableSafely(buffer, fieldData, logger);
+        out.writeOptionalWriteableSafely(buffer, completion, logger);
+        out.writeOptionalWriteableSafely(buffer, segments, logger);
+        out.writeOptionalWriteableSafely(buffer, translog, logger);
+        out.writeOptionalWriteableSafely(buffer, requestCache, logger);
+        out.writeOptionalWriteableSafely(buffer, recoveryStats, logger);
     }
 
     public void add(CommonStats stats) {

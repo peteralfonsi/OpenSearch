@@ -75,7 +75,7 @@ public class NodeStatsSerializationFailureTests extends OpenSearchTestCase {
             null
         );
 
-        // Serialize - should not throw exception, should skip the failing stat
+        // Serialize - should not throw exception, fieldData should be null but indices should be preserved
         try (BytesStreamOutput out = new BytesStreamOutput()) {
             nodeStats.writeTo(out);
 
@@ -87,8 +87,9 @@ public class NodeStatsSerializationFailureTests extends OpenSearchTestCase {
                 assertEquals(node.getId(), deserialized.getNode().getId());
                 assertEquals(nodeStats.getTimestamp(), deserialized.getTimestamp());
 
-                // The indices stat should be null since serialization failed
-                assertNull(deserialized.getIndices());
+                // The indices stat should be preserved, but fieldData should be null
+                assertNotNull(deserialized.getIndices());
+                assertNull(deserialized.getIndices().getFieldData());
             }
         }
     }
@@ -165,8 +166,9 @@ public class NodeStatsSerializationFailureTests extends OpenSearchTestCase {
             try (StreamInput in = out.bytes().streamInput()) {
                 NodeStats deserialized = new NodeStats(in);
 
-                // Bad indices should be null
-                assertNull(deserialized.getIndices());
+                // Indices should be preserved, but fieldData should be null
+                assertNotNull(deserialized.getIndices());
+                assertNull(deserialized.getIndices().getFieldData());
 
                 // Good stats should be preserved
                 assertNotNull(deserialized.getOs());
@@ -330,15 +332,18 @@ public class NodeStatsSerializationFailureTests extends OpenSearchTestCase {
 
                     if (deserialized.getNode().getId().equals("node1")) {
                         assertNotNull(deserialized.getIndices());
+                        assertNotNull(deserialized.getIndices().getFieldData());
                         assertEquals(100L, deserialized.getIndices().getFieldData().getMemorySizeInBytes());
                         assertEquals(30, deserialized.getOs().getCpu().getPercent());
                     } else if (deserialized.getNode().getId().equals("node2")) {
-                        // Bad indices should be null
-                        assertNull(deserialized.getIndices());
+                        // Indices preserved but fieldData should be null
+                        assertNotNull(deserialized.getIndices());
+                        assertNull(deserialized.getIndices().getFieldData());
                         // Good OS preserved
                         assertEquals(40, deserialized.getOs().getCpu().getPercent());
                     } else if (deserialized.getNode().getId().equals("node3")) {
                         assertNotNull(deserialized.getIndices());
+                        assertNotNull(deserialized.getIndices().getFieldData());
                         assertEquals(150L, deserialized.getIndices().getFieldData().getMemorySizeInBytes());
                         assertEquals(25, deserialized.getOs().getCpu().getPercent());
                     }
@@ -371,8 +376,8 @@ public class NodeStatsSerializationFailureTests extends OpenSearchTestCase {
                         nodesWithIndices++;
                     }
                 }
-                // 2 nodes should have non-null indices (node1 and node3)
-                assertEquals(2, nodesWithIndices);
+                // All 3 nodes should have non-null indices (only fieldData is null on node2)
+                assertEquals(3, nodesWithIndices);
             }
         }
     }
