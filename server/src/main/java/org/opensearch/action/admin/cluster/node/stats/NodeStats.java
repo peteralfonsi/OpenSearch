@@ -32,6 +32,8 @@
 
 package org.opensearch.action.admin.cluster.node.stats;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.opensearch.Version;
 import org.opensearch.action.support.nodes.BaseNodeResponse;
 import org.opensearch.cluster.node.DiscoveryNode;
@@ -40,6 +42,7 @@ import org.opensearch.cluster.routing.WeightedRoutingStats;
 import org.opensearch.cluster.service.ClusterManagerThrottlingStats;
 import org.opensearch.common.Nullable;
 import org.opensearch.common.cache.service.NodeCacheStats;
+import org.opensearch.common.io.stream.BytesStreamOutput;
 import org.opensearch.core.common.io.stream.StreamInput;
 import org.opensearch.core.common.io.stream.StreamOutput;
 import org.opensearch.core.indices.breaker.AllCircuitBreakerStats;
@@ -79,6 +82,8 @@ import java.util.Map;
  * @opensearch.internal
  */
 public class NodeStats extends BaseNodeResponse implements ToXContentFragment {
+
+    private static final Logger logger = LogManager.getLogger(NodeStats.class);
 
     private long timestamp;
 
@@ -487,62 +492,59 @@ public class NodeStats extends BaseNodeResponse implements ToXContentFragment {
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
         out.writeVLong(timestamp);
-        if (indices == null) {
-            out.writeBoolean(false);
-        } else {
-            out.writeBoolean(true);
-            indices.writeTo(out);
-        }
-        out.writeOptionalWriteable(os);
-        out.writeOptionalWriteable(process);
-        out.writeOptionalWriteable(jvm);
-        out.writeOptionalWriteable(threadPool);
-        out.writeOptionalWriteable(fs);
-        out.writeOptionalWriteable(transport);
-        out.writeOptionalWriteable(http);
-        out.writeOptionalWriteable(breaker);
-        out.writeOptionalWriteable(scriptStats);
-        out.writeOptionalWriteable(discoveryStats);
-        out.writeOptionalWriteable(ingestStats);
-        out.writeOptionalWriteable(adaptiveSelectionStats);
-        out.writeOptionalWriteable(indexingPressureStats);
-        out.writeOptionalWriteable(shardIndexingPressureStats);
+
+        BytesStreamOutput buffer = new BytesStreamOutput();
+        out.writeOptionalWriteableSafely(buffer, indices, logger);
+        out.writeOptionalWriteableSafely(buffer, os, logger);
+        out.writeOptionalWriteableSafely(buffer, process, logger);
+        out.writeOptionalWriteableSafely(buffer, jvm, logger);
+        out.writeOptionalWriteableSafely(buffer, threadPool, logger);
+        out.writeOptionalWriteableSafely(buffer, fs, logger);
+        out.writeOptionalWriteableSafely(buffer, transport, logger);
+        out.writeOptionalWriteableSafely(buffer, http, logger);
+        out.writeOptionalWriteableSafely(buffer, breaker, logger);
+        out.writeOptionalWriteableSafely(buffer, scriptStats, logger);
+        out.writeOptionalWriteableSafely(buffer, discoveryStats, logger);
+        out.writeOptionalWriteableSafely(buffer, ingestStats, logger);
+        out.writeOptionalWriteableSafely(buffer, adaptiveSelectionStats, logger);
+        out.writeOptionalWriteableSafely(buffer, indexingPressureStats, logger);
+        out.writeOptionalWriteableSafely(buffer, shardIndexingPressureStats, logger);
 
         if (out.getVersion().onOrAfter(Version.V_2_4_0)) {
-            out.writeOptionalWriteable(searchBackpressureStats);
+            out.writeOptionalWriteableSafely(buffer, searchBackpressureStats, logger);
         }
         if (out.getVersion().onOrAfter(Version.V_2_6_0)) {
-            out.writeOptionalWriteable(clusterManagerThrottlingStats);
+            out.writeOptionalWriteableSafely(buffer, clusterManagerThrottlingStats, logger);
         }
         if (out.getVersion().onOrAfter(Version.V_2_6_0)) {
-            out.writeOptionalWriteable(weightedRoutingStats);
+            out.writeOptionalWriteableSafely(buffer, weightedRoutingStats, logger);
         }
         if (out.getVersion().onOrAfter(Version.V_2_7_0)) {
-            out.writeOptionalWriteable(fileCacheStats);
+            out.writeOptionalWriteableSafely(buffer, fileCacheStats, logger);
         }
         if (out.getVersion().onOrAfter(Version.V_2_9_0)) {
-            out.writeOptionalWriteable(taskCancellationStats);
+            out.writeOptionalWriteableSafely(buffer, taskCancellationStats, logger);
         }
         if (out.getVersion().onOrAfter(Version.V_2_9_0)) {
-            out.writeOptionalWriteable(searchPipelineStats);
+            out.writeOptionalWriteableSafely(buffer, searchPipelineStats, logger);
         }
         if (out.getVersion().onOrAfter(Version.V_2_12_0)) {
-            out.writeOptionalWriteable(resourceUsageStats);
+            out.writeOptionalWriteableSafely(buffer, resourceUsageStats, logger);
         }
         if (out.getVersion().onOrAfter(Version.V_2_12_0)) {
-            out.writeOptionalWriteable(segmentReplicationRejectionStats);
+            out.writeOptionalWriteableSafely(buffer, segmentReplicationRejectionStats, logger);
         }
         if (out.getVersion().onOrAfter(Version.V_2_12_0)) {
-            out.writeOptionalWriteable(repositoriesStats);
+            out.writeOptionalWriteableSafely(buffer, repositoriesStats, logger);
         }
         if (out.getVersion().onOrAfter(Version.V_2_12_0)) {
-            out.writeOptionalWriteable(admissionControlStats);
+            out.writeOptionalWriteableSafely(buffer, admissionControlStats, logger);
         }
         if (out.getVersion().onOrAfter(Version.V_2_14_0)) {
-            out.writeOptionalWriteable(nodeCacheStats);
+            out.writeOptionalWriteableSafely(buffer, nodeCacheStats, logger);
         }
         if (out.getVersion().onOrAfter(Version.V_2_18_0)) {
-            out.writeOptionalWriteable(remoteStoreNodeStats);
+            out.writeOptionalWriteableSafely(buffer, remoteStoreNodeStats, logger);
         }
     }
 

@@ -32,6 +32,7 @@
 
 package org.opensearch.core.common.io.stream;
 
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.index.CorruptIndexException;
 import org.apache.lucene.index.IndexFormatTooNewException;
 import org.apache.lucene.index.IndexFormatTooOldException;
@@ -979,6 +980,31 @@ public abstract class StreamOutput extends OutputStream {
             writeBoolean(true);
             writer.write(this, writeable);
         } else {
+            writeBoolean(false);
+        }
+    }
+
+    /**
+     * Writes an optional {@link Writeable} with graceful failure handling.
+     * If serialization fails, writes false (as if the Writeable were null) instead of propagating the exception.
+     * This prevents a single serialization failure (for example, one stat within the nodes stats response)
+     * from failing the entire response, or from corrupting the stream with partially completed writes.
+     *
+     * @param buffer a BytesStream implementation to use for buffering. Must support reset().
+     * @param writeable the writeable object to serialize, or null
+     * @param logger optional logger to log warnings on failure, or null for silent failure
+     */
+    public void writeOptionalWriteableSafely(BytesStream buffer, @Nullable Writeable writeable, @Nullable Logger logger)
+        throws IOException {
+        buffer.reset();
+        try {
+            buffer.writeOptionalWriteable(writeable);
+            BytesReference bytes = buffer.bytes();
+            writeBytes(bytes.toBytesRef().bytes, 0, bytes.length());
+        } catch (Exception e) {
+            if (logger != null) {
+                logger.warn("Failed to serialize writeable, skipping", e);
+            }
             writeBoolean(false);
         }
     }
