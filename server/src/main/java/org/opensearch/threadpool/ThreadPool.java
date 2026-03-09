@@ -430,8 +430,6 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler {
         TimeValue estimatedTimeInterval = ESTIMATED_TIME_INTERVAL_SETTING.get(settings);
         this.cachedTimeThread = new CachedTimeThread(OpenSearchExecutors.threadName(settings, "[timer]"), estimatedTimeInterval.millis());
         this.cachedTimeThread.start();
-        long queuedThreads = VirtualThreadBeanHelper.getQueuedVirtualThreadCount();
-        logger.warn("QUEUED THREADS = " + queuedThreads);
     }
 
     /**

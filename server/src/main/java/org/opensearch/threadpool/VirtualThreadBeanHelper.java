@@ -8,19 +8,21 @@
 
 package org.opensearch.threadpool;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.lang.management.ManagementFactory;
 import java.lang.management.PlatformManagedObject;
 import java.lang.reflect.Method;
 
-/**
- * TODO: Test class seeing if we can work around the --release flag in the build, while still using jdk.management.VirtualThreadSchedulerMXBean
- */
+
 public class VirtualThreadBeanHelper {
     private static final Object VT_SCHEDULER_MXBEAN;
     private static final Method GET_QUEUED_VT_COUNT;
     private static final Method GET_MOUNTED_VT_COUNT;
     private static final Method GET_PARALLELISM;
     private static final Method GET_POOL_SIZE;
+    private static final Logger logger = LogManager.getLogger(VirtualThreadBeanHelper.class);
 
     static {
         Object bean = null;
@@ -28,35 +30,39 @@ public class VirtualThreadBeanHelper {
         Method mountedMethod = null;
         Method parallelismMethod = null;
         Method poolSizeMethod = null;
-
+        Class<? extends PlatformManagedObject> mxBeanClass = null;
         try {
             // Load class without linking at compile time
-            Class<? extends PlatformManagedObject> mxBeanClass = (Class<? extends PlatformManagedObject>) Class.forName(
+            mxBeanClass = (Class<? extends PlatformManagedObject>) Class.forName(
                 "jdk.management.VirtualThreadSchedulerMXBean",
                 false,
                 ClassLoader.getSystemClassLoader()
             );
-            // TODO: .......
 
-            // ManagementFactory.getPlatformMXBean(Class)
             bean = ManagementFactory.getPlatformMXBean(mxBeanClass);
+        } catch (Exception e) {
+            // Swallow exceptions if we can't access the bean through reflection, in this case APIs will return -1
+            logger.warn("Could not access VirtualThreadSchedulerMXBean", e);
+        }
 
-            // long getQueuedVirtualThreadCount()
-            queuedMethod = mxBeanClass.getMethod("getQueuedVirtualThreadCount");
-            // long getMountedVirtualThreadCount()
-            mountedMethod = mxBeanClass.getMethod("getMountedVirtualThreadCount");
-            // int getParallelism()
-            parallelismMethod = mxBeanClass.getMethod("getParallelism");
-            // int getPoolSize()
-            poolSizeMethod = mxBeanClass.getMethod("getPoolSize");
-
-        } catch (Throwable t) {
-            // Swallow — feature is optional and JDK-specific
-            bean = null;
-            queuedMethod = null;
-            mountedMethod = null;
-            parallelismMethod = null;
-            poolSizeMethod = null;
+        if (mxBeanClass != null) {
+            try {
+                // long getQueuedVirtualThreadCount()
+                queuedMethod = mxBeanClass.getMethod("getQueuedVirtualThreadCount");
+                // long getMountedVirtualThreadCount()
+                mountedMethod = mxBeanClass.getMethod("getMountedVirtualThreadCount");
+                // int getParallelism()
+                parallelismMethod = mxBeanClass.getMethod("getParallelism");
+                // int getPoolSize()
+                poolSizeMethod = mxBeanClass.getMethod("getPoolSize");
+            } catch (Exception e) {
+                bean = null;
+                queuedMethod = null;
+                mountedMethod = null;
+                parallelismMethod = null;
+                poolSizeMethod = null;
+                logger.warn("Could not access method(s) of VirtualThreadSchedulerMXBean", e);
+            }
         }
 
         VT_SCHEDULER_MXBEAN = bean;
