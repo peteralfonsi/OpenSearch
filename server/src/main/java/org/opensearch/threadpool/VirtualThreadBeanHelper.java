@@ -15,13 +15,12 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.PlatformManagedObject;
 import java.lang.reflect.Method;
 
-
 public class VirtualThreadBeanHelper {
-    private static final Object VT_SCHEDULER_MXBEAN;
-    private static final Method GET_QUEUED_VT_COUNT;
-    private static final Method GET_MOUNTED_VT_COUNT;
-    private static final Method GET_PARALLELISM;
-    private static final Method GET_POOL_SIZE;
+    static final Object VT_SCHEDULER_MXBEAN;
+    static final Method GET_QUEUED_VT_COUNT;
+    static final Method GET_MOUNTED_VT_COUNT;
+    static final Method GET_PARALLELISM;
+    static final Method GET_POOL_SIZE;
     private static final Logger logger = LogManager.getLogger(VirtualThreadBeanHelper.class);
 
     static {
