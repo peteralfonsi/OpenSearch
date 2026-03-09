@@ -68,6 +68,7 @@ import org.opensearch.search.backpressure.stats.SearchBackpressureStats;
 import org.opensearch.search.pipeline.SearchPipelineStats;
 import org.opensearch.tasks.TaskCancellationStats;
 import org.opensearch.threadpool.ThreadPoolStats;
+import org.opensearch.threadpool.VirtualThreadSchedulerStats;
 import org.opensearch.transport.TransportStats;
 
 import java.io.IOException;
@@ -166,6 +167,9 @@ public class NodeStats extends BaseNodeResponse implements ToXContentFragment {
     @Nullable
     private RemoteStoreNodeStats remoteStoreNodeStats;
 
+    @Nullable
+    private VirtualThreadSchedulerStats virtualThreadSchedulerStats;
+
     public NodeStats(StreamInput in) throws IOException {
         super(in);
         timestamp = in.readVLong();
@@ -252,6 +256,11 @@ public class NodeStats extends BaseNodeResponse implements ToXContentFragment {
         } else {
             remoteStoreNodeStats = null;
         }
+        if (in.getVersion().onOrAfter(Version.V_3_4_0)) {
+            virtualThreadSchedulerStats = in.readOptionalWriteable(VirtualThreadSchedulerStats::new);
+        } else {
+            virtualThreadSchedulerStats = null;
+        }
     }
 
     public NodeStats(
@@ -284,7 +293,8 @@ public class NodeStats extends BaseNodeResponse implements ToXContentFragment {
         @Nullable RepositoriesStats repositoriesStats,
         @Nullable AdmissionControlStats admissionControlStats,
         @Nullable NodeCacheStats nodeCacheStats,
-        @Nullable RemoteStoreNodeStats remoteStoreNodeStats
+        @Nullable RemoteStoreNodeStats remoteStoreNodeStats,
+        @Nullable VirtualThreadSchedulerStats virtualThreadSchedulerStats
     ) {
         super(node);
         this.timestamp = timestamp;
@@ -316,6 +326,7 @@ public class NodeStats extends BaseNodeResponse implements ToXContentFragment {
         this.admissionControlStats = admissionControlStats;
         this.nodeCacheStats = nodeCacheStats;
         this.remoteStoreNodeStats = remoteStoreNodeStats;
+        this.virtualThreadSchedulerStats = virtualThreadSchedulerStats;
     }
 
     public long getTimestamp() {
@@ -483,6 +494,11 @@ public class NodeStats extends BaseNodeResponse implements ToXContentFragment {
         return remoteStoreNodeStats;
     }
 
+    @Nullable
+    public VirtualThreadSchedulerStats getVirtualThreadSchedulerStats() {
+        return virtualThreadSchedulerStats;
+    }
+
     @Override
     public void writeTo(StreamOutput out) throws IOException {
         super.writeTo(out);
@@ -543,6 +559,9 @@ public class NodeStats extends BaseNodeResponse implements ToXContentFragment {
         }
         if (out.getVersion().onOrAfter(Version.V_2_18_0)) {
             out.writeOptionalWriteable(remoteStoreNodeStats);
+        }
+        if (out.getVersion().onOrAfter(Version.V_3_4_0)) {
+            out.writeOptionalWriteable(virtualThreadSchedulerStats);
         }
     }
 
@@ -652,6 +671,9 @@ public class NodeStats extends BaseNodeResponse implements ToXContentFragment {
         }
         if (getRemoteStoreNodeStats() != null) {
             getRemoteStoreNodeStats().toXContent(builder, params);
+        }
+        if (getVirtualThreadSchedulerStats() != null) {
+            getVirtualThreadSchedulerStats().toXContent(builder, params);
         }
         return builder;
     }
