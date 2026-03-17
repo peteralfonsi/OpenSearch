@@ -627,4 +627,91 @@ public class ThreadPoolTests extends OpenSearchTestCase {
 
         terminate(threadPoolEnabled);
     }
+
+    public void testVirtualThreadsMultiplierAppliedAtConstruction() {
+        int multiplier = 5;
+        int allocatedProcessors = OpenSearchExecutors.allocatedProcessors(Settings.EMPTY);
+        int expectedSearchSize = ThreadPool.searchThreadPoolSize(allocatedProcessors) * multiplier;
+        int expectedSearcherSize = ThreadPool.twiceAllocatedProcessors(allocatedProcessors) * multiplier;
+
+        Settings settings = Settings.builder()
+            .put("node.name", "testnode")
+            .put("opensearch.experimental.feature.search_virtual_threads.enabled", true)
+            .put("thread_pool.search_threadpools.max_virtual_threads_multiplier", multiplier)
+            .build();
+        ThreadPool threadPool = new ThreadPool(settings);
+
+        assertEquals(expectedSearchSize, threadPool.info(ThreadPool.Names.SEARCH).getMax());
+        assertEquals(expectedSearcherSize, threadPool.info(ThreadPool.Names.INDEX_SEARCHER).getMax());
+        assertEquals(ThreadPool.ThreadPoolType.VIRTUAL, threadPool.info(ThreadPool.Names.SEARCH).getThreadPoolType());
+
+        terminate(threadPool);
+    }
+
+    public void testVirtualThreadsMultiplierIgnoredWhenDisabled() {
+        int multiplier = 5;
+        int allocatedProcessors = OpenSearchExecutors.allocatedProcessors(Settings.EMPTY);
+        int expectedSearchSize = ThreadPool.searchThreadPoolSize(allocatedProcessors);
+        int expectedSearcherSize = ThreadPool.twiceAllocatedProcessors(allocatedProcessors);
+
+        Settings settings = Settings.builder()
+            .put("node.name", "testnode")
+            .put("opensearch.experimental.feature.search_virtual_threads.enabled", false)
+            .put("thread_pool.search_threadpools.max_virtual_threads_multiplier", multiplier)
+            .build();
+        ThreadPool threadPool = new ThreadPool(settings);
+
+        assertEquals(expectedSearchSize, threadPool.info(ThreadPool.Names.SEARCH).getMax());
+        assertEquals(expectedSearcherSize, threadPool.info(ThreadPool.Names.INDEX_SEARCHER).getMax());
+        assertEquals(ThreadPool.ThreadPoolType.RESIZABLE, threadPool.info(ThreadPool.Names.SEARCH).getThreadPoolType());
+
+        terminate(threadPool);
+    }
+
+    public void testVirtualThreadsMultiplierDynamicUpdate() {
+        Settings settings = Settings.builder()
+            .put("node.name", "testnode")
+            .put("opensearch.experimental.feature.search_virtual_threads.enabled", true)
+            .build();
+        ThreadPool threadPool = new ThreadPool(settings);
+
+        int allocatedProcessors = OpenSearchExecutors.allocatedProcessors(Settings.EMPTY);
+        int baseSearchSize = ThreadPool.searchThreadPoolSize(allocatedProcessors);
+        int baseSearcherSize = ThreadPool.twiceAllocatedProcessors(allocatedProcessors);
+
+        // Default multiplier is 100
+        assertEquals(baseSearchSize * 100, threadPool.info(ThreadPool.Names.SEARCH).getMax());
+        assertEquals(baseSearcherSize * 100, threadPool.info(ThreadPool.Names.INDEX_SEARCHER).getMax());
+
+        // Update multiplier to 3
+        threadPool.updateVirtualThreadsMultiplier(3);
+        assertEquals(baseSearchSize * 3, threadPool.info(ThreadPool.Names.SEARCH).getMax());
+        assertEquals(baseSearcherSize * 3, threadPool.info(ThreadPool.Names.INDEX_SEARCHER).getMax());
+
+        // Update multiplier to 10
+        threadPool.updateVirtualThreadsMultiplier(10);
+        assertEquals(baseSearchSize * 10, threadPool.info(ThreadPool.Names.SEARCH).getMax());
+        assertEquals(baseSearcherSize * 10, threadPool.info(ThreadPool.Names.INDEX_SEARCHER).getMax());
+
+        terminate(threadPool);
+    }
+
+    public void testVirtualThreadsMultiplierDynamicUpdateNoOpWhenDisabled() {
+        Settings settings = Settings.builder()
+            .put("node.name", "testnode")
+            .put("opensearch.experimental.feature.search_virtual_threads.enabled", false)
+            .build();
+        ThreadPool threadPool = new ThreadPool(settings);
+
+        int allocatedProcessors = OpenSearchExecutors.allocatedProcessors(Settings.EMPTY);
+        int expectedSearchSize = ThreadPool.searchThreadPoolSize(allocatedProcessors);
+        int expectedSearcherSize = ThreadPool.twiceAllocatedProcessors(allocatedProcessors);
+
+        // Dynamic update should be a no-op since virtual threads are disabled
+        threadPool.updateVirtualThreadsMultiplier(5);
+        assertEquals(expectedSearchSize, threadPool.info(ThreadPool.Names.SEARCH).getMax());
+        assertEquals(expectedSearcherSize, threadPool.info(ThreadPool.Names.INDEX_SEARCHER).getMax());
+
+        terminate(threadPool);
+    }
 }

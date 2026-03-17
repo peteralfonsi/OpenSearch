@@ -223,6 +223,8 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler {
 
     private final ThreadPoolInfo threadPoolInfo;
 
+    private final Settings settings;
+
     private final CachedTimeThread cachedTimeThread;
 
     static final ExecutorService DIRECT_EXECUTOR = OpenSearchExecutors.newDirectExecutorService();
@@ -248,6 +250,20 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler {
         "cluster.thread_pool.",
         Setting.Property.Dynamic,
         Setting.Property.NodeScope
+    );
+
+    /**
+     * If virtual threads are enabled for the search/searcher threadpools, the maximum number of threads in that threadpool
+     * will be multiplied by this setting value. Increasing this value should be safe, besides increasing memory usage
+     * from per-request ThreadLocals.
+     */
+    public static final Setting<Integer> MAX_VIRTUAL_THREADS_MULTIPLIER = Setting.intSetting(
+        "thread_pool.search_threadpools.max_virtual_threads_multiplier",
+        100,
+        1,
+        1000,
+        Setting.Property.NodeScope,
+        Setting.Property.Dynamic
     );
 
     public ThreadPool(final Settings settings, final ExecutorBuilder<?>... customBuilders) {
@@ -279,12 +295,13 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler {
         builders.put(Names.ANALYZE, new FixedExecutorBuilder(settings, Names.ANALYZE, 1, 16));
 
         if (searchVirtualThreadsEnabled) {
+            final int virtualThreadsMultiplier = MAX_VIRTUAL_THREADS_MULTIPLIER.get(settings);
             builders.put(
                 Names.SEARCH,
                 new VirtualThreadExecutorBuilder(
                     settings,
                     Names.SEARCH,
-                    searchThreadPoolSize(allocatedProcessors),
+                    searchThreadPoolSize(allocatedProcessors) * virtualThreadsMultiplier,
                     1000,
                     runnableTaskListener
                 )
@@ -294,7 +311,7 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler {
                 new VirtualThreadExecutorBuilder(
                     settings,
                     Names.INDEX_SEARCHER,
-                    twiceAllocatedProcessors(allocatedProcessors),
+                    twiceAllocatedProcessors(allocatedProcessors) * virtualThreadsMultiplier,
                     1000,
                     runnableTaskListener
                 )
@@ -414,6 +431,7 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler {
         this.threadPoolInfo = new ThreadPoolInfo(infos);
         this.scheduler = Scheduler.initScheduler(settings);
         TimeValue estimatedTimeInterval = ESTIMATED_TIME_INTERVAL_SETTING.get(settings);
+        this.settings = settings;
         this.cachedTimeThread = new CachedTimeThread(OpenSearchExecutors.threadName(settings, "[timer]"), estimatedTimeInterval.millis());
         this.cachedTimeThread.start();
     }
@@ -482,6 +500,31 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler {
 
     public void registerClusterSettingsListeners(ClusterSettings clusterSettings) {
         clusterSettings.addSettingsUpdateConsumer(CLUSTER_THREAD_POOL_SIZE_SETTING, this::setThreadPool, this::validateSetting);
+        clusterSettings.addSettingsUpdateConsumer(MAX_VIRTUAL_THREADS_MULTIPLIER, this::updateVirtualThreadsMultiplier);
+    }
+
+    void updateVirtualThreadsMultiplier(int newMultiplier) {
+        final int allocatedProcessors = OpenSearchExecutors.allocatedProcessors(settings);
+        resizeVirtualThreadPool(Names.SEARCH, searchThreadPoolSize(allocatedProcessors) * newMultiplier, newMultiplier);
+        resizeVirtualThreadPool(Names.INDEX_SEARCHER, twiceAllocatedProcessors(allocatedProcessors) * newMultiplier, newMultiplier);
+    }
+
+    private void resizeVirtualThreadPool(String poolName, int newSize, int newMultiplier) {
+        ExecutorHolder holder = executors.get(poolName);
+        if (holder == null || holder.info.getThreadPoolType() != ThreadPoolType.VIRTUAL) {
+            return;
+        }
+        if (!(holder.executor() instanceof OpenSearchThreadPoolExecutor executor)) {
+            return;
+        }
+        if (newSize < executor.getCorePoolSize()) {
+            executor.setCorePoolSize(newSize);
+            executor.setMaximumPoolSize(newSize);
+        } else {
+            executor.setMaximumPoolSize(newSize);
+            executor.setCorePoolSize(newSize);
+        }
+        logger.info("updated thread pool [{}] size to [{}] (multiplier: {})", poolName, newSize, newMultiplier);
     }
 
     /*
@@ -817,7 +860,7 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler {
         return boundedBy((allocatedProcessors + 1) / 2, 1, 10);
     }
 
-    static int twiceAllocatedProcessors(final int allocatedProcessors) {
+    public static int twiceAllocatedProcessors(final int allocatedProcessors) {
         return boundedBy(2 * allocatedProcessors, 2, Integer.MAX_VALUE);
     }
 
@@ -1208,6 +1251,10 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler {
 
     public ThreadContext getThreadContext() {
         return threadContext;
+    }
+
+    Settings getSettings() {
+        return settings;
     }
 
     public static boolean assertNotScheduleThread(String reason) {

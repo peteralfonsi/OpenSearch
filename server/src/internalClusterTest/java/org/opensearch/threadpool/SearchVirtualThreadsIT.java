@@ -12,6 +12,7 @@ import org.opensearch.action.admin.cluster.node.info.NodeInfo;
 import org.opensearch.action.admin.cluster.node.info.NodesInfoResponse;
 import org.opensearch.common.settings.Settings;
 import org.opensearch.common.util.FeatureFlags;
+import org.opensearch.common.util.concurrent.OpenSearchExecutors;
 import org.opensearch.test.OpenSearchIntegTestCase;
 
 @OpenSearchIntegTestCase.ClusterScope(scope = OpenSearchIntegTestCase.Scope.TEST, numDataNodes = 0)
@@ -184,5 +185,62 @@ public class SearchVirtualThreadsIT extends OpenSearchIntegTestCase {
                 .get()
         );
         assertTrue(e.getMessage().contains("can't update [cluster.thread_pool.]"));
+    }
+
+    public void testVirtualThreadsMultiplierAppliedAtStartup() {
+        int multiplier = 3;
+        internalCluster().startNode(
+            Settings.builder()
+                .put(FeatureFlags.SEARCH_VIRTUAL_THREADS_SETTING.getKey(), true)
+                .put(ThreadPool.MAX_VIRTUAL_THREADS_MULTIPLIER.getKey(), multiplier)
+                .build()
+        );
+
+        ThreadPool threadPool = internalCluster().getInstance(ThreadPool.class);
+        int allocatedProcessors = OpenSearchExecutors.allocatedProcessors(threadPool.getSettings());
+        int expectedSearchSize = ThreadPool.searchThreadPoolSize(allocatedProcessors) * multiplier;
+        int expectedIndexSearcherSize = ThreadPool.twiceAllocatedProcessors(allocatedProcessors) * multiplier;
+
+        assertEquals(expectedSearchSize, getThreadPoolSize(ThreadPool.Names.SEARCH));
+        assertEquals(expectedIndexSearcherSize, getThreadPoolSize(ThreadPool.Names.INDEX_SEARCHER));
+        assertEquals(ThreadPool.ThreadPoolType.VIRTUAL, threadPool.info(ThreadPool.Names.SEARCH).getThreadPoolType());
+        assertEquals(ThreadPool.ThreadPoolType.VIRTUAL, threadPool.info(ThreadPool.Names.INDEX_SEARCHER).getThreadPoolType());
+    }
+
+    public void testVirtualThreadsMultiplierDynamicUpdate() throws Exception {
+        internalCluster().startNode(Settings.builder().put(FeatureFlags.SEARCH_VIRTUAL_THREADS_SETTING.getKey(), true).build());
+
+        ThreadPool threadPool = internalCluster().getInstance(ThreadPool.class);
+        int allocatedProcessors = OpenSearchExecutors.allocatedProcessors(threadPool.getSettings());
+        int baseSearch = ThreadPool.searchThreadPoolSize(allocatedProcessors);
+        int baseIndexSearcher = ThreadPool.twiceAllocatedProcessors(allocatedProcessors);
+
+        for (int multiplier : new int[] { 2, 5 }) {
+            client().admin()
+                .cluster()
+                .prepareUpdateSettings()
+                .setTransientSettings(Settings.builder().put(ThreadPool.MAX_VIRTUAL_THREADS_MULTIPLIER.getKey(), multiplier))
+                .get();
+
+            assertEquals(baseSearch * multiplier, getThreadPoolSize(ThreadPool.Names.SEARCH));
+            assertEquals(baseIndexSearcher * multiplier, getThreadPoolSize(ThreadPool.Names.INDEX_SEARCHER));
+        }
+    }
+
+    public void testVirtualThreadsMultiplierNoEffectWhenDisabled() throws Exception {
+        internalCluster().startNode(Settings.builder().put(FeatureFlags.SEARCH_VIRTUAL_THREADS_SETTING.getKey(), false).build());
+
+        int initialSearchSize = getThreadPoolSize(ThreadPool.Names.SEARCH);
+        int initialIndexSearcherSize = getThreadPoolSize(ThreadPool.Names.INDEX_SEARCHER);
+
+        // Update multiplier - should have no effect since virtual threads are disabled
+        client().admin()
+            .cluster()
+            .prepareUpdateSettings()
+            .setTransientSettings(Settings.builder().put("thread_pool.search_threadpools.max_virtual_threads_multiplier", 5))
+            .get();
+
+        assertEquals(initialSearchSize, getThreadPoolSize(ThreadPool.Names.SEARCH));
+        assertEquals(initialIndexSearcherSize, getThreadPoolSize(ThreadPool.Names.INDEX_SEARCHER));
     }
 }
