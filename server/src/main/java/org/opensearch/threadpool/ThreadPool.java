@@ -971,7 +971,7 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler {
         }
     }
 
-    static class ExecutorHolder {
+    public static class ExecutorHolder {
         private final ExecutorService executor;
         public final Info info;
 
@@ -981,7 +981,7 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler {
             this.info = info;
         }
 
-        ExecutorService executor() {
+        public ExecutorService executor() {
             return executor;
         }
 

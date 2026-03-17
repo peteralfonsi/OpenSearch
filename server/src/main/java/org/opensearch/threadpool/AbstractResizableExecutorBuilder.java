@@ -67,7 +67,7 @@ public abstract class AbstractResizableExecutorBuilder extends ExecutorBuilder<A
     }
 
     @Override
-    ResizableExecutorSettings getSettings(Settings settings) {
+    public ResizableExecutorSettings getSettings(Settings settings) {
         final String nodeName = Node.NODE_NAME_SETTING.get(settings);
         final int size = sizeSetting.get(settings);
         final int queueSize = queueSizeSetting.get(settings);
@@ -75,7 +75,7 @@ public abstract class AbstractResizableExecutorBuilder extends ExecutorBuilder<A
     }
 
     @Override
-    ThreadPool.ExecutorHolder build(final ResizableExecutorSettings settings, final ThreadContext threadContext) {
+    public ThreadPool.ExecutorHolder build(final ResizableExecutorSettings settings, final ThreadContext threadContext) {
         int size = settings.size;
         int queueSize = settings.queueSize;
         final ExecutorService executor = OpenSearchExecutors.newResizable(
@@ -97,7 +97,7 @@ public abstract class AbstractResizableExecutorBuilder extends ExecutorBuilder<A
         return new ThreadPool.ExecutorHolder(executor, info);
     }
 
-    static class ResizableExecutorSettings extends ExecutorBuilder.ExecutorSettings {
+    public static class ResizableExecutorSettings extends ExecutorBuilder.ExecutorSettings {
 
         private final int size;
         private final int queueSize;
