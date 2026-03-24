@@ -16,6 +16,9 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.PlatformManagedObject;
 import java.lang.reflect.Method;
 
+/**
+ * A helper class for interacting with VirtualThreadSchedulerMXBean. 
+ */
 public class VirtualThreadBeanHelper {
     static final Object VT_SCHEDULER_MXBEAN;
     static final Method GET_QUEUED_VT_COUNT;
