@@ -10,6 +10,7 @@ package org.opensearch.threadpool;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.opensearch.common.settings.Setting;
 
 import java.lang.management.ManagementFactory;
 import java.lang.management.PlatformManagedObject;
@@ -21,6 +22,7 @@ public class VirtualThreadBeanHelper {
     static final Method GET_MOUNTED_VT_COUNT;
     static final Method GET_PARALLELISM;
     static final Method GET_POOL_SIZE;
+    static final Method SET_PARALLELISM;
     private static final Logger logger = LogManager.getLogger(VirtualThreadBeanHelper.class);
 
     static {
@@ -44,6 +46,7 @@ public class VirtualThreadBeanHelper {
             logger.warn("Could not access VirtualThreadSchedulerMXBean", e);
         }
 
+        Method setParallelismMethod = null;
         if (mxBeanClass != null) {
             try {
                 // long getQueuedVirtualThreadCount()
@@ -54,12 +57,15 @@ public class VirtualThreadBeanHelper {
                 parallelismMethod = mxBeanClass.getMethod("getParallelism");
                 // int getPoolSize()
                 poolSizeMethod = mxBeanClass.getMethod("getPoolSize");
+                // void setParallelism(int)
+                setParallelismMethod = mxBeanClass.getMethod("setParallelism", int.class);
             } catch (Exception e) {
                 bean = null;
                 queuedMethod = null;
                 mountedMethod = null;
                 parallelismMethod = null;
                 poolSizeMethod = null;
+                setParallelismMethod = null;
                 logger.warn("Could not access method(s) of VirtualThreadSchedulerMXBean", e);
             }
         }
@@ -69,6 +75,7 @@ public class VirtualThreadBeanHelper {
         GET_MOUNTED_VT_COUNT = mountedMethod;
         GET_PARALLELISM = parallelismMethod;
         GET_POOL_SIZE = poolSizeMethod;
+        SET_PARALLELISM = setParallelismMethod;
     }
 
     private VirtualThreadBeanHelper() {}
@@ -112,6 +119,60 @@ public class VirtualThreadBeanHelper {
             return (int) GET_PARALLELISM.invoke(VT_SCHEDULER_MXBEAN);
         } catch (Throwable t) {
             return -1;
+        }
+    }
+
+    static final int MIN_PARALLELISM = 1;
+    static final int MAX_PARALLELISM = 32767;
+
+    /**
+     * Cluster setting to dynamically adjust the JDK virtual thread scheduler parallelism.
+     * A value of -1 (the default) means no override is applied.
+     * If the JDK does not support setting parallelism, the update is a no-op and a warning is logged.
+     */
+    public static final Setting<Integer> SEARCH_VIRTUAL_THREADS_PARALLELISM = Setting.intSetting(
+        "search_virtual_threads.parallelism",
+        -1,
+        -1,
+        MAX_PARALLELISM,
+        Setting.Property.Dynamic,
+        Setting.Property.NodeScope
+    );
+
+    /**
+     * Sets the JDK virtual thread scheduler parallelism.
+     * Throws {@link IllegalArgumentException} for values outside [{@link #MIN_PARALLELISM}, {@link #MAX_PARALLELISM}].
+     * Gracefully handles {@link UnsupportedOperationException} if the JDK does not support this operation.
+     *
+     * @param parallelism the desired parallelism value
+     * @throws IllegalArgumentException if parallelism is outside the valid range
+     */
+    public static void setParallelism(int parallelism) {
+        if (parallelism < MIN_PARALLELISM || parallelism > MAX_PARALLELISM) {
+            throw new IllegalArgumentException(
+                "Invalid virtual thread scheduler parallelism ["
+                    + parallelism
+                    + "]: must be between "
+                    + MIN_PARALLELISM
+                    + " and "
+                    + MAX_PARALLELISM
+            );
+        }
+        if (VT_SCHEDULER_MXBEAN == null || SET_PARALLELISM == null) {
+            logger.warn("Cannot set virtual thread scheduler parallelism: VirtualThreadSchedulerMXBean is not available");
+            return;
+        }
+        try {
+            SET_PARALLELISM.invoke(VT_SCHEDULER_MXBEAN, parallelism);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof UnsupportedOperationException) {
+                logger.warn("Cannot set virtual thread scheduler parallelism: operation not supported by this JDK", cause);
+            } else {
+                logger.warn("Failed to set virtual thread scheduler parallelism to [{}]", parallelism, cause);
+            }
+        } catch (Throwable t) {
+            logger.warn("Failed to set virtual thread scheduler parallelism to [{}]", parallelism, t);
         }
     }
 

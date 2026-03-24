@@ -501,6 +501,11 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler {
     public void registerClusterSettingsListeners(ClusterSettings clusterSettings) {
         clusterSettings.addSettingsUpdateConsumer(CLUSTER_THREAD_POOL_SIZE_SETTING, this::setThreadPool, this::validateSetting);
         clusterSettings.addSettingsUpdateConsumer(MAX_VIRTUAL_THREADS_MULTIPLIER, this::updateVirtualThreadsMultiplier);
+        clusterSettings.addSettingsUpdateConsumer(VirtualThreadBeanHelper.SEARCH_VIRTUAL_THREADS_PARALLELISM, v -> {
+            if (v >= VirtualThreadBeanHelper.MIN_PARALLELISM) {
+                VirtualThreadBeanHelper.setParallelism(v);
+            }
+        });
     }
 
     void updateVirtualThreadsMultiplier(int newMultiplier) {

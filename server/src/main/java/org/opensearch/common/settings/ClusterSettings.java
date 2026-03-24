@@ -178,6 +178,7 @@ import org.opensearch.tasks.TaskResourceTrackingService;
 import org.opensearch.tasks.consumer.TopNSearchTasksLogger;
 import org.opensearch.telemetry.TelemetrySettings;
 import org.opensearch.threadpool.ThreadPool;
+import org.opensearch.threadpool.VirtualThreadBeanHelper;
 import org.opensearch.transport.AuxTransport;
 import org.opensearch.transport.ProxyConnectionStrategy;
 import org.opensearch.transport.RemoteClusterService;
@@ -857,9 +858,10 @@ public final class ClusterSettings extends AbstractScopedSettings {
                 ResponseLimitSettings.CAT_SHARDS_RESPONSE_LIMIT_SETTING,
                 ResponseLimitSettings.CAT_SEGMENTS_RESPONSE_LIMIT_SETTING,
 
-                // Thread pool Settings
+                // Thread pool settings
                 ThreadPool.CLUSTER_THREAD_POOL_SIZE_SETTING,
                 ThreadPool.MAX_VIRTUAL_THREADS_MULTIPLIER,
+                VirtualThreadBeanHelper.SEARCH_VIRTUAL_THREADS_PARALLELISM,
 
                 // Tiered caching settings
                 CacheSettings.getConcreteStoreNameSettingForCacheType(CacheType.INDICES_REQUEST_CACHE),

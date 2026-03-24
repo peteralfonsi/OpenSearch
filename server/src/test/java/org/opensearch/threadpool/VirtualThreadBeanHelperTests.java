@@ -31,6 +31,7 @@ public class VirtualThreadBeanHelperTests extends OpenSearchTestCase {
             assertNull(VirtualThreadBeanHelper.GET_MOUNTED_VT_COUNT);
             assertNull(VirtualThreadBeanHelper.GET_PARALLELISM);
             assertNull(VirtualThreadBeanHelper.GET_POOL_SIZE);
+            assertNull(VirtualThreadBeanHelper.SET_PARALLELISM);
             assertEquals(-1L, VirtualThreadBeanHelper.getQueuedVirtualThreadCount());
             assertEquals(-1L, VirtualThreadBeanHelper.getMountedVirtualThreadCount());
             assertEquals(-1, VirtualThreadBeanHelper.getParallelism());
@@ -65,5 +66,39 @@ public class VirtualThreadBeanHelperTests extends OpenSearchTestCase {
                 assertEquals(-1, VirtualThreadBeanHelper.getPoolSize());
             }
         }
+    }
+
+    /**
+     * Tests setParallelism: out-of-range values throw IllegalArgumentException regardless of bean availability.
+     * If the bean is unavailable the in-range call is a no-op (no exception).
+     * If the bean is available but the JDK does not support setParallelism, the UnsupportedOperationException
+     * is swallowed and a warning is logged.
+     */
+    public void testSetParallelism() {
+        // Out-of-range values must always throw, regardless of bean availability.
+        expectThrows(IllegalArgumentException.class, () -> VirtualThreadBeanHelper.setParallelism(0));
+        expectThrows(IllegalArgumentException.class, () -> VirtualThreadBeanHelper.setParallelism(-1));
+        expectThrows(IllegalArgumentException.class, () -> VirtualThreadBeanHelper.setParallelism(VirtualThreadBeanHelper.MAX_PARALLELISM + 1));
+
+        if (VirtualThreadBeanHelper.VT_SCHEDULER_MXBEAN == null) {
+            logger.info("VirtualThreadSchedulerMXBean not available on this JDK; skipping setParallelism bean test");
+            // Must not throw even when bean is absent
+            VirtualThreadBeanHelper.setParallelism(4);
+            return;
+        }
+
+        if (VirtualThreadBeanHelper.SET_PARALLELISM == null) {
+            logger.info("setParallelism method not available on this JDK; skipping");
+            VirtualThreadBeanHelper.setParallelism(4);
+            return;
+        }
+
+        // Bean and method are present: set to a new value and verify it is reflected back.
+        int before = VirtualThreadBeanHelper.getParallelism();
+        VirtualThreadBeanHelper.setParallelism(before + 10);
+        assertEquals(before + 10, VirtualThreadBeanHelper.getParallelism());
+        // Restore original value
+        VirtualThreadBeanHelper.setParallelism(before);
+        assertEquals(before, VirtualThreadBeanHelper.getParallelism());
     }
 }
