@@ -89,6 +89,7 @@ public final class QuerySearchResult extends SearchPhaseResult {
     private int nodeQueueSize = -1;
 
     private final boolean isNull;
+    private long tookTimeNanos;
 
     public QuerySearchResult() {
         this(false);
@@ -366,6 +367,7 @@ public final class QuerySearchResult extends SearchPhaseResult {
         nodeQueueSize = in.readInt();
         setShardSearchRequest(in.readOptionalWriteable(ShardSearchRequest::new));
         setRescoreDocIds(new RescoreDocIds(in));
+        tookTimeNanos = in.readVLong();
     }
 
     @Override
@@ -408,6 +410,7 @@ public final class QuerySearchResult extends SearchPhaseResult {
         out.writeInt(nodeQueueSize);
         out.writeOptionalWriteable(getShardSearchRequest());
         getRescoreDocIds().writeTo(out);
+        out.writeVLong(tookTimeNanos); // VLong as took time should always be positive
     }
 
     public TotalHits getTotalHits() {
@@ -416,5 +419,13 @@ public final class QuerySearchResult extends SearchPhaseResult {
 
     public float getMaxScore() {
         return maxScore;
+    }
+
+    public long getTookTimeNanos() {
+        return tookTimeNanos;
+    }
+
+    public void setTookTimeNanos(long tookTime) {
+        tookTimeNanos = tookTime;
     }
 }
