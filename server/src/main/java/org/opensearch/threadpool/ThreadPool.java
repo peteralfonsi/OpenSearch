@@ -266,6 +266,16 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler {
         Setting.Property.Dynamic
     );
 
+    /**
+     * When true, and when virtual threads are also enabled, the search and index_searcher thread pools
+     * will use an unbounded virtual-thread-per-task executor instead of the bounded VirtualThreadExecutorBuilder.
+     */
+    public static final Setting<Boolean> SEARCH_VIRTUAL_THREAD_PER_TASK = Setting.boolSetting(
+        "thread_pool.search_threadpools.virtual_thread_per_task",
+        false,
+        Setting.Property.NodeScope
+    );
+
     public ThreadPool(final Settings settings, final ExecutorBuilder<?>... customBuilders) {
         this(settings, null, customBuilders);
     }
@@ -296,26 +306,32 @@ public class ThreadPool implements ReportingService<ThreadPoolInfo>, Scheduler {
 
         if (searchVirtualThreadsEnabled) {
             final int virtualThreadsMultiplier = MAX_VIRTUAL_THREADS_MULTIPLIER.get(settings);
-            builders.put(
-                Names.SEARCH,
-                new VirtualThreadExecutorBuilder(
-                    settings,
+            final boolean perTask = SEARCH_VIRTUAL_THREAD_PER_TASK.get(settings);
+            if (perTask) {
+                builders.put(Names.SEARCH, new VirtualThreadPerTaskExecutorBuilder(Names.SEARCH));
+                builders.put(Names.INDEX_SEARCHER, new VirtualThreadPerTaskExecutorBuilder(Names.INDEX_SEARCHER));
+            } else {
+                builders.put(
                     Names.SEARCH,
-                    searchThreadPoolSize(allocatedProcessors) * virtualThreadsMultiplier,
-                    1000,
-                    runnableTaskListener
-                )
-            );
-            builders.put(
-                Names.INDEX_SEARCHER,
-                new VirtualThreadExecutorBuilder(
-                    settings,
+                    new VirtualThreadExecutorBuilder(
+                        settings,
+                        Names.SEARCH,
+                        searchThreadPoolSize(allocatedProcessors) * virtualThreadsMultiplier,
+                        1000,
+                        runnableTaskListener
+                    )
+                );
+                builders.put(
                     Names.INDEX_SEARCHER,
-                    twiceAllocatedProcessors(allocatedProcessors) * virtualThreadsMultiplier,
-                    1000,
-                    runnableTaskListener
-                )
-            );
+                    new VirtualThreadExecutorBuilder(
+                        settings,
+                        Names.INDEX_SEARCHER,
+                        twiceAllocatedProcessors(allocatedProcessors) * virtualThreadsMultiplier,
+                        1000,
+                        runnableTaskListener
+                    )
+                );
+            }
         } else {
             builders.put(
                 Names.SEARCH,

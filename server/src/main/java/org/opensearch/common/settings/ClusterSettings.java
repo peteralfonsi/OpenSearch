@@ -861,6 +861,7 @@ public final class ClusterSettings extends AbstractScopedSettings {
                 // Thread pool settings
                 ThreadPool.CLUSTER_THREAD_POOL_SIZE_SETTING,
                 ThreadPool.MAX_VIRTUAL_THREADS_MULTIPLIER,
+                ThreadPool.SEARCH_VIRTUAL_THREAD_PER_TASK,
                 VirtualThreadBeanHelper.SEARCH_VIRTUAL_THREADS_PARALLELISM,
 
                 // Tiered caching settings

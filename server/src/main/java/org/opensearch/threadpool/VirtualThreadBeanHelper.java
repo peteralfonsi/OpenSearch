@@ -17,7 +17,7 @@ import java.lang.management.PlatformManagedObject;
 import java.lang.reflect.Method;
 
 /**
- * A helper class for interacting with VirtualThreadSchedulerMXBean. 
+ * A helper class for interacting with VirtualThreadSchedulerMXBean.
  */
 public class VirtualThreadBeanHelper {
     static final Object VT_SCHEDULER_MXBEAN;
