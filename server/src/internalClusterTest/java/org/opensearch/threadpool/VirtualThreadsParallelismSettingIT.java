@@ -48,7 +48,7 @@ public class VirtualThreadsParallelismSettingIT extends OpenSearchIntegTestCase 
         client().admin()
             .cluster()
             .prepareUpdateSettings()
-            .setTransientSettings(Settings.builder().put(ThreadPool.SEARCH_VIRTUAL_THREADS_PARALLELISM.getKey(), target))
+            .setTransientSettings(Settings.builder().put(VirtualThreadBeanHelper.SEARCH_VIRTUAL_THREADS_PARALLELISM.getKey(), target))
             .get();
 
         if (VirtualThreadBeanHelper.SET_PARALLELISM == null) {
@@ -83,7 +83,7 @@ public class VirtualThreadsParallelismSettingIT extends OpenSearchIntegTestCase 
         client().admin()
             .cluster()
             .prepareUpdateSettings()
-            .setTransientSettings(Settings.builder().put(ThreadPool.SEARCH_VIRTUAL_THREADS_PARALLELISM.getKey(), -1))
+            .setTransientSettings(Settings.builder().put(VirtualThreadBeanHelper.SEARCH_VIRTUAL_THREADS_PARALLELISM.getKey(), -1))
             .get();
 
         int after = fetchParallelismFromNodeStats();
@@ -101,7 +101,7 @@ public class VirtualThreadsParallelismSettingIT extends OpenSearchIntegTestCase 
             client().admin()
                 .cluster()
                 .prepareUpdateSettings()
-                .setTransientSettings(Settings.builder().put(ThreadPool.SEARCH_VIRTUAL_THREADS_PARALLELISM.getKey(), 32768))
+                .setTransientSettings(Settings.builder().put(VirtualThreadBeanHelper.SEARCH_VIRTUAL_THREADS_PARALLELISM.getKey(), 32768))
                 .get();
             fail("Expected an exception when setting parallelism above the maximum");
         } catch (Exception e) {
